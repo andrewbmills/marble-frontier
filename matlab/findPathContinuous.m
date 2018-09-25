@@ -4,7 +4,7 @@ if nargin < 4
 end
 y = goal(1);
 x = goal(2);
-figure(10)
+% figure(10)
 [px,py] = gradient(reachGrid);
 modGrid = sqrt(px.^2 + py.^2);
 modGrid(modGrid==0) = 1;
@@ -24,12 +24,18 @@ while true
     j_low = floor(x);
     alpha = j_high - x;
     beta = i_high - y;
+    if length(i_low:i_high) == 1
+        i_low = i_low-1;
+    end
+    if length(j_low:j_high) == 1
+        j_low = j_low-1;
+    end
     gradX = -[alpha, 1-alpha]*px(i_low:i_high, j_low:j_high)*[beta; 1-beta];
     gradY = -[alpha, 1-alpha]*py(i_low:i_high, j_low:j_high)*[beta; 1-beta];
-    if abs(gradX) > 1
+    if abs(gradX) > 0.25
         gradX = sign(gradX);
     end
-    if abs(gradY) > 1
+    if abs(gradY) > 0.25
         gradY = sign(gradY);
     end
     x_next = x + step*gradX;
@@ -37,10 +43,10 @@ while true
     x = x_next;
     y = y_next;
     path = [x, y; path];
-    if norm([x,y]-start) < 0.5
+    if norm([x,y]-start) < 1
         break
     end
-    if size(path,1) >= 1e4
+    if size(path,1) >= 1e5
         error('no safe path to frontier')
         break
     end

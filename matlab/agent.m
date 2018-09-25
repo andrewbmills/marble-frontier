@@ -1,4 +1,4 @@
-classdef agent
+classdef agent < handle
     %UNTITLED Summary of this class goes here
     %   Detailed explanation goes here
     
@@ -17,14 +17,12 @@ classdef agent
     methods
         function obj = agent(state0, occGrid0, gridDims, sensor, maxControl)
             obj.state = state0; % [x_pos, y_pos, angle, speed]
-            obj.statehist = obj.state;
+            obj.stateHistory = obj.state';
             obj.occGrid = occGrid0;
             obj.gridDims = gridDims;
-            obj.tLook = 3; % seconds
+            obj.tLook = 1; % seconds
             obj.sensor = [10; 2*pi];
-            obj.maxSpeed = 5; % m/s
-            obj.maxTurnRate = 45*pi/180; % rad/s
-            obj.maxDecel = 0.1*9.81; % m/s^2
+            obj.controlLims = [5; 180*pi/180; 0.1*9.81];
 %             obj.carrot = [0, 1]; % 0 distance along path segment 1
             if nargin == 4
                 obj.sensor = sensor;
@@ -59,16 +57,16 @@ classdef agent
 %             end
             
             % Move the agent
-            R = obj.state(4)/obj.tLook;
+            R = obj.state(4)*obj.tLook;
             
             [t, x] = ode45(@(t,x) unicycleODE(t, x, R, obj.path, ...
                 obj.controlLims, V_command), [0 dt], obj.state);
-            obj.state = x(:,end);
+            obj.state = x(end,:)';
             
             % Save state history
-            obj.stateHistory = [obj.stateHistory; x(:, 2:end)];
-            if size(obj.stateHistory, 2) >= 1000
-                obj.stateHistory = obj.stateHistory(:, (end-1000):end);
+            obj.stateHistory = [obj.stateHistory; x(2:end, :)];
+            if size(obj.stateHistory, 1) >= 1000
+                obj.stateHistory = obj.stateHistory((end-1000):end, :);
             end
         end
         
@@ -117,7 +115,12 @@ function [L, vhat] = findLookahead(p_AC, R, path)
     tHat(discrim >= 0) = max(tHat1(discrim >= 0), tHat2(discrim >= 0));
     intersection = (tHat >= 0).*(tHat <=1);
     ind = find(intersection, 1, 'last');
-    L = d(ind, :)*tHat(ind) + path(ind, :);
+    if isempty(ind)
+        [~, ind] = min(norm(q, 2));
+        L = path(ind, :);
+    else
+        L = d(ind, :)*tHat(ind) + path(ind, :);
+    end
     vhat = d(ind, :)/norm(d(ind, :));
 end
 
