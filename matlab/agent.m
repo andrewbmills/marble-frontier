@@ -17,12 +17,13 @@ classdef agent < handle
     methods
         function obj = agent(state0, occGrid0, gridDims, sensor, maxControl)
             obj.state = state0; % [x_pos, y_pos, angle, speed]
-            obj.stateHistory = obj.state';
+            obj.stateHistory = [0, obj.state'];
             obj.occGrid = occGrid0;
             obj.gridDims = gridDims;
             obj.tLook = 1; % seconds
             obj.sensor = [10; 2*pi];
             obj.controlLims = [5; 180*pi/180; 0.1*9.81];
+            obj.path = [state0(1), state0(2)];
 %             obj.carrot = [0, 1]; % 0 distance along path segment 1
             if nargin == 4
                 obj.sensor = sensor;
@@ -62,18 +63,33 @@ classdef agent < handle
             [t, x] = ode45(@(t,x) unicycleODE(t, x, R, obj.path, ...
                 obj.controlLims, V_command), [0 dt], obj.state);
             obj.state = x(end,:)';
+            t0 = obj.stateHistory(end, 1);
             
             % Save state history
-            obj.stateHistory = [obj.stateHistory; x(2:end, :)];
-            if size(obj.stateHistory, 1) >= 1000
-                obj.stateHistory = obj.stateHistory((end-1000):end, :);
-            end
+            obj.stateHistory = [obj.stateHistory; t(2:end) + t0, x(2:end, :)];
+%             if size(obj.stateHistory, 1) >= 10000
+%                 obj.stateHistory = obj.stateHistory((end-10000):end, :);
+%             end
         end
         
         function sense(obj, trueGrid)
             obj.occGrid = senseGrid(obj.state, trueGrid, obj.occGrid, ...
                 obj.gridDims, obj.sensor);
         end
+        
+        function plot(obj, k)
+            figure(k)
+            h = pcolor(obj.occGrid);
+            hold on
+            plot(obj.state(1)+0.5, obj.state(2)+0.5, 'r*')
+            plot(obj.path(:,1)+0.5, obj.path(:,2)+0.5, 'r');
+            plot(obj.stateHistory(:,2)+0.5, obj.stateHistory(:,3)+0.5, 'g-.');
+            [m, n] = size(obj.occGrid);
+            axis([1 n 1 m]);
+            set(h, 'EdgeColor', 'none');
+            hold off
+        end
+        
     end
 end
 
@@ -116,7 +132,7 @@ function [L, vhat] = findLookahead(p_AC, R, path)
     intersection = (tHat >= 0).*(tHat <=1);
     ind = find(intersection, 1, 'last');
     if isempty(ind)
-        [~, ind] = min(norm(q, 2));
+        ind = size(path,1)-1;
         L = path(ind, :);
     else
         L = d(ind, :)*tHat(ind) + path(ind, :);
