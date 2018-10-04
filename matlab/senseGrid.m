@@ -2,9 +2,9 @@ function [agentGrid] = senseGrid(state, occGrid, agentGrid, gridDims, sensor)
 [m, n] = size(occGrid);
 xGrid = state(1)/gridDims(1); % put 
 yGrid = state(2)/gridDims(2);
-heading = state(3);
+heading = state(3)*180/pi;
 r = sensor(1); % sensing radius
-dtheta = sensor(2); % sensor sweep angle
+dtheta = sensor(2)*180/pi; % sensor sweep angle
 
 % Calculate which grid cells the sensor can detect
 j_min = max([round(xGrid-r/gridDims(1)),1]);
@@ -15,13 +15,13 @@ localGrid = occGrid(i_min:i_max, j_min:j_max);
 senseGrid = zeros(size(localGrid));
 for i = i_min:i_max
     for j = j_min:j_max
-        angle = atan2(j-xGrid, i-yGrid);
+        angle = atan2(j-xGrid, i-yGrid)*180/pi;
         if abs(angle_diff(heading, angle)) <= dtheta
             % Check for occlusion
             [x_ind, y_ind] = bresenham(xGrid, yGrid, j, i);
             occluded = 0;
             for ii = 1:(length(x_ind)-1)
-                if occGrid(y_ind(ii), x_ind(ii))
+                if occGrid(y_ind(ii), x_ind(ii)) == 1
                     occluded = 1;
                 end
             end

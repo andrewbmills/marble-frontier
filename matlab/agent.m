@@ -82,11 +82,17 @@ classdef agent < handle
             h = pcolor(obj.occGrid);
             hold on
             plot(obj.state(1)+0.5, obj.state(2)+0.5, 'r*')
-            plot(obj.path(:,1)+0.5, obj.path(:,2)+0.5, 'r');
+            if ~isempty(obj.path)
+                plot(obj.path(:,1)+0.5, obj.path(:,2)+0.5, 'r');
+            end
             plot(obj.stateHistory(:,2)+0.5, obj.stateHistory(:,3)+0.5, 'g-.');
             [m, n] = size(obj.occGrid);
             axis([1 n 1 m]);
             set(h, 'EdgeColor', 'none');
+            set(gcf, 'Position', [1, 1, 1080, 1080]);
+            axis equal
+            axis tight
+            tightfig;
             hold off
         end
         

@@ -1,9 +1,9 @@
 %% Create obstacle rich environment
 % clear
 close all
-% cd('FastMarching_version3b');
-% compile_c_files;
-% cd('..');
+cd('FastMarching_version3b');
+compile_c_files;
+cd('..');
 width = 1;
 height = 1;
 minObsDist = 15; % it's just as fast to be at least x cells away as anywhere else.
@@ -18,6 +18,7 @@ set(h1, 'EdgeColor', 'none');
 
 %% Generate robot(s)
 x_agent = [144; 30; 0; 5]; % x (m), y (m), heading (rad from north), speed (m/s)
+% x_agent = [125; 125; 0; 5];
 sensor = [50, 2*pi];
 agentGrid = 0.5*ones(m,n); % completely unknown
 agent1 = agent(x_agent, agentGrid, [width, height], sensor);
@@ -37,16 +38,20 @@ hblob.MinimumBlobArea = 10;
 
 %% Simulate
 dt = 0.5;
+gif_start = ones(4,1);
+filenames = {'robot1OccMap.gif', 'robot2OccMap.gif', 'robot1planner.gif', 'robot2planner.gif'};
+% filenames = {'robotAloneOccMap.gif', 'robotAlonePlanner.gif'};
+gif_flag = 1;
 while true
     % Plan Path(s)
     if ~frontierCheck(agent1.path(end,2), agent1.path(end,1), agent1.occGrid)
-        agent1.path = frontierPlan(agent1.occGrid, agent1.state(1:2), hblob, minObsDist);
+        agent1.path = frontierPlan(agent1.occGrid, agent1.state(1:2), hblob, minObsDist, 5);
         if isempty(agent1.path)
             break
         end
     end
     if ~frontierCheck(agent2.path(end,2), agent2.path(end,1), agent2.occGrid)
-        agent2.path = frontierPlan(agent2.occGrid, agent2.state(1:2), hblob, minObsDist);
+        agent2.path = frontierPlan(agent2.occGrid, agent2.state(1:2), hblob, minObsDist, 6);
         if isempty(agent2.path)
             break
         end
@@ -85,5 +90,40 @@ while true
         error('vehicle 2 collided with environment');
     end
     
-    pause(dt);
+    % Add frames to .gif file
+    drawnow
+    if gif_flag
+        for fig_num = 3:6
+            % Add frame to gif
+            frame = getframe(fig_num);
+            im = frame2im(frame);
+            [imind,cm] = rgb2ind(im,256);
+            if gif_start(fig_num-2)
+                imwrite(imind,cm,filenames{fig_num-2},'gif', 'Loopcount',0);
+                gif_start(fig_num-2) = 0;
+            else
+                imwrite(imind,cm,filenames{fig_num-2},'gif','WriteMode','append','DelayTime',0);
+            end
+        end
+    end
+    
+%     pause(dt);
+end
+
+agent1.plot(3)
+agent2.plot(4)
+drawnow
+if gif_flag
+    for fig_num = 3:4
+        % Add frame to gif
+        frame = getframe(fig_num);
+        im = frame2im(frame);
+        [imind,cm] = rgb2ind(im,256);
+        if gif_start(fig_num-2)
+            imwrite(imind,cm,filenames{fig_num-2},'gif', 'Loopcount',0);
+            gif_start(fig_num-2) = 0;
+        else
+            imwrite(imind,cm,filenames{fig_num-2},'gif','WriteMode','append','DelayTime',5);
+        end
+    end
 end
