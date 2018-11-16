@@ -293,11 +293,14 @@ double CalculateDistance(double *T, double Fijk, int *dims, int i, int j, int k,
 }
 
 /* The matlab mex function */
-void mexFunction( int nlhs, mxArray *plhs[],
-        int nrhs, const mxArray *prhs[] ) {
+// void mexFunction( int nlhs, mxArray *plhs[],
+//         int nrhs, const mxArray *prhs[] ) {
+void pyFunction( int nlhs, void *T_py, void *Y_py
+    const int nrhs, const void *F_py, const void *SourcePoints_py, bool usesecond, bool usecross) {
+
     /* The input variables */
     double *F, *SourcePoints;
-    bool *useseconda, *usecrossa;
+    // bool *useseconda, *usecrossa;
     bool usesecond=true;
     bool usecross=true;
     
@@ -317,12 +320,16 @@ void mexFunction( int nlhs, mxArray *plhs[],
     bool Ed;
     
     /* Size of input image */
-    const mwSize *dims_c;
-    mwSize dims[3];
+    // const mwSize *dims_c;
+    // mwSize dims[3];
+    const int dims_c;
+    int dims[3];
     
     /* Size of  SourcePoints array */
-    const mwSize *dims_sp_c;
-    mwSize dims_sp[3];
+    // const mwSize *dims_sp_c;
+    // mwSize dims_sp[3];
+    const int *dims_sp_c;
+    int dims_sp[3];
     
     /* Number of pixels in image */
     int npixels;
@@ -353,29 +360,31 @@ void mexFunction( int nlhs, mxArray *plhs[],
     
     /* Check for proper number of input and output arguments. */
     if(nrhs<3) {
-        mexErrMsgTxt("2 to 4 inputs are required.");
+        // mexErrMsgTxt("2 to 4 inputs are required.");
+        printf("2 to 4 inputs are required.");
     }
     if(nlhs==1) { Ed=0; }
     else if (nlhs==2) { Ed=1; }
     else {
-        mexErrMsgTxt("One or Two outputs required");
+        // mexErrMsgTxt("One or Two outputs required");
+        printf("One or Two outputs required");
     }
     
     /* Check data input types /* */
-    if(mxGetClassID(prhs[0])!=mxDOUBLE_CLASS) {
-        mexErrMsgTxt("Speed image must be of class double");
-    }
-    if(mxGetClassID(prhs[1])!=mxDOUBLE_CLASS) {
-        mexErrMsgTxt("SourcePoints must be of class double");
-    }
+    // if(mxGetClassID(prhs[0])!=mxDOUBLE_CLASS) {
+    //     mexErrMsgTxt("Speed image must be of class double");
+    // }
+    // if(mxGetClassID(prhs[1])!=mxDOUBLE_CLASS) {
+    //     mexErrMsgTxt("SourcePoints must be of class double");
+    // }
     
-    if((nrhs>2)&&(mxGetClassID(prhs[2])!= mxLOGICAL_CLASS)) {
-        mexErrMsgTxt("UseSecond must be of class boolean / logical");
-    }
+    // if((nrhs>2)&&(mxGetClassID(prhs[2])!= mxLOGICAL_CLASS)) {
+    //     mexErrMsgTxt("UseSecond must be of class boolean / logical");
+    // }
     
-    if((nrhs>3)&&(mxGetClassID(prhs[3])!= mxLOGICAL_CLASS)) {
-        mexErrMsgTxt("UseCross must be of class boolean / logical");
-    }
+    // if((nrhs>3)&&(mxGetClassID(prhs[3])!= mxLOGICAL_CLASS)) {
+    //     mexErrMsgTxt("UseCross must be of class boolean / logical");
+    // }
     
     /* Get the sizes of the input image volume */
     if(mxGetNumberOfDimensions(prhs[0])==3) {

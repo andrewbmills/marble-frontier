@@ -42,6 +42,8 @@ def ros_to_np(ros_cloud):
     n_x = int(np.round((x_range[1] - x_range[0])/0.2) + 1)
     n_y = int(np.round((y_range[1] - y_range[0])/0.2) + 1)
     n_z = int(np.round((z_range[1] - z_range[0])/0.2) + 1)
+    print('(%.1f, %.1f); (%.1f, %.1f); (%.1f, %.1f)' % (x_range[0], x_range[1], y_range[0], y_range[1], z_range[0], z_range[1]))
+    print('%d, %d, %d' % (n_x, n_y, n_z))
 
     esdf_3d = np.zeros((n_x, n_y, n_z, 4), dtype=np.double)
 
