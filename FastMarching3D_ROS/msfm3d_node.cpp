@@ -35,10 +35,12 @@ class Msfm3d
     }
     bool receivedPosition = 0;
     bool receivedPointCloud = 0;
+    bool newCloud = 0;
     float voxel_size; // voxblox voxel size
     // ros::NodeHandle n; // Ros node handle
     float position[3]; // robot position
     double * reach; // reachability grid (output from reach())
+    sensor_msgs::PointCloud2 PC2msg;
     // float * seen; // whether or not a grid cell has been seen by a sensor
     // std::vector<float> seen; // whether or not a grid cell has been seen by a sensor
     struct ESDF {
@@ -50,9 +52,11 @@ class Msfm3d
     };
     ESDF esdf;
 
-    void callback(const sensor_msgs::PointCloud2::ConstPtr& msg); // Subscriber callback function
+    void callback(sensor_msgs::PointCloud2 msg); // Subscriber callback function
     void callback_position(const gazebo_msgs::LinkStates msg); // Subscriber callback for robot position
+    void parsePointCloud(); // Function to parse pointCloud2 into a format that msfm3d can use
     int xyz_index3(const float point[3]);
+    void index3_xyz(const int index, float point[3]);
 };
 
 void Msfm3d::callback_position(const gazebo_msgs::LinkStates msg)
@@ -65,68 +69,82 @@ void Msfm3d::callback_position(const gazebo_msgs::LinkStates msg)
   ROS_INFO("Robot position updated!");
 }
 
-void Msfm3d::callback(const sensor_msgs::PointCloud2::ConstPtr& msg)
+void Msfm3d::callback(sensor_msgs::PointCloud2 msg)
 {
   if (!receivedPointCloud) receivedPointCloud = 1;
-  // clock object for timing the parsing operation
-  ROS_INFO("Allocating memory for esdf parsing.");
-  clock_t tStart = clock();
-  // integer array to store uint8 byte values
-  int bytes[4];
-  // local pointcloud storage array
-  float xyzis[5*(msg->width)];
-  // pointcloud xyz limits
-  float xyzi_max[4], xyzi_min[4];
-  int offset;
-  
-  // parse pointcloud2 data
-  ROS_INFO("Parsing ESDF data into holder arrays.");
-  for (int i=0; i<(msg->width); i++) {
-    for (int j=0; j<5; j++) {
-      if (j>3){ offset = 12; }
-      else{ offset = msg->fields[j].offset; }
-      for (int k=0; k<4; k++) {
-        bytes[k] = msg->data[32*i+offset+k];
-      }
-      xyzis[5*i+j] = byte2Float(bytes);
-      if (j<4){
-        if (i < 1){
-          xyzi_max[j] = xyzis[5*i+j];
-          xyzi_min[j] = xyzis[5*i+j];
-        } else {
-          if (xyzis[5*i+j] > xyzi_max[j]) xyzi_max[j] = xyzis[5*i+j];
-          if (xyzis[5*i+j] < xyzi_min[j]) xyzi_min[j] = xyzis[5*i+j];
+  PC2msg = msg;
+  newCloud = 1;
+}
+
+void Msfm3d::parsePointCloud()
+{
+  if (newCloud) {
+    ROS_INFO("Allocating memory for esdf parsing.");
+    // integer array to store uint8 byte values
+    int bytes[4];
+    // local pointcloud storage array
+    float xyzis[5*(PC2msg.width)];
+    // pointcloud xyz limits
+    float xyzi_max[4], xyzi_min[4];
+    int offset;
+    
+    // parse pointcloud2 data
+    ROS_INFO("Parsing ESDF data into holder arrays.");
+    for (int i=0; i<(PC2msg.width); i++) {
+      for (int j=0; j<5; j++) {
+        if (j>3){ offset = 12; }
+        else{ offset = PC2msg.fields[j].offset; }
+        for (int k=0; k<4; k++) {
+          bytes[k] = PC2msg.data[32*i+offset+k];
+        }
+        xyzis[5*i+j] = byte2Float(bytes);
+        if (j<4){
+          if (i < 1){
+            xyzi_max[j] = xyzis[5*i+j];
+            xyzi_min[j] = xyzis[5*i+j];
+          } else {
+            if (xyzis[5*i+j] > xyzi_max[j]) xyzi_max[j] = xyzis[5*i+j];
+            if (xyzis[5*i+j] < xyzi_min[j]) xyzi_min[j] = xyzis[5*i+j];
+          }
         }
       }
     }
+
+    // Replace max, min, and size esdf properties
+    for (int i=0; i<4; i++) { esdf.max[i] = xyzi_max[i]; esdf.min[i] = xyzi_min[i]; }
+    for (int i=0; i<3; i++) esdf.size[i] = roundf((esdf.max[i]-esdf.min[i])/voxel_size);
+
+    // Empty current esdf and seen matrix and create a new ones.
+    delete[] esdf.data;
+    esdf.data = NULL;
+    esdf.data = new double [esdf.size[0]*esdf.size[1]*esdf.size[2]] { }; // Initialize all values to zero.
+    delete[] esdf.seen;
+    esdf.seen = NULL;
+    esdf.seen = new bool [esdf.size[0]*esdf.size[1]*esdf.size[2]] { };
+    ROS_INFO("ESDF Data is of length %d", esdf.size[0]*esdf.size[1]*esdf.size[2]);
+    ROS_INFO("Message width is %d", PC2msg.width);
+
+    // Parse xyzis into esdf_mat
+    int index;
+    float point[3];
+    for (int i=0; i<(5*(PC2msg.width)); i=i+5) {
+      point[0] = xyzis[i]; point[1] = xyzis[i+1]; point[2] = xyzis[i+2];
+      index = xyz_index3(point);
+      esdf.data[index] = (double)(xyzis[i+3]);
+      esdf.seen[index] = (xyzis[i+4]>0.0);
+    }
+
+    ROS_INFO("ESDF Updated!");
+    newCloud = 0; // Parsed the latest pointCloud2 object
   }
+}
 
-  // Replace max, min, and size esdf properties
-  for (int i=0; i<4; i++) { esdf.max[i] = xyzi_max[i]; esdf.min[i] = xyzi_min[i]; }
-  for (int i=0; i<3; i++) esdf.size[i] = roundf((esdf.max[i]-esdf.min[i])/voxel_size);
-
-  // Empty current esdf and seen matrix and create a new ones.
-  delete[] esdf.data;
-  esdf.data = NULL;
-  esdf.data = new double [esdf.size[0]*esdf.size[1]*esdf.size[2]] { }; // Initialize all values to zero.
-  delete[] esdf.seen;
-  esdf.seen = NULL;
-  esdf.seen = new bool [esdf.size[0]*esdf.size[1]*esdf.size[2]] { };
-  ROS_INFO("ESDF Data is of length %d", esdf.size[0]*esdf.size[1]*esdf.size[2]);
-  ROS_INFO("Message width is %d", msg->width);
-
-  // Parse xyzis into esdf_mat
-  int index;
-  float point[3];
-  for (int i=0; i<(5*(msg->width)); i=i+5) {
-    point[0] = xyzis[i]; point[1] = xyzis[i+1]; point[2] = xyzis[i+2];
-    index = xyz_index3(point);
-    esdf.data[index] = (double)(xyzis[i+3]);
-    esdf.seen[index] = (xyzis[i+4]>0.0);
-  }
-
-  ROS_INFO("ESDF Updated!");
-  ROS_INFO("Parsing Time taken: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+void Msfm3d::index3_xyz(const int index, float point[3])
+{
+  // x+y*sizx+z*sizx*sizy
+  point[2] = esdf.min[2] + (index/(esdf.size[1]*esdf.size[0]))*voxel_size;
+  point[1] = esdf.min[1] + ((index % (esdf.size[1]*esdf.size[0]))/esdf.size[0])*voxel_size;
+  point[0] = esdf.min[0] + ((index % (esdf.size[1]*esdf.size[0])) % esdf.size[0])*voxel_size;
 }
 
 int Msfm3d::xyz_index3(const float point[3])
@@ -134,6 +152,51 @@ int Msfm3d::xyz_index3(const float point[3])
   int ind[3];
   for (int i=0; i<3; i++) ind[i] = roundf((point[i]-esdf.min[i])/voxel_size);
   return mindex3(ind[0], ind[1], ind[2], esdf.size[0], esdf.size[1]);
+}
+
+void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5]){
+  // findFrontier scans through the environment arrays and returns the 5 closest frontier locations in euclidian distance.
+  int npixels = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
+  float point[3];
+  float query[3];
+  int neighbor[6];
+  bool frontier = 0;
+  int slot = 0;
+  for (int i=0; i<5; i++) cost[i] = 1e5;
+  for (int i=0; i<npixels; i++){
+    // Check if the voxel has been seen, is unoccupied and it costs less to reach it than the 5 cheapest voxels
+    if (planner.esdf.seen[i] && (planner.reach[i]<cost[0]) && (planner.esdf.data[i]>0)){
+      // Check if the voxel is a frontier by querying adjacent voxels
+      planner.index3_xyz(i, point);
+      for (int j=0; j<3; j++) query[j] = point[j];
+      // Create an array of neighbor indices
+      for (int j=0; j<3; j++){
+        if (point[j] < (planner.esdf.max[j] - planner.voxel_size)) query[j] = point[j] + planner.voxel_size;
+        neighbor[2*j] = planner.xyz_index3(query);
+        if (point[j] > (planner.esdf.min[j] + planner.voxel_size)) query[j] = point[j] - planner.voxel_size;
+        neighbor[2*j+1] = planner.xyz_index3(query);
+        query[j] = point[j];
+      }
+      // Check if the neighbor indices are unseen voxels
+      for (int j=0; j<6; j++){
+        if (!planner.esdf.seen[neighbor[j]]) frontier = 1;
+      }
+      // If the current voxel is a frontier, add the current voxel location to the cost and frontierList
+      if (frontier) {
+        frontier = 0; // reset for next loop
+        // Put the cost into the correct slot.
+        for (int j=0; j<5; j++) {
+          if (planner.reach[i]<cost[j]) slot = j;
+        }
+        for (int j=0; j<slot; j++) {
+          cost[j] = cost[j+1];
+          for (int k=0; k<3; k++) frontierList[3*j+k] = frontierList[3*(j+1)+k];
+        }
+        cost[slot] = planner.reach[i];
+        for (int j=0; j<3; j++) frontierList[j] = point[j];
+      }
+    }
+  }
 }
 
 void reach( Msfm3d& planner, const bool usesecond, const bool usecross) {
@@ -386,12 +449,6 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross) {
     free(Frozen);
 }
 
-void findFrontierEuclidian(Msfm3d& planner, int frontierList[15]){
-  // findFrontier scans through the environment arrays and returns the 5 closest frontier locations in euclidian distance.
-  int npixels = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
-
-}
-
 int main(int argc, char **argv)
 {
   /**
@@ -440,29 +497,37 @@ int main(int argc, char **argv)
    * will exit when Ctrl-C is pressed, or the node is shutdown by the master.
    */
   int i = 0;
-  ros::Rate r(10); // 1 hz
+  ros::Rate r(1); // 1 hz
   clock_t tStart;
-  float query[3];
   int npixels;
   int spins = 0;
+  float frontierList[15];
+  double frontierCost[5];
   r.sleep();
   while (ros::ok())
   {
     ros::spinOnce();
     r.sleep();
     ROS_INFO("Planner Okay.");
+    planner.parsePointCloud();
     // Heartbeat status update
     if (planner.receivedPosition){
       ROS_INFO("X1 Position: [x: %f, y: %f, z: %f]", planner.position[0], planner.position[1], planner.position[2]);
-    //   i = planner.xyz_index3(planner.position);
-    //   ROS_INFO("Index at Position: %d", i);
-    //   if (planner.receivedPointCloud){
-    //     ROS_INFO("ESDF at Position: %f", planner.esdf.data[i]);
+      i = planner.xyz_index3(planner.position);
+      ROS_INFO("Index at Position: %d", i);
+      if (!planner.newCloud){
+        ROS_INFO("ESDF at Position: %f", planner.esdf.data[i]);
         
         // Call msfm3d function
-        // tStart = clock();
-        // reach(planner, 1, 1);
-        // ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+        tStart = clock();
+        ROS_INFO("Reachability matrix calculating...");
+        reach(planner, 1, 1);
+        ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+        // ROS_INFO("Reachability matrix calculated.");
+
+        // Find frontiers
+        findFrontier(planner, frontierList, frontierCost);
+        for (int i=0; i<5; i++) ROS_INFO("Frontier Position: [x: %f, y: %f, z: %f, cost: %f]", frontierList[3*i], frontierList[3*i+1], frontierList[3*i+2], frontierCost[i]);
 
         // Output reach matrix to .csv
         // if (spins < 2) {
@@ -480,7 +545,7 @@ int main(int argc, char **argv)
         //   fclose(myfile);
         //   spins++;
         // }
-      // }
+      }
     }
   }
 
