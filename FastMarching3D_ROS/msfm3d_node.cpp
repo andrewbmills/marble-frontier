@@ -125,13 +125,13 @@ void Msfm3d::callback_position(const gazebo_msgs::LinkStates msg)
 {
   ROS_INFO("Getting vehicle pose...");
   if (!receivedPosition) receivedPosition = 1;
-  position[0] = msg.pose[102].position.x;
-  position[1] = msg.pose[102].position.y;
-  position[2] = msg.pose[102].position.z;
-  q.x = msg.pose[102].orientation.x;
-  q.y = msg.pose[102].orientation.y;
-  q.z = msg.pose[102].orientation.z;
-  q.w = msg.pose[102].orientation.w;
+  position[0] = msg.pose[77].position.x;
+  position[1] = msg.pose[77].position.y;
+  position[2] = msg.pose[77].position.z;
+  q.x = msg.pose[77].orientation.x;
+  q.y = msg.pose[77].orientation.y;
+  q.z = msg.pose[77].orientation.z;
+  q.w = msg.pose[77].orientation.w;
   ROS_INFO("Robot pose updated!");
 }
 
@@ -232,15 +232,17 @@ void Msfm3d::updatePath(const float goal[3]){
   float query[3]; // intermediate x,y,z coordinates for another operation
   float grad[3]; // gradient at the current point
   float gradcorner[24]; // corner voxel gradients
+  float grad_norm; // norm of the gradient vector
   std::vector<float> path;
 
 
   // 3D Interpolation intermediate values from https://en.wikipedia.org/wiki/Trilinear_interpolation
   float xd, yd, zd, c00, c01, c10, c11, c0, c1; // 3D linear interpolation weights.
-  float step = voxel_size/2.0;
+  float step = voxel_size/4.0;
 
   // Path message for ROS
   nav_msgs::Path newpathmsg;
+  geometry_msgs:: PoseStamped pose;
   newpathmsg.header.frame_id = frame;
 
   // ROS_INFO("Variables declared.");
@@ -251,7 +253,7 @@ void Msfm3d::updatePath(const float goal[3]){
   }
 
   // Run loop until the path is within a voxel of the robot.
-  while ((dist(position, point, 3) > voxel_size) && (path.size() < 300)) {
+  while ((dist(position, point, 3) > voxel_size) && (path.size() < 600)) {
     // Find the corner indices to the current point
     for (int i=0; i<3; i++) ijk000[i] = floor((point[i] - esdf.min[i])/voxel_size);
     corner[0] = mindex3(ijk000[0], ijk000[1], ijk000[2], esdf.size[0], esdf.size[1]);
@@ -290,9 +292,11 @@ void Msfm3d::updatePath(const float goal[3]){
       c0 = (1.0-yd)*c00 + yd*c10;
       c1 = (1.0-yd)*c01 + yd*c11;
       grad[i] = (1.0-zd)*c0 + zd*c1;
-      if (std::abs(grad[i]) > 1.0){
-        grad[i] = (float)sign(grad[i]);
-      }
+    }
+    // Normalize the size of the gradient vector if it is too large
+    grad_norm = std::sqrt(grad[0]*grad[0] + grad[1]*grad[1] + grad[2]*grad[2]);
+    if (grad_norm > 1){
+      for (int i=0; i<3; i++) grad[i] = grad[i]/grad_norm;
     }
 
     // ROS_INFO("3D Interpolation performed.");
@@ -307,15 +311,13 @@ void Msfm3d::updatePath(const float goal[3]){
   }
 
   // Add path vector to path message for plotting in rviz
-  int count = 0;
-  ROS_INFO("Path to goal:");
+  ROS_INFO("Path finished:");
   for (int i=(path.size()-3); i>=0; i=i-3){
-    newpathmsg.poses[count].header.frame_id = frame;
-    newpathmsg.poses[count].pose.position.x = path[i];
-    newpathmsg.poses[count].pose.position.y = path[i+1];
-    newpathmsg.poses[count].pose.position.z = path[i+2];
-    ROS_INFO("[%f, %f, %f]", path[i], path[i+1], path[i+2]);
-    count++;
+    pose.header.frame_id = frame;
+    pose.pose.position.x = path[i];
+    pose.pose.position.y = path[i+1];
+    pose.pose.position.z = path[i+2];
+    newpathmsg.poses.push_back(pose);
   }
   pathmsg = newpathmsg;
 }
@@ -745,7 +747,7 @@ int main(int argc, char **argv)
    * will exit when Ctrl-C is pressed, or the node is shutdown by the master.
    */
   int i = 0;
-  ros::Rate r(10); // 1 hz
+  ros::Rate r(2); // 1 hz
   clock_t tStart;
   int npixels;
   int spins = 0;
@@ -788,10 +790,12 @@ int main(int argc, char **argv)
         frontierGoal.point.z = frontierList[14];
         for (int i=0; i<3; i++) goal[i] = frontierList[12+i];
         pub1.publish(frontierGoal);
+        ROS_INFO("Goal point published!");
 
         // Output and publish path
         planner.updatePath(goal);
         pub2.publish(planner.pathmsg);
+        ROS_INFO("Path to goal published!");
 
         // Output reach matrix to .csv
         if (spins < 2) {
