@@ -6,6 +6,7 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <gazebo_msgs/LinkStates.h>
 #include <geometry_msgs/PointStamped.h>
+#include <visualization_msgs/MarkerArray.h>
 #include <nav_msgs/Path.h>
 #include "msfm3d.c"
 
@@ -58,8 +59,10 @@ class Msfm3d
     float R[9]; // Rotation matrix
     double * reach; // reachability grid (output from reach())
     bool * frontier;
+    int frontier_size = 0;
     sensor_msgs::PointCloud2 PC2msg;
     nav_msgs::Path pathmsg;
+    visualization_msgs::MarkerArray frontiermsg;
     struct ESDF {
       double * data; // esdf matrix pointer
       bool * seen; // seen matrix pointer
@@ -81,6 +84,7 @@ class Msfm3d
     void getEuler(); // Updates euler array given the current quaternion values
     void getRotationMatrix(); // Updates Rotation Matrix given the current quaternion values
     void updatePath(const float goal[3]); // Updates the path vector from the goal frontier point to the robot location
+    void updateFrontierMsg(); // Updates the frontiermsg MarkerArray with the frontier matrix for publishing.
 };
 
 void Msfm3d::getRotationMatrix()
@@ -233,6 +237,9 @@ void Msfm3d::updatePath(const float goal[3]){
   float grad[3]; // gradient at the current point
   float gradcorner[24]; // corner voxel gradients
   float grad_norm; // norm of the gradient vector
+  float dist_robot2path = 10*voxel_size; // distance of the robot to the path
+  float position2D[2];
+  float point2D[2];
   std::vector<float> path;
 
 
@@ -253,7 +260,7 @@ void Msfm3d::updatePath(const float goal[3]){
   }
 
   // Run loop until the path is within a voxel of the robot.
-  while ((dist(position, point, 3) > voxel_size) && (path.size() < 600)) {
+  while ((dist_robot2path > 1.0*voxel_size) && (path.size() < 30000)) {
     // Find the corner indices to the current point
     for (int i=0; i<3; i++) ijk000[i] = floor((point[i] - esdf.min[i])/voxel_size);
     corner[0] = mindex3(ijk000[0], ijk000[1], ijk000[2], esdf.size[0], esdf.size[1]);
@@ -295,8 +302,11 @@ void Msfm3d::updatePath(const float goal[3]){
     }
     // Normalize the size of the gradient vector if it is too large
     grad_norm = std::sqrt(grad[0]*grad[0] + grad[1]*grad[1] + grad[2]*grad[2]);
-    if (grad_norm > 1){
-      for (int i=0; i<3; i++) grad[i] = grad[i]/grad_norm;
+    if (grad_norm > 0.25){
+      for (int i=0; i<3; i++) grad[i] = std::sqrt(0.25)*grad[i]/grad_norm;
+    }
+    if (grad_norm < 0.05){
+      for (int i=0; i<3; i++) grad[i] = std::sqrt(0.05)*grad[i]/grad_norm;
     }
 
     // ROS_INFO("3D Interpolation performed.");
@@ -308,10 +318,19 @@ void Msfm3d::updatePath(const float goal[3]){
     }
     // ROS_INFO("[%f, %f, %f] added to path.", point[0], point[1], point[2]);
 
+    // Update the robot's distance to the path
+    if (ground){
+      position2D[0] = position[0];
+      position2D[1] = position[1];
+      point2D[0] = point[0];
+      point2D[1] = point[1];
+      dist_robot2path = dist(position2D, point2D, 2);
+    }
+    else {dist_robot2path = dist(position, point, 3);}
   }
 
   // Add path vector to path message for plotting in rviz
-  ROS_INFO("Path finished:");
+  ROS_INFO("Path finished of length %d", (int)path.size());
   for (int i=(path.size()-3); i>=0; i=i-3){
     pose.header.frame_id = frame;
     pose.pose.position.x = path[i];
@@ -321,6 +340,55 @@ void Msfm3d::updatePath(const float goal[3]){
   }
   pathmsg = newpathmsg;
 }
+
+void Msfm3d::updateFrontierMsg() {
+  visualization_msgs::Marker marker;
+  visualization_msgs::MarkerArray newMarkerArray;
+  int npixels = esdf.size[0]*esdf.size[1]*esdf.size[2];
+  int count = 1;
+  float point[3];
+  int diff;
+  for (int i=0; i<npixels; i++){
+    if (frontier[i]){
+      index3_xyz(i, point);
+      marker.header.frame_id = frame;
+      marker.header.stamp = ros::Time();
+      marker.id = count;
+      marker.type = visualization_msgs::Marker::CUBE;
+      marker.action = visualization_msgs::Marker::ADD;
+      marker.pose.position.x = point[0];
+      marker.pose.position.y = point[1];
+      marker.pose.position.z = point[2];
+      marker.pose.orientation.x = 0.0;
+      marker.pose.orientation.y = 0.0;
+      marker.pose.orientation.z = 0.0;
+      marker.pose.orientation.w = 1.0;
+      marker.scale.x = voxel_size;
+      marker.scale.y = voxel_size;
+      marker.scale.z = voxel_size;
+      marker.color.a = 0.75; // Alpha value
+      marker.color.r = 0.0; // red
+      marker.color.g = 1.0; // green
+      marker.color.b = 0.0; // blue
+      newMarkerArray.markers.push_back(marker);
+      count++;
+    }
+  }
+  if (frontier_size < count) {
+    diff = count - frontier_size;
+    for (int i=0; i < diff; i++){
+      marker.header.frame_id = frame;
+      marker.header.stamp = ros::Time();
+      marker.id = frontier_size + i + 1;
+      marker.type = visualization_msgs::Marker::CUBE;
+      marker.action = visualization_msgs::Marker::DELETE;
+      newMarkerArray.markers.push_back(marker);
+    }
+  }
+  frontier_size = count;
+  frontiermsg = newMarkerArray;
+}
+
 
 void updateFrontier(Msfm3d& planner){
   int npixels = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
@@ -735,11 +803,12 @@ int main(int argc, char **argv)
   ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   ros::Subscriber sub2 = n.subscribe("/gazebo/link_states", 1, &Msfm3d::callback_position, &planner);
 
-  ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("/X1/nearest_frontier", 1);
+  ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("/X1/nearest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
   frontierGoal.header.frame_id = planner.frame;
 
-  ros::Publisher pub2 = n.advertise<nav_msgs::Path>("/X1/planned_path", 1);
+  ros::Publisher pub2 = n.advertise<nav_msgs::Path>("/X1/planned_path", 5);
+  ros::Publisher pub3 = n.advertise<visualization_msgs::MarkerArray>("/X1/frontier", 100);
 
   /**
    * ros::spin() will enter a loop, pumping callbacks.  With this version, all
@@ -771,12 +840,15 @@ int main(int argc, char **argv)
         ROS_INFO("ESDF at Position: %f", planner.esdf.data[i]);
 
         // Find frontier cells and add them to planner.frontier for output to file.
+        // Publish frontiers as MarkerArray
         updateFrontier(planner);
+        planner.updateFrontierMsg();
+        pub3.publish(planner.frontiermsg);
         
         // Call msfm3d function
         tStart = clock();
         ROS_INFO("Reachability matrix calculating...");
-        reach(planner, 0, 0, 10);
+        reach(planner, 1, 1, 10);
         ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
         // ROS_INFO("Reachability matrix calculated.");
 

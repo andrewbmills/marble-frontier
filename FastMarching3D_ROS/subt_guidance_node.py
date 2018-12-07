@@ -117,7 +117,7 @@ class guidance_controller:
 		self.command.angular.z = 0.0
 
 	def start(self):
-		rate = rospy.Rate(1.0) # 10Hz
+		rate = rospy.Rate(10.0) # 10Hz
 		while not rospy.is_shutdown():
 			rate.sleep()
 			self.updateCommand()
