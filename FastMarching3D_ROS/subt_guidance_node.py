@@ -47,18 +47,13 @@ class guidance_controller:
 
 		# Convert the body frame velocity of the robot to inertial frame
 		if (self.command.linear.x == 0.0): # Set velocity to nonzero if it is currently zero
-			self.command.linear.x = 1.0
+			self.command.linear.x = self.speed
 		velocity = np.array([[self.command.linear.x], [self.command.linear.y], [self.command.linear.z]]) # using commanded velocity for now (use actual later)
 		velocity = np.matmul(self.R, velocity)
 		# print('velocity = ', velocity)
 
 		# Find the lookahead/carrot point for the guidance controller
 		p_L2, v_L2 = guidance.find_Lookahead_Discrete_3D(self.path, self.position, self.speed*self.Tstar, 0, 0)
-		# print("L2: [%f, %f, %f]" % (p_L2[0], p_L2[1], p_L2[2]))
-		# print("robot: [%f, %f, %f]" % (self.position[0], self.position[1], self.position[2]))
-		# L2_vec = p_L2 - self.position
-		# print("L2-robot: [%f, %f, %f]" % (L2_vec[0], L2_vec[1], L2_vec[2]))
-		# print("velocity: [%f, %f, %f]" % (velocity[0,0], velocity[1,0], velocity[2,0]))
 
 		# Generate a lateral acceleration command from the lookahead point
 		if self.controller_type == 'trajectory_shaping':
@@ -105,7 +100,6 @@ class guidance_controller:
 		# Initialize Publisher topic
 		self.pubTopic = '/' + name + '/cmd_vel';
 		self.pub = rospy.Publisher(self.pubTopic, Twist, queue_size=10)
-		# self.pub = rospy.Publisher('/X1/cmd_vel', Twist, queue_size=10)
 
 		# Initialize twist object for publishing
 		self.command = Twist()

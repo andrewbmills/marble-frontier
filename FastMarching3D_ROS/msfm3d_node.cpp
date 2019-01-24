@@ -25,9 +25,15 @@ float byte2Float(const int a[4])
   return byteFloat.f;
 }
 
-float dist(float * a, float * b, const int length){
+float dist2(const float a[2], const float b[2]){
   float sum;
-  for (int i=0; i < length; i++) sum += (b[i] - a[i])*(b[i] - a[i]);
+  for (int i=0; i < 2; i++) sum += (b[i] - a[i])*(b[i] - a[i]);
+  return std::sqrt(sum);
+}
+
+float dist3(const float a[3], const float b[3]){
+  float sum;
+  for (int i=0; i < 3; i++) sum += (b[i] - a[i])*(b[i] - a[i]);
   return std::sqrt(sum);
 }
 
@@ -54,7 +60,7 @@ class Msfm3d
     bool receivedPointCloud = 0;
     bool newCloud = 0;
     float voxel_size; // voxblox voxel size
-    float position[3]; // robot position
+    float position[3] = {69.0, 420.0, 1337.0}; // robot position
     float euler[3]; // robot orientation in euler angles
     float R[9]; // Rotation matrix
     double * reach; // reachability grid (output from reach())
@@ -127,15 +133,17 @@ void Msfm3d::getEuler()
 
 void Msfm3d::callback_position(const gazebo_msgs::LinkStates msg)
 {
+  // ***REMEMBER*** The number here is hard coded.  This needs to be changed on system reset
+  // Use "rostopic echo -n 1 /gazebo/link_states/name"
   ROS_INFO("Getting vehicle pose...");
   if (!receivedPosition) receivedPosition = 1;
-  position[0] = msg.pose[77].position.x;
-  position[1] = msg.pose[77].position.y;
-  position[2] = msg.pose[77].position.z;
-  q.x = msg.pose[77].orientation.x;
-  q.y = msg.pose[77].orientation.y;
-  q.z = msg.pose[77].orientation.z;
-  q.w = msg.pose[77].orientation.w;
+  position[0] = msg.pose[102].position.x;
+  position[1] = msg.pose[102].position.y;
+  position[2] = msg.pose[102].position.z;
+  q.x = msg.pose[102].orientation.x;
+  q.y = msg.pose[102].orientation.y;
+  q.z = msg.pose[102].orientation.z;
+  q.w = msg.pose[102].orientation.w;
   ROS_INFO("Robot pose updated!");
 }
 
@@ -184,7 +192,11 @@ void Msfm3d::parsePointCloud()
 
     // Replace max, min, and size esdf properties
     for (int i=0; i<4; i++) { esdf.max[i] = xyzi_max[i]; esdf.min[i] = xyzi_min[i]; }
-    for (int i=0; i<3; i++) esdf.size[i] = roundf((esdf.max[i]-esdf.min[i])/voxel_size);
+    for (int i=0; i<3; i++) esdf.size[i] = roundf((esdf.max[i]-esdf.min[i])/voxel_size) + 1;
+
+    // Print out the max and min values with the size values.
+    ROS_INFO("The (x,y,z) ranges are (%0.2f to %0.2f, %0.2f to %0.2f, %0.2f to %0.2f).", esdf.min[0], esdf.max[0], esdf.min[1], esdf.max[1], esdf.min[2], esdf.max[2]);
+    ROS_INFO("The ESDF dimension sizes are %d, %d, and %d.", esdf.size[0], esdf.size[1], esdf.size[2]);
 
     // Empty current esdf and seen matrix and create a new ones.
     delete[] esdf.data;
@@ -202,6 +214,7 @@ void Msfm3d::parsePointCloud()
     for (int i=0; i<(5*(PC2msg.width)); i=i+5) {
       point[0] = xyzis[i]; point[1] = xyzis[i+1]; point[2] = xyzis[i+2];
       index = xyz_index3(point);
+      if (index > (esdf.size[0]*esdf.size[1]*esdf.size[2])) ROS_INFO("WARNING: Parsing index is greater than array sizes!");
       esdf.data[index] = (double)(xyzis[i+3]);
       esdf.seen[index] = (xyzis[i+4]>0.0);
     }
@@ -324,9 +337,9 @@ void Msfm3d::updatePath(const float goal[3]){
       position2D[1] = position[1];
       point2D[0] = point[0];
       point2D[1] = point[1];
-      dist_robot2path = dist(position2D, point2D, 2);
+      dist_robot2path = dist2(position2D, point2D);
     }
-    else {dist_robot2path = dist(position, point, 3);}
+    else {dist_robot2path = dist3(position, point);}
   }
 
   // Add path vector to path message for plotting in rviz
@@ -391,22 +404,22 @@ void Msfm3d::updateFrontierMsg() {
 
 
 void updateFrontier(Msfm3d& planner){
+  ROS_INFO("Beginning Frontier update step...");
   int npixels = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
   delete[] planner.frontier;
+  ROS_INFO("Previous frontier deleted.  Allocating new frontier of size %d...", npixels);
   planner.frontier = NULL;
   planner.frontier = new bool [npixels] { }; // Initialize the frontier array as size npixels with all values false.
+  ROS_INFO("New frontier array added with all values set to false.");
   float point[3];
   float query[3];
   int neighbor[6];
   bool frontier = 0;
-  float vec2vox[3];
-  int dvoxel = 2;
-  float z_body;
-  if (planner.ground) planner.getRotationMatrix();
+
   // Extra variables for ground vehicle case so that only frontier close to vehicle plane are chosen.
   for (int i=0; i<npixels; i++){
     // Check if the voxel has been seen and is unoccupied
-    if (planner.esdf.seen[i] && (planner.esdf.data[i]>0)){
+    if (planner.esdf.seen[i] && (planner.esdf.data[i]>0.0)){
       // Check if the voxel is a frontier by querying adjacent voxels
       planner.index3_xyz(i, point);
       for (int j=0; j<3; j++) query[j] = point[j];
@@ -418,14 +431,34 @@ void updateFrontier(Msfm3d& planner){
         neighbor[2*j+1] = planner.xyz_index3(query);
         query[j] = point[j];
       }
+      // ROS_INFO("There are %d voxels in the current ESDF.", npixels);
+      // ROS_INFO("Neighbor indices for cell %d are %d, %d, %d, %d, %d, and %d.", i, neighbor[0], neighbor[1], neighbor[2], neighbor[3], neighbor[4], neighbor[5]);
       // Check if the neighbor indices are unseen voxels
-      for (int j=0; j<6; j++){
-        if (!planner.esdf.seen[neighbor[j]]) frontier = 1;
+      if (planner.ground) {
+        for (int j=0; j<4; j++) {
+          if (!planner.esdf.seen[neighbor[j]] && !(i == neighbor[j])) frontier = 1;
+        }
       }
-      // Check if the point is close to in-plane with the robot if it's a ground robot
-      if (frontier && planner.ground){
+      else {
+        for (int j=0; j<6; j++) {
+          if (!planner.esdf.seen[neighbor[j]]  && !(i == neighbor[j])) frontier = 1;
+        }
+      }
+      // Check if the point is on the ground if it is a ground robot
+      if (frontier && planner.ground) {
         // Only consider frontiers on the floor
-        if (planner.esdf.data[neighbor[5]] > (0.0)) frontier = 0;
+        if (planner.esdf.data[neighbor[5]] > (0.01)) frontier = 0;
+        if (!planner.esdf.seen[neighbor[5]]) frontier = 0;
+        // Eliminate frontiers that are adjacent to occupied cells (unless it's the bottom neighbor for the ground case)
+        for (int j=0; j<5; j++) {
+          if (planner.esdf.data[neighbor[j]] < (0.01) && planner.esdf.seen[neighbor[j]]) frontier = 0;
+        }
+      }
+      else if (frontier && !planner.ground) {
+        // Eliminate frontiers that are adjacent to occupied cells
+        for (int j=0; j<6; j++) {
+          if (planner.esdf.data[neighbor[j]] < (0.01) && planner.esdf.seen[neighbor[j]]) frontier = 0;
+        }
       }
       // If the current voxel is a frontier, add the  current voxel location to the cost and frontierList
       if (frontier) {
@@ -434,6 +467,7 @@ void updateFrontier(Msfm3d& planner){
       }
     }
   }
+  ROS_INFO("Frontier updated.");
 }
 
 void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5]){
@@ -442,15 +476,12 @@ void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5]){
   float point[3];
   float query[3];
   int neighbor[6];
-  bool frontier = 0;
+  // bool frontier = 0;
   int slot = 0;
   double newcost[5];
-  float vec2vox[3];
-  int dvoxel = 2;
-  float z_body;
-  // Extra variables for ground vehicle case so that only frontier close to vehicle plane are chosen.
+
   if (planner.ground) {
-    planner.getRotationMatrix();
+    // planner.getRotationMatrix();
     // ROS_INFO("Rotation Matrix: [%f, %f, %f\n%f, %f, %f\n%f, %f, %f]", planner.R[0], planner.R[1], planner.R[2],
     //   planner.R[3], planner.R[4], planner.R[5], planner.R[6], planner.R[7], planner.R[8]);
     // ROS_INFO("dz = %f", dvoxel*planner.voxel_size);
@@ -461,30 +492,30 @@ void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5]){
   for (int i=0; i<npixels; i++){
     // Check if the voxel has been seen, is unoccupied and it costs less to reach it than the 5 cheapest voxels
     if (planner.esdf.seen[i] && (planner.reach[i]<cost[0]) && (planner.esdf.data[i]>0 && planner.reach[i] > (double)0.0)){
-      // Check if the voxel is a frontier by querying adjacent voxels
+      // // Check if the voxel is a frontier by querying adjacent voxels
       planner.index3_xyz(i, point);
-      for (int j=0; j<3; j++) query[j] = point[j];
-      // Create an array of neighbor indices
-      for (int j=0; j<3; j++){
-        if (point[j] < (planner.esdf.max[j] - planner.voxel_size)) query[j] = point[j] + planner.voxel_size;
-        neighbor[2*j] = planner.xyz_index3(query);
-        if (point[j] > (planner.esdf.min[j] + planner.voxel_size)) query[j] = point[j] - planner.voxel_size;
-        neighbor[2*j+1] = planner.xyz_index3(query);
-        query[j] = point[j];
-      }
-      // Check if the neighbor indices are unseen voxels
-      for (int j=0; j<6; j++){
-        if (!planner.esdf.seen[neighbor[j]]) frontier = 1;
-      }
-      // Check if the point is close to in-plane with the robot if it's a ground robot
-      if (frontier && planner.ground){
-        // Check if the candidate voxel is on the ground
-        if (planner.esdf.data[neighbor[5]] > (0.5*planner.voxel_size)) frontier = 0;
-      }
+      // for (int j=0; j<3; j++) query[j] = point[j];
+      // // Create an array of neighbor indices
+      // for (int j=0; j<3; j++){
+      //   if (point[j] < (planner.esdf.max[j] - planner.voxel_size)) query[j] = point[j] + planner.voxel_size;
+      //   neighbor[2*j] = planner.xyz_index3(query);
+      //   if (point[j] > (planner.esdf.min[j] + planner.voxel_size)) query[j] = point[j] - planner.voxel_size;
+      //   neighbor[2*j+1] = planner.xyz_index3(query);
+      //   query[j] = point[j];
+      // }
+      // // Check if the neighbor indices are unseen voxels
+      // for (int j=0; j<6; j++){
+      //   if (!planner.esdf.seen[neighbor[j]]) frontier = 1;
+      // }
+      // // Check if the point is close to in-plane with the robot if it's a ground robot
+      // if (frontier && planner.ground){
+      //   // Check if the candidate voxel is on the ground
+      //   if (planner.esdf.data[neighbor[5]] > (0.5*planner.voxel_size)) frontier = 0;
+      // }
 
       // If the current voxel is a frontier, add the current voxel location to the cost and frontierList
-      if (frontier) {
-        frontier = 0; // reset for next loop
+      if (planner.frontier[i]) {
+        // frontier = 0; // reset for next loop
         // Put the new point in the correct slot
         for (int j=0; j<5; j++) {
           if (planner.reach[i]<cost[j]) slot = j;
@@ -757,7 +788,7 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
     free(neg_listx);
     free(neg_listy);
     free(neg_listz);
-    free(Frozen);
+    delete[] Frozen;
 }
 
 int main(int argc, char **argv)
@@ -870,25 +901,25 @@ int main(int argc, char **argv)
         ROS_INFO("Path to goal published!");
 
         // Output reach matrix to .csv
-        if (spins < 2) {
-          // Output the frontier
-          FILE * myfile;
-          myfile = fopen("frontier.csv", "w");
-          npixels = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
-          fprintf(myfile, "%d, %d, %d, %f\n", planner.esdf.size[0], planner.esdf.size[1], planner.esdf.size[2], planner.voxel_size);
-          for (int i=0; i<npixels-1; i++) fprintf(myfile, "%d, ", planner.frontier[i]);
-          fprintf(myfile, "%d", planner.frontier[npixels]);
-          fclose(myfile);
+        // if (spins < 2) {
+        //   // Output the frontier
+        //   FILE * myfile;
+        //   myfile = fopen("frontier.csv", "w");
+        //   npixels = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
+        //   fprintf(myfile, "%d, %d, %d, %f\n", planner.esdf.size[0], planner.esdf.size[1], planner.esdf.size[2], planner.voxel_size);
+        //   for (int i=0; i<npixels-1; i++) fprintf(myfile, "%d, ", planner.frontier[i]);
+        //   fprintf(myfile, "%d", planner.frontier[npixels]);
+        //   fclose(myfile);
 
-          // Output the reachability grid
-          myfile = fopen("reach.csv", "w");
-          fprintf(myfile, "%d, %d, %d, %f\n", planner.esdf.size[0], planner.esdf.size[1], planner.esdf.size[2], planner.voxel_size);
-          for (int i=0; i<npixels-1; i++) fprintf(myfile, "%f, ", planner.reach[i]);
-          fprintf(myfile, "%f", planner.reach[npixels]);
-          fclose(myfile);
+        //   // Output the reachability grid
+        //   myfile = fopen("reach.csv", "w");
+        //   fprintf(myfile, "%d, %d, %d, %f\n", planner.esdf.size[0], planner.esdf.size[1], planner.esdf.size[2], planner.voxel_size);
+        //   for (int i=0; i<npixels-1; i++) fprintf(myfile, "%f, ", planner.reach[i]);
+        //   fprintf(myfile, "%f", planner.reach[npixels]);
+        //   fclose(myfile);
 
-          spins++;
-        }
+        //   spins++;
+        // }
       }
     }
   }
