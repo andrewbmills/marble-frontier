@@ -66,6 +66,7 @@ class Msfm3d
     double * reach; // reachability grid (output from reach())
     bool * frontier;
     int frontier_size = 0;
+    int link_id = -1;
     sensor_msgs::PointCloud2 PC2msg;
     nav_msgs::Path pathmsg;
     visualization_msgs::MarkerArray frontiermsg;
@@ -135,16 +136,32 @@ void Msfm3d::callback_position(const gazebo_msgs::LinkStates msg)
 {
   // ***REMEMBER*** The number here is hard coded.  This needs to be changed on system reset
   // Use "rostopic echo -n 1 /gazebo/link_states/name"
-  ROS_INFO("Getting vehicle pose...");
-  if (!receivedPosition) receivedPosition = 1;
-  position[0] = msg.pose[102].position.x;
-  position[1] = msg.pose[102].position.y;
-  position[2] = msg.pose[102].position.z;
-  q.x = msg.pose[102].orientation.x;
-  q.y = msg.pose[102].orientation.y;
-  q.z = msg.pose[102].orientation.z;
-  q.w = msg.pose[102].orientation.w;
-  ROS_INFO("Robot pose updated!");
+  // Possible numbers include 77 and 102
+
+  // Find the link index
+  int i = 0;
+  if (link_id == -1){
+    while (link_id == -1) {
+      if (msg.name[i] == "X1::X1/base_link") link_id = i;
+      if (i > 200) link_id = i;
+      i++;
+    }
+  }
+  if (link_id > 200) {
+    ROS_INFO("ERROR: Can't find vehicle state in /gazebo/link_states/.");
+  }
+  else {
+    ROS_INFO("Getting vehicle pose with link_id = %d...", link_id);
+    if (!receivedPosition) receivedPosition = 1;
+    position[0] = msg.pose[link_id].position.x;
+    position[1] = msg.pose[link_id].position.y;
+    position[2] = msg.pose[link_id].position.z;
+    q.x = msg.pose[link_id].orientation.x;
+    q.y = msg.pose[link_id].orientation.y;
+    q.z = msg.pose[link_id].orientation.z;
+    q.w = msg.pose[link_id].orientation.w;
+    ROS_INFO("Robot pose updated!");
+  }
 }
 
 void Msfm3d::callback(sensor_msgs::PointCloud2 msg)
@@ -273,7 +290,7 @@ void Msfm3d::updatePath(const float goal[3]){
   }
 
   // Run loop until the path is within a voxel of the robot.
-  while ((dist_robot2path > 1.0*voxel_size) && (path.size() < 30000)) {
+  while ((dist_robot2path > 2.0*voxel_size) && (path.size() < 30000)) {
     // Find the corner indices to the current point
     for (int i=0; i<3; i++) ijk000[i] = floor((point[i] - esdf.min[i])/voxel_size);
     corner[0] = mindex3(ijk000[0], ijk000[1], ijk000[2], esdf.size[0], esdf.size[1]);
@@ -480,12 +497,6 @@ void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5]){
   int slot = 0;
   double newcost[5];
 
-  if (planner.ground) {
-    // planner.getRotationMatrix();
-    // ROS_INFO("Rotation Matrix: [%f, %f, %f\n%f, %f, %f\n%f, %f, %f]", planner.R[0], planner.R[1], planner.R[2],
-    //   planner.R[3], planner.R[4], planner.R[5], planner.R[6], planner.R[7], planner.R[8]);
-    // ROS_INFO("dz = %f", dvoxel*planner.voxel_size);
-  }
   // Initialize cost list with large descending values.
   for (int i=0; i<5; i++) cost[i] = 1e4 - 100*i;
   // Main  
@@ -494,24 +505,6 @@ void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5]){
     if (planner.esdf.seen[i] && (planner.reach[i]<cost[0]) && (planner.esdf.data[i]>0 && planner.reach[i] > (double)0.0)){
       // // Check if the voxel is a frontier by querying adjacent voxels
       planner.index3_xyz(i, point);
-      // for (int j=0; j<3; j++) query[j] = point[j];
-      // // Create an array of neighbor indices
-      // for (int j=0; j<3; j++){
-      //   if (point[j] < (planner.esdf.max[j] - planner.voxel_size)) query[j] = point[j] + planner.voxel_size;
-      //   neighbor[2*j] = planner.xyz_index3(query);
-      //   if (point[j] > (planner.esdf.min[j] + planner.voxel_size)) query[j] = point[j] - planner.voxel_size;
-      //   neighbor[2*j+1] = planner.xyz_index3(query);
-      //   query[j] = point[j];
-      // }
-      // // Check if the neighbor indices are unseen voxels
-      // for (int j=0; j<6; j++){
-      //   if (!planner.esdf.seen[neighbor[j]]) frontier = 1;
-      // }
-      // // Check if the point is close to in-plane with the robot if it's a ground robot
-      // if (frontier && planner.ground){
-      //   // Check if the candidate voxel is on the ground
-      //   if (planner.esdf.data[neighbor[5]] > (0.5*planner.voxel_size)) frontier = 0;
-      // }
 
       // If the current voxel is a frontier, add the current voxel location to the cost and frontierList
       if (planner.frontier[i]) {
@@ -847,13 +840,13 @@ int main(int argc, char **argv)
    * will exit when Ctrl-C is pressed, or the node is shutdown by the master.
    */
   int i = 0;
-  ros::Rate r(2); // 1 hz
+  ros::Rate r(6); // 3 hz
   clock_t tStart;
   int npixels;
   int spins = 0;
   float frontierList[15];
   double frontierCost[5];
-  float goal[3];
+  float goal[3] = {0.0, 0.0, 0.0};
   r.sleep();
   while (ros::ok())
   {
@@ -875,26 +868,29 @@ int main(int argc, char **argv)
         updateFrontier(planner);
         planner.updateFrontierMsg();
         pub3.publish(planner.frontiermsg);
+        ROS_INFO("Frontier MarkerArray published!");
         
         // Call msfm3d function
         tStart = clock();
         ROS_INFO("Reachability matrix calculating...");
         reach(planner, 1, 1, 10);
         ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
-        // ROS_INFO("Reachability matrix calculated.");
 
-        // Find frontiers
-        findFrontier(planner, frontierList, frontierCost);
-        for (int i=0; i<5; i++) ROS_INFO("Frontier Position: [x: %f, y: %f, z: %f, cost: %f]", frontierList[3*i], frontierList[3*i+1], frontierList[3*i+2], frontierCost[i]);
+        // Choose a new goal point if previous point is no longer a frontier
+        if (!planner.frontier[planner.xyz_index3(goal)]){
+          // Find frontiers
+          findFrontier(planner, frontierList, frontierCost);
+          for (int i=0; i<5; i++) ROS_INFO("Frontier Position: [x: %f, y: %f, z: %f, cost: %f]", frontierList[3*i], frontierList[3*i+1], frontierList[3*i+2], frontierCost[i]);
 
-        // Publish new frontier goal location as a Point message
-        frontierGoal.point.x = frontierList[12];
-        frontierGoal.point.y = frontierList[13];
-        frontierGoal.point.z = frontierList[14];
-        for (int i=0; i<3; i++) goal[i] = frontierList[12+i];
+          // Publish new frontier goal location as a Point message
+          frontierGoal.point.x = frontierList[12];
+          frontierGoal.point.y = frontierList[13];
+          frontierGoal.point.z = frontierList[14];
+          for (int i=0; i<3; i++) goal[i] = frontierList[12+i];
+        }
+        // Publish path and goal point
         pub1.publish(frontierGoal);
         ROS_INFO("Goal point published!");
-
         // Output and publish path
         planner.updatePath(goal);
         pub2.publish(planner.pathmsg);
@@ -918,7 +914,7 @@ int main(int argc, char **argv)
         //   fprintf(myfile, "%f", planner.reach[npixels]);
         //   fclose(myfile);
 
-        //   spins++;
+        spins++;
         // }
       }
     }
