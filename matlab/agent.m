@@ -10,7 +10,7 @@ classdef agent < handle
 %         carrot % path distance parameter
         occGrid
         gridDims
-        sensor
+        sensor % [range (m), field of view (radians]
         controlLims % [maxSpeed, maxTurnRate, maxDecel]
     end
    

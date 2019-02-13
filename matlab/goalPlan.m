@@ -1,5 +1,5 @@
-function [path] = frontierPlan(occGrid, position, hblob, minObsDist, figNum)
-%   (occupancy grid, agent position, blob detector, minimum obstacle distance, figure number)
+function [path] = goalPlan(occGrid, position, goal, minObsDist, figNum)
+%   (occupancy grid, agent position, agent goal, minimum obstacle distance, figure number)
     %% Create Reachability Grid
     speedGrid = bwdist(occGrid);
     satSpeedGrid = speedGrid;
@@ -10,20 +10,7 @@ function [path] = frontierPlan(occGrid, position, hblob, minObsDist, figNum)
     reachGrid = msfm(double(satSpeedGrid), [position(2); position(1)]);
 
     %%  Find frontier grid cells (Open cells adjacent to unexplored cells)
-    frontGrid = findFrontier(occGrid);
-    if nargin >= 3
-        [area, centroids, bbox, labels] = step(hblob, logical(frontGrid));
-    end
-    frontGrid = double(labels >= 1);
-    if sum(frontGrid(:)) <= 10
-        path = [];
-        return
-    end
-  
-    frontCost = frontGrid.*reachGrid + (1 - frontGrid)*1e6;
-    [~, idNext] = min(frontCost(:));
-    [i_goal, j_goal] = ind2sub(size(occGrid), idNext);
-    path = findPathContinuous(reachGrid, [i_goal, j_goal], [position(1), position(2)]);
+    path = findPathContinuous(reachGrid, [goal(2), goal(1)], [position(1), position(2)]);
     
     if nargin == 5
         figure(figNum)
@@ -41,15 +28,12 @@ function [path] = frontierPlan(occGrid, position, hblob, minObsDist, figNum)
 %         set(h, 'EdgeColor', 'none');
         title('Reachability (Cost)')
         subplot(2,2,3)
-        h = pcolor(frontGrid);
+        h = pcolor(occGrid);
         set(h, 'EdgeColor', 'none');
         hold on
-        for i = 1:size(bbox,1)
-            plot(centroids(i,1), centroids(i,2));
-            rectangle('Position', bbox(i,:));
-        end
+        plot(goal(1), goal(2), 'g*');
         hold off
-        title('Frontier')
+        title('Goal Point')
         subplot(2,2,4)
         h = pcolor(occGrid);
         set(h, 'EdgeColor', 'none');
@@ -65,4 +49,3 @@ function [path] = frontierPlan(occGrid, position, hblob, minObsDist, figNum)
     end
     
 end
-

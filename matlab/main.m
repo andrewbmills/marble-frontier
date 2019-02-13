@@ -19,7 +19,7 @@ set(h1, 'EdgeColor', 'none');
 %% Generate robot(s)
 x_agent = [144; 30; 0; 5]; % x (m), y (m), heading (rad from north), speed (m/s)
 % x_agent = [125; 125; 0; 5];
-sensor = [50, 2*pi];
+sensor = [50, 2*pi]; 
 agentGrid = 0.5*ones(m,n); % completely unknown
 agent1 = agent(x_agent, agentGrid, [width, height], sensor);
 agent1.sense(occGrid);
@@ -37,27 +37,36 @@ hblob.LabelMatrixOutputPort = true;
 hblob.MinimumBlobArea = 10;
 
 %% Simulate
-dt = 0.5;
+t = 0;
+dt = 0.5; % physics time step
+dt_plan = 5.0; % re-planning time step
+dt_plot = 5.0; % plotting time step
 gif_start = ones(4,1);
 filenames = {'robot1OccMap.gif', 'robot2OccMap.gif', 'robot1planner.gif', 'robot2planner.gif'};
 % filenames = {'robotAloneOccMap.gif', 'robotAlonePlanner.gif'};
-gif_flag = 1;
+gif_flag = 0; % Make .gif files boolean
 while true
     % Plan Path(s)
-    if ~frontierCheck(agent1.path(end,2), agent1.path(end,1), agent1.occGrid)
-        agent1.path = frontierPlan(agent1.occGrid, agent1.state(1:2), hblob, minObsDist, 5);
-        if isempty(agent1.path)
-            break
+    if (mod(t, dt_plan) == 0)
+        if ~frontierCheck(agent1.path(end,2), agent1.path(end,1), agent1.occGrid)
+            agent1.path = frontierPlan(agent1.occGrid, agent1.state(1:2), hblob, minObsDist, 5); % (occupancy grid, agent position, blob detector, minimum obstacle distance, figure number)
+            if isempty(agent1.path)
+                break
+            end
+        end
+        if ~frontierCheck(agent2.path(end,2), agent2.path(end,1), agent2.occGrid)
+            agent2.path = frontierPlan(agent2.occGrid, agent2.state(1:2), hblob, minObsDist, 6); % (occupancy grid, agent position, blob detector, minimum obstacle distance, figure number)
+            if isempty(agent2.path)
+                break
+            end
         end
     end
-    if ~frontierCheck(agent2.path(end,2), agent2.path(end,1), agent2.occGrid)
-        agent2.path = frontierPlan(agent2.occGrid, agent2.state(1:2), hblob, minObsDist, 6);
-        if isempty(agent2.path)
-            break
-        end
+    
+    % Plot vehicle positions and belief grid
+    if (mod(t, dt_plot) == 0)
+        agent1.plot(3)
+        agent2.plot(4)
     end
-    agent1.plot(3)
-    agent2.plot(4)
     
     % Evolve state until the end of the path is no longer a frontier
     if size(agent1.path,2) == 1
@@ -107,6 +116,7 @@ while true
         end
     end
     
+    t = t + dt;
 %     pause(dt);
 end
 

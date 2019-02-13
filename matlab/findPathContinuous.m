@@ -1,4 +1,6 @@
 function [path] = findPathContinuous(reachGrid, goal, start, step)
+%   (Cost to travel to each point in environment, goal point, start point,
+%   integration step)
 if nargin < 4
     step = 1;
 end
@@ -43,7 +45,7 @@ while true
     x = x_next;
     y = y_next;
     path = [x, y; path];
-    if norm([x,y]-start) < 1
+    if norm([x,y]-start) < 2
         break
     end
     if size(path,1) >= 1e5
