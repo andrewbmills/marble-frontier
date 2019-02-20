@@ -2,6 +2,7 @@
 
 
 #include <ros/ros.h>
+#include <math.h>
 // #include <geometry_msgs/Pose.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <gazebo_msgs/LinkStates.h>
@@ -53,6 +54,7 @@ class Msfm3d
     esdf.data = NULL;
     esdf.seen = NULL;
     frontier = NULL;
+    entrance = NULL;
     }
     std::string frame = "world";
     bool ground = 0;
@@ -63,8 +65,10 @@ class Msfm3d
     float position[3] = {69.0, 420.0, 1337.0}; // robot position
     float euler[3]; // robot orientation in euler angles
     float R[9]; // Rotation matrix
+    float origin[3]; // location in xyz coordinates where the robot entered the environment
     double * reach; // reachability grid (output from reach())
     bool * frontier;
+    bool * entrance;
     int frontier_size = 0;
     int link_id = -1;
     sensor_msgs::PointCloud2 PC2msg;
@@ -142,7 +146,8 @@ void Msfm3d::callback_position(const gazebo_msgs::LinkStates msg)
   int i = 0;
   if (link_id == -1){
     while (link_id == -1) {
-      if (msg.name[i] == "X1::X1/base_link") link_id = i;
+      // if (msg.name[i] == "X1::X1/base_link") link_id = i;
+      if (msg.name[i] == "X4::X4/base_link") link_id = i;
       if (i > 200) link_id = i;
       i++;
     }
@@ -199,7 +204,8 @@ void Msfm3d::parsePointCloud()
           if (i < 1){
             xyzi_max[j] = xyzis[5*i+j];
             xyzi_min[j] = xyzis[5*i+j];
-          } else {
+          }
+          else {
             if (xyzis[5*i+j] > xyzi_max[j]) xyzi_max[j] = xyzis[5*i+j];
             if (xyzis[5*i+j] < xyzi_min[j]) xyzi_min[j] = xyzis[5*i+j];
           }
@@ -208,7 +214,7 @@ void Msfm3d::parsePointCloud()
     }
 
     // Replace max, min, and size esdf properties
-    for (int i=0; i<4; i++) { esdf.max[i] = xyzi_max[i]; esdf.min[i] = xyzi_min[i]; }
+    for (int i=0; i<4; i++) { esdf.max[i] = xyzi_max[i] + voxel_size; esdf.min[i] = xyzi_min[i] - voxel_size; } // Add 1 voxel to the maxes and subtract 1 voxel from the mins to get desired frontier performance
     for (int i=0; i<3; i++) esdf.size[i] = roundf((esdf.max[i]-esdf.min[i])/voxel_size) + 1;
 
     // Print out the max and min values with the size values.
@@ -232,7 +238,15 @@ void Msfm3d::parsePointCloud()
       point[0] = xyzis[i]; point[1] = xyzis[i+1]; point[2] = xyzis[i+2];
       index = xyz_index3(point);
       if (index > (esdf.size[0]*esdf.size[1]*esdf.size[2])) ROS_INFO("WARNING: Parsing index is greater than array sizes!");
-      esdf.data[index] = (double)(xyzis[i+3]);
+      // esdf.data[index] = (double)(xyzis[i+3]);
+      // Use the hyperbolic tan function from the btraj paper
+      // esdf = v_max*(tanh(d - e) + 1)/2
+      if (xyzis[i+3] >= 0.0) {
+        esdf.data[index] = (double)(5.0*(tanh(xyzis[i+3] - exp(1.0)) + 1.0)/2.0);
+      }
+      else {
+        esdf.data[index] = (double)(0.0);
+      }
       esdf.seen[index] = (xyzis[i+4]>0.0);
     }
 
@@ -272,14 +286,13 @@ void Msfm3d::updatePath(const float goal[3]){
   float point2D[2];
   std::vector<float> path;
 
-
   // 3D Interpolation intermediate values from https://en.wikipedia.org/wiki/Trilinear_interpolation
   float xd, yd, zd, c00, c01, c10, c11, c0, c1; // 3D linear interpolation weights.
   float step = voxel_size/4.0;
 
   // Path message for ROS
   nav_msgs::Path newpathmsg;
-  geometry_msgs:: PoseStamped pose;
+  geometry_msgs::PoseStamped pose;
   newpathmsg.header.frame_id = frame;
 
   // ROS_INFO("Variables declared.");
@@ -428,6 +441,11 @@ void updateFrontier(Msfm3d& planner){
   planner.frontier = NULL;
   planner.frontier = new bool [npixels] { }; // Initialize the frontier array as size npixels with all values false.
   ROS_INFO("New frontier array added with all values set to false.");
+
+  delete[] planner.entrance;
+  planner.entrance = NULL;
+  planner.entrance = new bool [npixels] { }; // Initialize the entrance array as size npixels with all values false.
+
   float point[3];
   float query[3];
   int neighbor[6];
@@ -437,9 +455,11 @@ void updateFrontier(Msfm3d& planner){
   for (int i=0; i<npixels; i++){
     // Check if the voxel has been seen and is unoccupied
     if (planner.esdf.seen[i] && (planner.esdf.data[i]>0.0)){
+
       // Check if the voxel is a frontier by querying adjacent voxels
       planner.index3_xyz(i, point);
       for (int j=0; j<3; j++) query[j] = point[j];
+
       // Create an array of neighbor indices
       for (int j=0; j<3; j++){
         if (point[j] < (planner.esdf.max[j] - planner.voxel_size)) query[j] = point[j] + planner.voxel_size;
@@ -452,14 +472,17 @@ void updateFrontier(Msfm3d& planner){
       // ROS_INFO("Neighbor indices for cell %d are %d, %d, %d, %d, %d, and %d.", i, neighbor[0], neighbor[1], neighbor[2], neighbor[3], neighbor[4], neighbor[5]);
       // Check if the neighbor indices are unseen voxels
       if (planner.ground) {
-        for (int j=0; j<4; j++) {
+        for (int j=0; j<5; j++) {
           if (!planner.esdf.seen[neighbor[j]] && !(i == neighbor[j])) frontier = 1;
         }
       }
       else {
-        for (int j=0; j<6; j++) {
+        // For the time being, exclude the top neighbor (2nd to last neighbor)
+        // for (int j=0; j<6; j++) {
+        for (int j=0; j<4; j++) {
           if (!planner.esdf.seen[neighbor[j]]  && !(i == neighbor[j])) frontier = 1;
         }
+        if (!planner.esdf.seen[neighbor[5]]  && !(i == neighbor[5])) frontier = 1;
       }
       // Check if the point is on the ground if it is a ground robot
       if (frontier && planner.ground) {
@@ -477,6 +500,13 @@ void updateFrontier(Msfm3d& planner){
           if (planner.esdf.data[neighbor[j]] < (0.01) && planner.esdf.seen[neighbor[j]]) frontier = 0;
         }
       }
+
+      // Check if the voxel is at the entrance
+      if (frontier && (dist3(point, planner.origin) <= 25.0)) {
+        planner.entrance[i] = 1;
+        frontier = 0;
+      }
+
       // If the current voxel is a frontier, add the  current voxel location to the cost and frontierList
       if (frontier) {
         frontier = 0; // reset for next loop
@@ -491,14 +521,10 @@ void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5]){
   // findFrontier scans through the environment arrays and returns the 5 closest frontier locations in reachability distance.
   int npixels = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
   float point[3];
-  float query[3];
-  int neighbor[6];
-  // bool frontier = 0;
   int slot = 0;
-  double newcost[5];
 
   // Initialize cost list with large descending values.
-  for (int i=0; i<5; i++) cost[i] = 1e4 - 100*i;
+  for (int i=0; i<5; i++) cost[i] = 1e6 - 100*i;
   // Main  
   for (int i=0; i<npixels; i++){
     // Check if the voxel has been seen, is unoccupied and it costs less to reach it than the 5 cheapest voxels
@@ -519,6 +545,40 @@ void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5]){
         }
         cost[slot] = planner.reach[i];
         for (int j=0; j<3; j++) frontierList[3*slot+j] = point[j];
+        slot = 0;
+      }
+    }
+  }
+}
+
+void findEntrance(Msfm3d& planner, float entranceList[15], double cost[5]){
+  // findEntrace scans through the environment arrays and returns the 5 closest entrance locations in reachability distance.
+  int npixels = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
+  float point[3];
+  int slot = 0;
+
+  // Initialize cost list with large descending values.
+  for (int i=0; i<5; i++) cost[i] = 1e6 - 100*i;
+  // Main  
+  for (int i=0; i<npixels; i++){
+    // Check if the voxel has been seen, is unoccupied and it costs less to reach it than the 5 cheapest voxels
+    if (planner.esdf.seen[i] && (planner.reach[i]<cost[0]) && (planner.esdf.data[i]>0 && planner.reach[i] > (double)0.0)){
+      // // Check if the voxel is a frontier by querying adjacent voxels
+      planner.index3_xyz(i, point);
+
+      // If the current voxel is an entrance frontier, add the current voxel location to the cost and entrancelist
+      if (planner.entrance[i]) {
+        // frontier = 0; // reset for next loop
+        // Put the new point in the correct slot
+        for (int j=0; j<5; j++) {
+          if (planner.reach[i]<cost[j]) slot = j;
+        }
+        for (int j=0; j<slot; j++) {
+          cost[j] = cost[j+1];
+          for (int k=0; k<3; k++) entranceList[3*j+k] = entranceList[3*(j+1)+k];
+        }
+        cost[slot] = planner.reach[i];
+        for (int j=0; j<3; j++) entranceList[3*slot+j] = point[j];
         slot = 0;
       }
     }
@@ -803,11 +863,16 @@ int main(int argc, char **argv)
    * NodeHandle destructed will close down the node.
    */
   ros::NodeHandle n;
+
+  // Initialize planner object
   Msfm3d planner;
   planner.ground = 1;
+  planner.origin[0] = 0.0;
+  planner.origin[1] = 0.0;
+  planner.origin[2] = 0.0;
 
   // Get voxblox voxel size parameter
-  n.getParam("/X1/voxblox_node/tsdf_voxel_size", planner.voxel_size);
+  n.getParam("/X4/voxblox_node/tsdf_voxel_size", planner.voxel_size);
 
   /**
    * The subscribe() call is how you tell ROS that you want to receive messages
@@ -824,15 +889,28 @@ int main(int argc, char **argv)
    * is the number of messages that will be buffered up before beginning to throw
    * away the oldest ones.
    */
-  ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
+  ros::Subscriber sub1 = n.subscribe("/X4/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   ros::Subscriber sub2 = n.subscribe("/gazebo/link_states", 1, &Msfm3d::callback_position, &planner);
 
-  ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("/X1/nearest_frontier", 5);
+  ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("/X4/nearest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
   frontierGoal.header.frame_id = planner.frame;
 
-  ros::Publisher pub2 = n.advertise<nav_msgs::Path>("/X1/planned_path", 5);
-  ros::Publisher pub3 = n.advertise<visualization_msgs::MarkerArray>("/X1/frontier", 100);
+  // Publish goal point to interface with btraj
+  ros::Publisher pub4 = n.advertise<nav_msgs::Path>("/X4/frontier_goal_pathmsg", 5);
+  geometry_msgs::PoseStamped goalPose;
+  nav_msgs::Path frontierPath;
+  goalPose.header.frame_id = planner.frame;
+  frontierPath.header.frame_id = planner.frame;
+  goalPose.pose.position.x = 0.0;
+  goalPose.pose.position.y = 0.0;
+  goalPose.pose.position.z = 0.0;
+  goalPose.pose.orientation.w = 1.0;
+  goalPose.header.seq = 1;
+  frontierPath.poses.push_back(goalPose);
+
+  ros::Publisher pub2 = n.advertise<nav_msgs::Path>("/X4/planned_path", 5);
+  ros::Publisher pub3 = n.advertise<visualization_msgs::MarkerArray>("/X4/frontier", 100);
 
   /**
    * ros::spin() will enter a loop, pumping callbacks.  With this version, all
@@ -840,7 +918,7 @@ int main(int argc, char **argv)
    * will exit when Ctrl-C is pressed, or the node is shutdown by the master.
    */
   int i = 0;
-  ros::Rate r(6); // 3 hz
+  ros::Rate r(1); // 1 hz
   clock_t tStart;
   int npixels;
   int spins = 0;
@@ -852,12 +930,11 @@ int main(int argc, char **argv)
   {
     r.sleep();
     ros::spinOnce();
-    r.sleep();
     ROS_INFO("Planner Okay.");
     planner.parsePointCloud();
     // Heartbeat status update
     if (planner.receivedPosition){
-      ROS_INFO("X1 Position: [x: %f, y: %f, z: %f]", planner.position[0], planner.position[1], planner.position[2]);
+      ROS_INFO("X4 Position: [x: %f, y: %f, z: %f]", planner.position[0], planner.position[1], planner.position[2]);
       i = planner.xyz_index3(planner.position);
       ROS_INFO("Index at Position: %d", i);
       if (!planner.newCloud){
@@ -882,15 +959,27 @@ int main(int argc, char **argv)
           findFrontier(planner, frontierList, frontierCost);
           for (int i=0; i<5; i++) ROS_INFO("Frontier Position: [x: %f, y: %f, z: %f, cost: %f]", frontierList[3*i], frontierList[3*i+1], frontierList[3*i+2], frontierCost[i]);
 
-          // Publish new frontier goal location as a Point message
+          // If there are no frontiers available, head to the entrance
+          if (frontierCost[4] >= 1e5) findEntrance(planner, frontierList, frontierCost);
+
+          // Write a new frontier goal location for publishing
           frontierGoal.point.x = frontierList[12];
           frontierGoal.point.y = frontierList[13];
           frontierGoal.point.z = frontierList[14];
           for (int i=0; i<3; i++) goal[i] = frontierList[12+i];
+
+          // Write a new frontier goal path for publishing
+          frontierPath.header.stamp = ros::Time::now();
+          frontierPath.poses[0].header.stamp = ros::Time::now();
+          frontierPath.poses[0].pose.position.x = frontierList[12];
+          frontierPath.poses[0].pose.position.y = frontierList[13];
+          frontierPath.poses[0].pose.position.z = frontierList[14] + 1.5;
         }
-        // Publish path and goal point
+        // Publish path, goal point, and goal point only path
         pub1.publish(frontierGoal);
+        pub4.publish(frontierPath);
         ROS_INFO("Goal point published!");
+
         // Output and publish path
         planner.updatePath(goal);
         pub2.publish(planner.pathmsg);

@@ -15,7 +15,7 @@ class guidance_controller:
 		if (self.link_id == -1):
 			i = 0
 			for name in data.name[:]:
-				if name == "X1::X1/base_link":
+				if name == self.name + "::" + self.name + "/base_link":
 					self.link_id = i
 					print("link_id = %d" % self.link_id)
 				i = i+1
@@ -81,22 +81,33 @@ class guidance_controller:
 		# Store the vehicle position for now
 		p_robot = np.array([self.position.x, self.position.y, self.position.z])
 		path = self.path
+		start = np.array([path[0,0], path[1,0], path[2,0]])
+		goal = np.array([path[0,-1], path[1,-1], path[2,-1]])
 		p_L2, v_L2 = guidance.find_Lookahead_Discrete_3D(path, p_robot, self.speed*self.Tstar, 0, 0)
+
+		# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
+		if (np.linalg.norm(p_L2 - start) <= 0.05 and np.linalg.norm(p_robot - goal) <= 0.9*self.speed*self.Tstar):
+			p_L2 = goal
 
 		# Generate a lateral acceleration command from the lookahead point
 		if self.controller_type == 'trajectory_shaping':
 			a_cmd = guidance.trajectory_Shaping_Guidance(np.array([p_L2[0], p_L2[1]]), p_robot[0:2], \
 													 np.array([velocity_inertial[0], velocity_inertial[1]]), np.array([v_L2[0], v_L2[1]]))
 			chi_dot = -a_cmd/self.speed
+			if (self.vehicle_type == 'air'):
+				chi_dot = -chi_dot # reverse convention
 		else:
 			if (self.vehicle_type == 'ground'):
 				a_cmd = guidance.L2_Plus_Guidance_2D(np.array([p_L2[0], p_L2[1]]), p_robot[0:2], \
 													 np.array([velocity_inertial[0], velocity_inertial[1]]), self.Tstar, 0)
 				chi_dot = -a_cmd/self.speed
 			else:
-				a_cmd = guidance.L2_Plus_Guidance_3D(p_L2, p_robot, velocity_inertial, self.Tstar, 0)
+				# a_cmd = guidance.L2_Plus_Guidance_3D(p_L2, p_robot, velocity_inertial, self.Tstar, 0)
 				# Convert lateral acceleration to angular acceleration about the z axis
-				chi_dot = -a_cmd[1]/self.speed
+				# chi_dot = a_cmd[1]/self.speed
+				a_cmd = guidance.L2_Plus_Guidance_2D(np.array([p_L2[0], p_L2[1]]), p_robot[0:2], \
+													 np.array([velocity_inertial[0], velocity_inertial[1]]), self.Tstar, 0)
+				chi_dot = -a_cmd/self.speed
 
 		# Update class members
 		self.L2.x = p_L2[0]
@@ -110,7 +121,7 @@ class guidance_controller:
 		print("The robot position is : [%0.2f, %0.2f]" % (p_robot[0], p_robot[1]))
 		print("The L2 vector in 2D is: [%0.2f, %0.2f]" % (L2_vec[0], L2_vec[1]))
 		print("cos(eta) = %0.2f" % dot_prod)
-		if (dot_prod > (.707)):
+		if (dot_prod > (.5)):
 			self.command.linear.x = self.speed
 			self.command.angular.z = chi_dot
 		# elif (dot_prod < 0.0):
@@ -120,8 +131,10 @@ class guidance_controller:
 			self.command.linear.x = 0.0
 			self.command.angular.z = chi_dot
 
-		# self.command.linear.x = self.speed
-		# self.command.angular.z = chi_dot
+		# Do altitude control for air vehicles
+		if self.vehicle_type == 'air':
+			error = L2_vec[2]
+			self.command.linear.z = self.gain_z*error
 		return
 
 	def __init__(self, name='X1', vehicle_type='ground', controller_type='L2', speed=1.0):
@@ -130,7 +143,7 @@ class guidance_controller:
 		self.vehicle_type = vehicle_type; # vehicle type (ground vs air)
 		self.controller_type = controller_type; # Type of guidance controller from guidance
 		self.speed = float(speed) # m/s
-		self.Tstar = 1.5 # seconds
+		self.Tstar = 3.0 # seconds
 
 		# Booleans for first subscription receive
 		self.positionUpdated = 0
@@ -145,9 +158,9 @@ class guidance_controller:
 		rospy.Subscriber('/' + name + '/planned_path', Path, self.getPath)
 
 		# Initialize Publisher topics
-		self.pubTopic1 = '/' + name + '/cmd_vel';
+		self.pubTopic1 = '/' + name + '/cmd_vel'
 		self.pub1 = rospy.Publisher(self.pubTopic1, Twist, queue_size=10)
-		self.pubTopic2 = '/' + name + '/lookahead_vec';
+		self.pubTopic2 = '/' + name + '/lookahead_vec'
 		self.pub2 = rospy.Publisher(self.pubTopic2, Marker, queue_size=10)
 
 		# Initialize twist object for publishing
@@ -181,13 +194,15 @@ class guidance_controller:
 		self.L2_marker.points.append(self.position)
 		self.L2_marker.points.append(self.L2)
 
+		# Altitude controller
+		self.gain_z = 0.2
 		# # Initialize velocity vector for publishing
 		# self.vel_marker = Marker()
 		# self.vel_marker.type = 0
 
 
 	def start(self):
-		rate = rospy.Rate(5.0) # 10Hz
+		rate = rospy.Rate(10.0) # 10Hz
 		while not rospy.is_shutdown():
 			rate.sleep()
 			self.updateCommand()
