@@ -19,7 +19,7 @@ set(h1, 'EdgeColor', 'none');
 %% Generate robot(s)
 x_agent = [144; 30; 0; 5]; % x (m), y (m), heading (rad from north), speed (m/s)
 % x_agent = [125; 125; 0; 5];
-sensor = [50, 2*pi]; 
+sensor = [50, 2*pi];
 agentGrid = 0.5*ones(m,n); % completely unknown
 agent1 = agent(x_agent, agentGrid, [width, height], sensor);
 agent1.sense(occGrid);
