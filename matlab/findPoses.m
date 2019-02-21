@@ -58,7 +58,7 @@ while sum(unseen_primitives(:)) > 0
         % Convert to x,y,z and check for sightings
         p_sample = unseen_primitives(id).centroid + r*...
             [sin(elev)*cos(azi), sin(elev)*sin(azi), cos(elev)];
-    
+        
     % Check for sightings given the occGrid
         % Check to see if p_sample is in an occupied voxel
         if occGrid(round(p_sample(1)), round(p_sample(2)), round(p_sample(3)))
@@ -72,32 +72,49 @@ while sum(unseen_primitives(:)) > 0
         % Rotation matrix given yaw angle
         R = [cos(yaw), -sin(yaw), 0; sim(yaw), cos(yaw), 0; 0, 0, 1];
         
-        % Check for sightings
-        for i=1:length(primitives)
-            % Calculate vector from camera frame origin to primitive
-            p_primitive = primitive(i).centroid;
-            v_sight = p_primitive - p_sample;
-            
-            % Check radial range first
-            r = norm(v_sight);
-            if (r > sensor_params.r_max || r < sensor_params.r_min)
-                continue
-            end
-            
-            % Check dot products with frustum planes
-            v_sight_cam = R*v_sight;
-            if sum((v_sight_cam'*Frustum_normals) < 0) > 0
-                continue
-            end
-            
-            % Check occlusion with occupancy grid
-            if ~raycast(p_sample, p_primitive, occGrid)
-                continue
-            end
-            
-            % Add primitive to sightings list for this pose
-            poses(num_poses)
+        % Rotate frustum normals
+        Frustum_local = R*Frustum_normals;
+        
+        % Check for occlusion to the generating primitive
+        if ~raycast(p_sample, unseen_primitives(id).centroid, occGrid)
+            continue
+        else
+            poses(num_poses).pose = [p_sample, yaw];
+            poses(num_poses).sightings = id;
         end
+        
+    % Check for sightings
+    for i=1:length(primitives)
+        if i == id
+            continue
+        end
+        
+        % Calculate vector from camera frame origin to primitive
+        p_primitive = primitive(i).centroid;
+        v_sight = p_primitive - p_sample;
+
+        % Check radial range first
+        r = norm(v_sight);
+        if (r > sensor_params.r_max || r < sensor_params.r_min)
+            continue
+        end
+
+        % Check dot products with frustum planes
+        v_sight_cam = R*v_sight;
+        if sum((v_sight_cam'*Frustum_normals) < 0) > 0
+            continue
+        end
+
+        % Check occlusion with occupancy grid
+        if ~raycast(p_sample, p_primitive, occGrid)
+            continue
+        end
+
+        % Add primitive to sightings list for this pose
+        poses(num_poses).sightings(end+1) = primitive(i).id;
+    end
+    
+    % 
     
 end
 end
