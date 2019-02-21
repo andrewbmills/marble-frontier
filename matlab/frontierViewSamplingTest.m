@@ -34,3 +34,5 @@ frontier_data(frontier_data == 1) = NaN;
 scatter3(X(:), Y(:), Z(:), 100, frontier_data(:), 'filled');
 colormap 'hsv'
 hold off
+
+%% Find poses to view each cluster
