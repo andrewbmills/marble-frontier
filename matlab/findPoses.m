@@ -28,6 +28,18 @@ function [poses] = findPoses(primitives, occGrid, sensor_params)
 [m, n, p] = size(occGrid);
 unseen_primitives = primitives;
 
+% Frustum planes in camera frame
+left_plane = [sin(sensor_params.width/2); -cos(sensor_params.width/2); 0];
+right_plane = [sin(sensor_params.width/2); cos(sensor_params.width/2); 0];
+top_plane = [sin(sensor_params.elevation/2), 0, -cos(sensor_params.elevation/2)];
+bottom_plane = [sin(sensor_params.elevation/2), 0, cos(sensor_params.elevation/2)];
+front_plane = [-1; 0; 0];
+back_plane = [1; 0; 0];
+Frustum_normals = [front_plane, back_plane, left_plane, right_plane, top_plane, bottom_plane];
+
+% Initialize poses set count
+num_poses = 1;
+
 while sum(unseen_primitives(:)) > 0
     % Choose a random unseen_primitive
     id = randi(length(unseen_primitives));
@@ -57,30 +69,34 @@ while sum(unseen_primitives(:)) > 0
         % centroid.
         yaw = wrapTo2pi(pi + azi); % CCW from x.
         
-        view_norm = -[cos(azi), sin(azi), 1];
-        
-        % Frustum planes
-        left_angle = pi - sensor_params.width/2;
-        right_angle = sensor_params.width/2;
-        top_angle = [];        
-        bottom_angle = [];
-        left_plane = [cos(left_angle), sin(left_angle), 1];
-        right_plane = [cos(right_angle), sin(right_angle), 1];
-        top_plane = [, , 1];
-        bottom_plane = [, , 1];
+        % Rotation matrix given yaw angle
+        R = [cos(yaw), -sin(yaw), 0; sim(yaw), cos(yaw), 0; 0, 0, 1];
         
         % Check for sightings
-        for i=1:length(unseen_primitives)
-            % Check radial range first
+        for i=1:length(primitives)
+            % Calculate vector from camera frame origin to primitive
+            p_primitive = primitive(i).centroid;
+            v_sight = p_primitive - p_sample;
             
+            % Check radial range first
+            r = norm(v_sight);
+            if (r > sensor_params.r_max || r < sensor_params.r_min)
+                continue
+            end
             
             % Check dot products with frustum planes
-            
+            v_sight_cam = R*v_sight;
+            if sum((v_sight_cam'*Frustum_normals) < 0) > 0
+                continue
+            end
             
             % Check occlusion with occupancy grid
+            if ~raycast(p_sample, p_primitive, occGrid)
+                continue
+            end
             
-            
-            
+            % Add primitive to sightings list for this pose
+            poses(num_poses)
         end
     
 end
