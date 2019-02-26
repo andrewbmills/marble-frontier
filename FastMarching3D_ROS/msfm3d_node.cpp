@@ -866,7 +866,7 @@ int main(int argc, char **argv)
 
   // Initialize planner object
   Msfm3d planner;
-  planner.ground = 1;
+  planner.ground = 0;
   planner.origin[0] = 0.0;
   planner.origin[1] = 0.0;
   planner.origin[2] = 0.0;
