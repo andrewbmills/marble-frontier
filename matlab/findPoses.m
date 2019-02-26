@@ -1,4 +1,4 @@
-function [poses] = findPoses(primitives, occGrid, sensor_params)
+function [poses] = findPoses(primitives, occGrid, sensor_params, redundancy)
 % Input variables -
 % primitives: (N length structure array)
 %   primitives.id
@@ -25,22 +25,44 @@ function [poses] = findPoses(primitives, occGrid, sensor_params)
 %       - integer IDs of primitives viewable from this pose
 % 
 
-[m, n, p] = size(occGrid);
+% Initialization
+[m,n,p] = size(occGrid);
 unseen_primitives = primitives;
 
 % Frustum planes in camera frame
 left_plane = [sin(sensor_params.width/2); -cos(sensor_params.width/2); 0];
 right_plane = [sin(sensor_params.width/2); cos(sensor_params.width/2); 0];
-top_plane = [sin(sensor_params.elevation/2), 0, -cos(sensor_params.elevation/2)];
-bottom_plane = [sin(sensor_params.elevation/2), 0, cos(sensor_params.elevation/2)];
-front_plane = [-1; 0; 0];
-back_plane = [1; 0; 0];
-Frustum_normals = [front_plane, back_plane, left_plane, right_plane, top_plane, bottom_plane];
+top_plane = [sin(sensor_params.elevation/2); 0; -cos(sensor_params.elevation/2)];
+bottom_plane = [sin(sensor_params.elevation/2); 0; cos(sensor_params.elevation/2)];
+front_plane = [1; 0; 0];
+Frustum_normals = [front_plane, left_plane, right_plane, top_plane, bottom_plane];
 
-% Initialize poses set count
-num_poses = 1;
+% Empty pose
+first_pose = 1;
+empty_pose.pose = [0, 0, 0, 0];
+empty_pose.sightings = [0];
 
-while sum(unseen_primitives(:)) > 0
+% Redundancy matrix
+num_sightings = zeros(1,length(primitives));
+
+% Plotting tools
+[Y,X,Z] = meshgrid(1:n, 1:m, 1:p);
+omap_data = zeros(size(occGrid));
+omap_data(occGrid <= 0.6) = NaN;
+figure
+scatter3(X(:), Y(:), Z(:), 50, omap_data(:), 'filled');
+hold on
+h = plot3(0,0,0);
+h2 = plot3(0,0,0);
+
+% View pyramid points
+p2 = sensor_params.r_max*[1; sin(sensor_params.width/2); sin(sensor_params.elevation/2)];
+p3 = sensor_params.r_max*[1; -sin(sensor_params.width/2); sin(sensor_params.elevation/2)];
+p4 = sensor_params.r_max*[1; -sin(sensor_params.width/2); -sin(sensor_params.elevation/2)];
+p5 = sensor_params.r_max*[1; sin(sensor_params.width/2); -sin(sensor_params.elevation/2)];
+Frustum_points = [p2, p3, p4, p5];
+
+while ~isempty(unseen_primitives)
     % Choose a random unseen_primitive
     id = randi(length(unseen_primitives));
     
@@ -59,30 +81,50 @@ while sum(unseen_primitives(:)) > 0
         p_sample = unseen_primitives(id).centroid + r*...
             [sin(elev)*cos(azi), sin(elev)*sin(azi), cos(elev)];
         
-    % Check for sightings given the occGrid
+    % Check for feasability of the current sighting
+        % Check to see if p_sample is in the occGrid volume
+        if sum([m,n,p] < p_sample) || sum(p_sample < 1)
+            continue
+        end
         % Check to see if p_sample is in an occupied voxel
-        if occGrid(round(p_sample(1)), round(p_sample(2)), round(p_sample(3)))
+        if occGrid(round(p_sample(1)), round(p_sample(2)), round(p_sample(3))) > 0.2
             continue
         end
         
         % Calculate the yaw angle so the pose faces sample primitive
         % centroid.
-        yaw = wrapTo2pi(pi + azi); % CCW from x.
-        
-        % Rotation matrix given yaw angle
-        R = [cos(yaw), -sin(yaw), 0; sim(yaw), cos(yaw), 0; 0, 0, 1];
-        
-        % Rotate frustum normals
-        Frustum_local = R*Frustum_normals;
+        yaw = wrapTo2Pi(pi + azi); % CCW from x.
         
         % Check for occlusion to the generating primitive
         if ~raycast(p_sample, unseen_primitives(id).centroid, occGrid)
             continue
+        elseif (first_pose == 1)
+            poses(1).pose = [p_sample, yaw];
+            poses(1).sightings = id;
+            first_pose = 0;
         else
-            poses(num_poses).pose = [p_sample, yaw];
-            poses(num_poses).sightings = id;
+            poses = [poses, empty_pose];
+            poses(end).pose = [p_sample, yaw];
+            poses(end).sightings = id;
         end
-        
+    
+    % Rotation matrix given yaw angle
+    R = [cos(yaw), -sin(yaw), 0; sin(yaw), cos(yaw), 0; 0, 0, 1];
+
+    % Rotate frustum normals
+    Frustum_local = R*Frustum_normals;
+    
+    % Plot the view pyramid
+    delete(h);
+    Frustum_local_points = R*Frustum_points + repmat(p_sample', 1, 4);
+    h = plot3([p_sample(1)*ones(1,4), Frustum_local_points(1,:); ...
+        Frustum_local_points(1,:), Frustum_local_points(1,2:4), Frustum_local_points(1,1)], ...
+        [p_sample(2)*ones(1,4), Frustum_local_points(2,:); ...
+        Frustum_local_points(2,:), Frustum_local_points(2,2:4), Frustum_local_points(2,1)], ...
+        [p_sample(3)*ones(1,4), Frustum_local_points(3,:) ; ...
+        Frustum_local_points(3,:), Frustum_local_points(3,2:4), Frustum_local_points(3,1)], 'k');
+    
+    
     % Check for sightings
     for i=1:length(primitives)
         if i == id
@@ -90,8 +132,13 @@ while sum(unseen_primitives(:)) > 0
         end
         
         % Calculate vector from camera frame origin to primitive
-        p_primitive = primitive(i).centroid;
+        p_primitive = primitives(i).centroid;
         v_sight = p_primitive - p_sample;
+        
+        % Plot the LoS from the camera to the primitive centroid
+        delete(h2);
+        h2 = plot3([p_sample(1); p_primitive(1)], [p_sample(2); ...
+            p_primitive(2)], [p_sample(3); p_primitive(3)], 'r');
 
         % Check radial range first
         r = norm(v_sight);
@@ -100,8 +147,7 @@ while sum(unseen_primitives(:)) > 0
         end
 
         % Check dot products with frustum planes
-        v_sight_cam = R*v_sight;
-        if sum((v_sight_cam'*Frustum_normals) < 0) > 0
+        if sum((v_sight*Frustum_local) < 0) > 0
             continue
         end
 
@@ -111,10 +157,13 @@ while sum(unseen_primitives(:)) > 0
         end
 
         % Add primitive to sightings list for this pose
-        poses(num_poses).sightings(end+1) = primitive(i).id;
+        poses(end).sightings(end+1) = primitives(i).id;
+        num_sightings(primitives(i).id) = num_sightings(primitives(i).id) + 1;
     end
     
-    % 
+    % Remove sighted primitives from unseen_primitives after hitting the
+    % redundancy requirement.
+    unseen_primitives = primitives(num_sightings < redundancy);
     
 end
 end
