@@ -60,6 +60,7 @@ class Msfm3d
       esdf.seen = NULL;
       frontier = NULL;
       entrance = NULL;
+      tree = NULL;
     }
     std::string frame = "world";
     bool ground = 0;
@@ -95,13 +96,14 @@ class Msfm3d
     orientation q; // robot orientation in quaternions
     ESDF esdf; // ESDF struct object
     octomap::OcTree* tree; // OcTree object for holding Octomap
+    // octomap::OcTree tree(0.1);
 
     void callback(sensor_msgs::PointCloud2 msg); // Subscriber callback function for PC2 msg (ESDF)
-    void callback_Octomap(const octomap_msgs::Octomap::ConstPtr& msg); // Subscriber callback function for Octomap msg
+    void callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg); // Subscriber callback function for Octomap msg
     void callback_position(const gazebo_msgs::LinkStates msg); // Subscriber callback for robot position
-    void parseMap(); // Function to parse map msg into a format that msfm3d can use
+    // void parseMap(); // Function to parse map msg into a format that msfm3d can use
     void parsePointCloud(); // Function to parse pointCloud2 into an esdf format that msfm3d can use
-    void parseOctomap(); // Function to parse Octomap msg into a formate that msfm3d can use
+    // void parseOctomap(); // Function to parse Octomap msg into a formate that msfm3d can use
     int xyz_index3(const float point[3]);
     void index3_xyz(const int index, float point[3]);
     void getEuler(); // Updates euler array given the current quaternion values
@@ -177,64 +179,37 @@ void Msfm3d::callback_position(const gazebo_msgs::LinkStates msg)
   }
 }
 
-void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr& msg)
+void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
 {
   ROS_INFO("Getting OctoMap message...");
   if (!receivedOctomap) receivedOctomap = 1;
 
   // Free/Allocate the tree memory
   octomap::AbstractOcTree* abstree = octomap_msgs::binaryMsgToMap(*msg); // OcTree object for storing Octomap data.
-  tree = dynamic_cast<octomap::OcTree*>(abstree);
+  ROS_INFO("Octomap converted to AbstractOcTree.");
+  // octomap::OcTree* mytree = dynamic_cast<octomap::OcTree*>(abstree);
+  octomap::OcTree* mytree = (octomap::OcTree*)abstree;
+  ROS_INFO("AbstractOcTree cast into OcTree.");
+  // octomap::OcTree thistree = *mytree;
+  // ROS_INFO("OcTree pointer stored as OcTree object.");
+  // tree = *tree_pointer;
 
-  // Free memory for AbstractOcTree object pointer
-  delete[] abstree;
-  newMap = 1;
-  ROS_INFO("OctoMap message received!");
-}
-
-void Msfm3d::callback(sensor_msgs::PointCloud2 msg)
-{
-  ROS_INFO("Getting ESDF PointCloud2...");
-  if (!receivedPointCloud) receivedPointCloud = 1;
-  PC2msg = msg;
-  newMap = 1;
-  ROS_INFO("ESDF PointCloud2 received!");
-}
-
-void Msfm3d::parseMap()
-{
-  if (newMap){
-    if (esdf_or_octomap){
-      parseOctomap();
-    }
-    else {
-      parsePointCloud();
-    }
-    ROS_INFO("ESDF Updated!");
-    newMap = 0;
-  } else {
-    ROS_INFO("No new map information.");
-  }
-}
-
-void Msfm3d::parseOctomap()
-{
   ROS_INFO("Parsing Octomap...");
   // Make sure the tree is at the same resolution as the esdf we're creating.  If it's not, change the resolution.
-  ROS_INFO("Tree resolution is %f meters.", tree->getResolution());
-  if (tree->getResolution() != (double)voxel_size) {
-    tree->setResolution((double)voxel_size);
-    tree->prune();
+  ROS_INFO("Tree resolution is %f meters.", mytree->getResolution());
+  if (mytree->getResolution() != (double)voxel_size) {
+    mytree->setResolution((double)voxel_size);
+    mytree->prune();
   }
 
   // Parse out ESDF struct dimensions from the the AbstractOcTree object
   double x, y, z;
-  tree->getMetricMin(x, y, z);
+  mytree->getMetricMin(x, y, z);
   ROS_INFO("Got Minimum map dimensions.");
   esdf.min[0] = (float)x - voxel_size;
   esdf.min[1] = (float)y - voxel_size;
   esdf.min[2] = (float)z - voxel_size;
-  tree->getMetricMax(x, y, z);
+  mytree->getMetricMax(x, y, z);
   ROS_INFO("Got Maximum map dimensions.");
   esdf.max[0] = (float)x + voxel_size;
   esdf.max[1] = (float)y + voxel_size;
@@ -257,8 +232,8 @@ void Msfm3d::parseOctomap()
   double size, value;
   float point[3];
   int idx, depth;
-  for(octomap::OcTree::leaf_iterator it = tree->begin_leafs(),
-       end=tree->end_leafs(); it!=end; ++it)
+  for(octomap::OcTree::leaf_iterator it = mytree->begin_leafs(),
+       end=mytree->end_leafs(); it!=end; ++it)
   {
     // Get data from node
     size = it.getSize();
@@ -270,10 +245,100 @@ void Msfm3d::parseOctomap()
     point[1] = (float)it.getY();
     point[2] = (float)it.getZ();
     idx = xyz_index3(point);
-    esdf.data[idx] = value;
+    esdf.data[idx] = 1.0 - value;
     esdf.seen[idx] = 1;
   }
+
+  // Free memory for AbstractOcTree object pointer
+  free(abstree);
+  free(tree);
+
+  // newMap = 1;
+  ROS_INFO("OctoMap message received!");
 }
+
+void Msfm3d::callback(sensor_msgs::PointCloud2 msg)
+{
+  ROS_INFO("Getting ESDF PointCloud2...");
+  if (!receivedPointCloud) receivedPointCloud = 1;
+  PC2msg = msg;
+  newMap = 1;
+  ROS_INFO("ESDF PointCloud2 received!");
+}
+
+// void Msfm3d::parseMap()
+// {
+//   if (newMap){
+//     if (esdf_or_octomap){
+//       parseOctomap();
+//     }
+//     else {
+//       parsePointCloud();
+//     }
+//     ROS_INFO("ESDF Updated!");
+//     newMap = 0;
+//   } else {
+//     ROS_INFO("No new map information.");
+//   }
+// }
+
+// void Msfm3d::parseOctomap()
+// {
+//   ROS_INFO("Parsing Octomap...");
+//   // Make sure the tree is at the same resolution as the esdf we're creating.  If it's not, change the resolution.
+//   ROS_INFO("Tree resolution is %f meters.", tree->getResolution());
+//   if (tree->getResolution() != (double)voxel_size) {
+//     tree->setResolution((double)voxel_size);
+//     tree->prune();
+//   }
+
+//   // Parse out ESDF struct dimensions from the the AbstractOcTree object
+//   double x, y, z;
+//   tree->getMetricMin(x, y, z);
+//   ROS_INFO("Got Minimum map dimensions.");
+//   esdf.min[0] = (float)x - voxel_size;
+//   esdf.min[1] = (float)y - voxel_size;
+//   esdf.min[2] = (float)z - voxel_size;
+//   tree->getMetricMax(x, y, z);
+//   ROS_INFO("Got Maximum map dimensions.");
+//   esdf.max[0] = (float)x + voxel_size;
+//   esdf.max[1] = (float)y + voxel_size;
+//   esdf.max[2] = (float)z + voxel_size;
+//   for (int i=0; i<3; i++) esdf.size[i] = roundf((esdf.max[i]-esdf.min[i])/voxel_size) + 1;
+
+//   // Print out the max and min values with the size values.
+//   ROS_INFO("The (x,y,z) ranges are (%0.2f to %0.2f, %0.2f to %0.2f, %0.2f to %0.2f).", esdf.min[0], esdf.max[0], esdf.min[1], esdf.max[1], esdf.min[2], esdf.max[2]);
+//   ROS_INFO("The ESDF dimension sizes are %d, %d, and %d.", esdf.size[0], esdf.size[1], esdf.size[2]);
+
+//   // Free and allocate memory for the esdf.data and esdf.seen pointer arrays
+//   delete[] esdf.data;
+//   esdf.data = NULL;
+//   esdf.data = new double [esdf.size[0]*esdf.size[1]*esdf.size[2]] { }; // Initialize all values to zero.
+//   delete[] esdf.seen;
+//   esdf.seen = NULL;
+//   esdf.seen = new bool [esdf.size[0]*esdf.size[1]*esdf.size[2]] { }; // Initialize all values to zero.
+
+//   // Loop through tree and extract occupancy info into esdf.data and seen/not into esdf.seen
+//   double size, value;
+//   float point[3];
+//   int idx, depth;
+//   for(octomap::OcTree::leaf_iterator it = tree->begin_leafs(),
+//        end=tree->end_leafs(); it!=end; ++it)
+//   {
+//     // Get data from node
+//     size = it.getSize();
+//     value = (double)it->getValue();
+//     depth = (int)it.getDepth();
+
+//     // Put data into esdf
+//     point[0] = (float)it.getX();
+//     point[1] = (float)it.getY();
+//     point[2] = (float)it.getZ();
+//     idx = xyz_index3(point);
+//     esdf.data[idx] = value;
+//     esdf.seen[idx] = 1;
+//   }
+// }
 
 void Msfm3d::parsePointCloud()
 {
@@ -968,7 +1033,7 @@ int main(int argc, char **argv)
 
   // Get voxblox voxel size parameter
   // n.getParam("/X4/voxblox_node/tsdf_voxel_size", planner.voxel_size);
-  planner.voxel_size = 0.5;
+  planner.voxel_size = 0.2;
 
   /**
    * The subscribe() call is how you tell ROS that you want to receive messages
@@ -1036,7 +1101,7 @@ int main(int argc, char **argv)
     r.sleep();
     ros::spinOnce();
     ROS_INFO("Planner Okay.");
-    planner.parseMap();
+    // planner.parseMap();
     // Heartbeat status update
     if (planner.receivedPosition){
       ROS_INFO("X1 Position: [x: %f, y: %f, z: %f]", planner.position[0], planner.position[1], planner.position[2]);
