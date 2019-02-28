@@ -1,4 +1,4 @@
-// g++ msfm3d_node.cpp -g -o msfm3d_node.o -I /opt/ros/melodic/include -I /usr/include/c++/7.3.0 -L /opt/ros/melodic/lib -Wl,-rpath,/opt/ros/melodic/lib -lroscpp -lrosconsole -lrostime -lroscpp_serialization
+// g++ msfm3d_node.cpp -g -o msfm3d_node.o -I /opt/ros/melodic/include -I /usr/include/c++/7.3.0 -I /home/andrew/catkin_ws/devel/include -I /home/andrew/catkin_ws/src/octomap_msgs/include -L /home/andrew/catkin_ws/devel/lib -L /opt/ros/melodic/lib -Wl,-rpath,opt/ros/melodic/lib -lroscpp -lrosconsole -lrostime -lroscpp_serialization -loctomap
 
 
 #include <ros/ros.h>
@@ -9,6 +9,10 @@
 #include <geometry_msgs/PointStamped.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <nav_msgs/Path.h>
+#include <octomap/octomap.h>
+#include <octomap/ColorOcTree.h>
+#include <octomap_msgs/Octomap.h>
+#include <octomap_msgs/conversions.h>
 #include "msfm3d.c"
 
 // Converts 4 integer byte values (0 to 255) to a float
@@ -49,18 +53,21 @@ class Msfm3d
 {
   public:
     // Constructor
-    Msfm3d() {
-    reach = NULL;
-    esdf.data = NULL;
-    esdf.seen = NULL;
-    frontier = NULL;
-    entrance = NULL;
+    Msfm3d()
+    {
+      reach = NULL;
+      esdf.data = NULL;
+      esdf.seen = NULL;
+      frontier = NULL;
+      entrance = NULL;
     }
     std::string frame = "world";
     bool ground = 0;
     bool receivedPosition = 0;
     bool receivedPointCloud = 0;
-    bool newCloud = 0;
+    bool receivedOctomap = 0;
+    bool newMap = 0;
+    bool esdf_or_octomap = 0; // Boolean to use an esdf PointCloud2 or an Octomap as input
     float voxel_size; // voxblox voxel size
     float position[3] = {69.0, 420.0, 1337.0}; // robot position
     float euler[3]; // robot orientation in euler angles
@@ -74,6 +81,7 @@ class Msfm3d
     sensor_msgs::PointCloud2 PC2msg;
     nav_msgs::Path pathmsg;
     visualization_msgs::MarkerArray frontiermsg;
+    // octomap_msgs::Octomap octomapmsg;
     struct ESDF {
       double * data; // esdf matrix pointer
       bool * seen; // seen matrix pointer
@@ -85,11 +93,15 @@ class Msfm3d
       float w, x, y, z;
     };
     orientation q; // robot orientation in quaternions
-    ESDF esdf;
+    ESDF esdf; // ESDF struct object
+    octomap::OcTree* tree; // OcTree object for holding Octomap
 
-    void callback(sensor_msgs::PointCloud2 msg); // Subscriber callback function
+    void callback(sensor_msgs::PointCloud2 msg); // Subscriber callback function for PC2 msg (ESDF)
+    void callback_Octomap(const octomap_msgs::Octomap::ConstPtr& msg); // Subscriber callback function for Octomap msg
     void callback_position(const gazebo_msgs::LinkStates msg); // Subscriber callback for robot position
-    void parsePointCloud(); // Function to parse pointCloud2 into a format that msfm3d can use
+    void parseMap(); // Function to parse map msg into a format that msfm3d can use
+    void parsePointCloud(); // Function to parse pointCloud2 into an esdf format that msfm3d can use
+    void parseOctomap(); // Function to parse Octomap msg into a formate that msfm3d can use
     int xyz_index3(const float point[3]);
     void index3_xyz(const int index, float point[3]);
     void getEuler(); // Updates euler array given the current quaternion values
@@ -138,16 +150,12 @@ void Msfm3d::getEuler()
 
 void Msfm3d::callback_position(const gazebo_msgs::LinkStates msg)
 {
-  // ***REMEMBER*** The number here is hard coded.  This needs to be changed on system reset
-  // Use "rostopic echo -n 1 /gazebo/link_states/name"
-  // Possible numbers include 77 and 102
-
   // Find the link index
   int i = 0;
   if (link_id == -1){
     while (link_id == -1) {
       // if (msg.name[i] == "X1::X1/base_link") link_id = i;
-      if (msg.name[i] == "X4::X4/base_link") link_id = i;
+      if (msg.name[i] == "X1::X1/base_link") link_id = i;
       if (i > 200) link_id = i;
       i++;
     }
@@ -169,89 +177,173 @@ void Msfm3d::callback_position(const gazebo_msgs::LinkStates msg)
   }
 }
 
+void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr& msg)
+{
+  ROS_INFO("Getting OctoMap message...");
+  if (!receivedOctomap) receivedOctomap = 1;
+
+  // Free/Allocate the tree memory
+  octomap::AbstractOcTree* abstree = octomap_msgs::binaryMsgToMap(*msg); // OcTree object for storing Octomap data.
+  tree = dynamic_cast<octomap::OcTree*>(abstree);
+
+  // Free memory for AbstractOcTree object pointer
+  delete[] abstree;
+  newMap = 1;
+  ROS_INFO("OctoMap message received!");
+}
+
 void Msfm3d::callback(sensor_msgs::PointCloud2 msg)
 {
   ROS_INFO("Getting ESDF PointCloud2...");
   if (!receivedPointCloud) receivedPointCloud = 1;
   PC2msg = msg;
-  newCloud = 1;
+  newMap = 1;
   ROS_INFO("ESDF PointCloud2 received!");
+}
+
+void Msfm3d::parseMap()
+{
+  if (newMap){
+    if (esdf_or_octomap){
+      parseOctomap();
+    }
+    else {
+      parsePointCloud();
+    }
+    ROS_INFO("ESDF Updated!");
+    newMap = 0;
+  } else {
+    ROS_INFO("No new map information.");
+  }
+}
+
+void Msfm3d::parseOctomap()
+{
+  ROS_INFO("Parsing Octomap...");
+  // Make sure the tree is at the same resolution as the esdf we're creating.  If it's not, change the resolution.
+  ROS_INFO("Tree resolution is %f meters.", tree->getResolution());
+  if (tree->getResolution() != (double)voxel_size) {
+    tree->setResolution((double)voxel_size);
+    tree->prune();
+  }
+
+  // Parse out ESDF struct dimensions from the the AbstractOcTree object
+  double x, y, z;
+  tree->getMetricMin(x, y, z);
+  ROS_INFO("Got Minimum map dimensions.");
+  esdf.min[0] = (float)x - voxel_size;
+  esdf.min[1] = (float)y - voxel_size;
+  esdf.min[2] = (float)z - voxel_size;
+  tree->getMetricMax(x, y, z);
+  ROS_INFO("Got Maximum map dimensions.");
+  esdf.max[0] = (float)x + voxel_size;
+  esdf.max[1] = (float)y + voxel_size;
+  esdf.max[2] = (float)z + voxel_size;
+  for (int i=0; i<3; i++) esdf.size[i] = roundf((esdf.max[i]-esdf.min[i])/voxel_size) + 1;
+
+  // Print out the max and min values with the size values.
+  ROS_INFO("The (x,y,z) ranges are (%0.2f to %0.2f, %0.2f to %0.2f, %0.2f to %0.2f).", esdf.min[0], esdf.max[0], esdf.min[1], esdf.max[1], esdf.min[2], esdf.max[2]);
+  ROS_INFO("The ESDF dimension sizes are %d, %d, and %d.", esdf.size[0], esdf.size[1], esdf.size[2]);
+
+  // Free and allocate memory for the esdf.data and esdf.seen pointer arrays
+  delete[] esdf.data;
+  esdf.data = NULL;
+  esdf.data = new double [esdf.size[0]*esdf.size[1]*esdf.size[2]] { }; // Initialize all values to zero.
+  delete[] esdf.seen;
+  esdf.seen = NULL;
+  esdf.seen = new bool [esdf.size[0]*esdf.size[1]*esdf.size[2]] { }; // Initialize all values to zero.
+
+  // Loop through tree and extract occupancy info into esdf.data and seen/not into esdf.seen
+  double size, value;
+  float point[3];
+  int idx, depth;
+  for(octomap::OcTree::leaf_iterator it = tree->begin_leafs(),
+       end=tree->end_leafs(); it!=end; ++it)
+  {
+    // Get data from node
+    size = it.getSize();
+    value = (double)it->getValue();
+    depth = (int)it.getDepth();
+
+    // Put data into esdf
+    point[0] = (float)it.getX();
+    point[1] = (float)it.getY();
+    point[2] = (float)it.getZ();
+    idx = xyz_index3(point);
+    esdf.data[idx] = value;
+    esdf.seen[idx] = 1;
+  }
 }
 
 void Msfm3d::parsePointCloud()
 {
-  if (newCloud) {
-    ROS_INFO("Allocating memory for esdf parsing.");
-    // integer array to store uint8 byte values
-    int bytes[4];
-    // local pointcloud storage array
-    float xyzis[5*(PC2msg.width)];
-    // pointcloud xyz limits
-    float xyzi_max[4], xyzi_min[4];
-    int offset;
-    
-    // parse pointcloud2 data
-    ROS_INFO("Parsing ESDF data into holder arrays.");
-    for (int i=0; i<(PC2msg.width); i++) {
-      for (int j=0; j<5; j++) {
-        if (j>3){ offset = 12; }
-        else{ offset = PC2msg.fields[j].offset; }
-        for (int k=0; k<4; k++) {
-          bytes[k] = PC2msg.data[32*i+offset+k];
+  ROS_INFO("Allocating memory for esdf parsing.");
+  // integer array to store uint8 byte values
+  int bytes[4];
+  // local pointcloud storage array
+  float xyzis[5*(PC2msg.width)];
+  // pointcloud xyz limits
+  float xyzi_max[4], xyzi_min[4];
+  int offset;
+  
+  // parse pointcloud2 data
+  ROS_INFO("Parsing ESDF data into holder arrays.");
+  for (int i=0; i<(PC2msg.width); i++) {
+    for (int j=0; j<5; j++) {
+      if (j>3){ offset = 12; }
+      else{ offset = PC2msg.fields[j].offset; }
+      for (int k=0; k<4; k++) {
+        bytes[k] = PC2msg.data[32*i+offset+k];
+      }
+      xyzis[5*i+j] = byte2Float(bytes);
+      if (j<4){
+        if (i < 1){
+          xyzi_max[j] = xyzis[5*i+j];
+          xyzi_min[j] = xyzis[5*i+j];
         }
-        xyzis[5*i+j] = byte2Float(bytes);
-        if (j<4){
-          if (i < 1){
-            xyzi_max[j] = xyzis[5*i+j];
-            xyzi_min[j] = xyzis[5*i+j];
-          }
-          else {
-            if (xyzis[5*i+j] > xyzi_max[j]) xyzi_max[j] = xyzis[5*i+j];
-            if (xyzis[5*i+j] < xyzi_min[j]) xyzi_min[j] = xyzis[5*i+j];
-          }
+        else {
+          if (xyzis[5*i+j] > xyzi_max[j]) xyzi_max[j] = xyzis[5*i+j];
+          if (xyzis[5*i+j] < xyzi_min[j]) xyzi_min[j] = xyzis[5*i+j];
         }
       }
     }
+  }
 
-    // Replace max, min, and size esdf properties
-    for (int i=0; i<4; i++) { esdf.max[i] = xyzi_max[i] + voxel_size; esdf.min[i] = xyzi_min[i] - voxel_size; } // Add 1 voxel to the maxes and subtract 1 voxel from the mins to get desired frontier performance
-    for (int i=0; i<3; i++) esdf.size[i] = roundf((esdf.max[i]-esdf.min[i])/voxel_size) + 1;
+  // Replace max, min, and size esdf properties
+  for (int i=0; i<4; i++) { esdf.max[i] = xyzi_max[i] + voxel_size; esdf.min[i] = xyzi_min[i] - voxel_size; } // Add 1 voxel to the maxes and subtract 1 voxel from the mins to get desired frontier performance
+  for (int i=0; i<3; i++) esdf.size[i] = roundf((esdf.max[i]-esdf.min[i])/voxel_size) + 1;
 
-    // Print out the max and min values with the size values.
-    ROS_INFO("The (x,y,z) ranges are (%0.2f to %0.2f, %0.2f to %0.2f, %0.2f to %0.2f).", esdf.min[0], esdf.max[0], esdf.min[1], esdf.max[1], esdf.min[2], esdf.max[2]);
-    ROS_INFO("The ESDF dimension sizes are %d, %d, and %d.", esdf.size[0], esdf.size[1], esdf.size[2]);
+  // Print out the max and min values with the size values.
+  ROS_INFO("The (x,y,z) ranges are (%0.2f to %0.2f, %0.2f to %0.2f, %0.2f to %0.2f).", esdf.min[0], esdf.max[0], esdf.min[1], esdf.max[1], esdf.min[2], esdf.max[2]);
+  ROS_INFO("The ESDF dimension sizes are %d, %d, and %d.", esdf.size[0], esdf.size[1], esdf.size[2]);
 
-    // Empty current esdf and seen matrix and create a new ones.
-    delete[] esdf.data;
-    esdf.data = NULL;
-    esdf.data = new double [esdf.size[0]*esdf.size[1]*esdf.size[2]] { }; // Initialize all values to zero.
-    delete[] esdf.seen;
-    esdf.seen = NULL;
-    esdf.seen = new bool [esdf.size[0]*esdf.size[1]*esdf.size[2]] { };
-    ROS_INFO("ESDF Data is of length %d", esdf.size[0]*esdf.size[1]*esdf.size[2]);
-    ROS_INFO("Message width is %d", PC2msg.width);
+  // Empty current esdf and seen matrix and create a new ones.
+  delete[] esdf.data;
+  esdf.data = NULL;
+  esdf.data = new double [esdf.size[0]*esdf.size[1]*esdf.size[2]] { }; // Initialize all values to zero.
+  delete[] esdf.seen;
+  esdf.seen = NULL;
+  esdf.seen = new bool [esdf.size[0]*esdf.size[1]*esdf.size[2]] { };
+  ROS_INFO("ESDF Data is of length %d", esdf.size[0]*esdf.size[1]*esdf.size[2]);
+  ROS_INFO("Message width is %d", PC2msg.width);
 
-    // Parse xyzis into esdf_mat
-    int index;
-    float point[3];
-    for (int i=0; i<(5*(PC2msg.width)); i=i+5) {
-      point[0] = xyzis[i]; point[1] = xyzis[i+1]; point[2] = xyzis[i+2];
-      index = xyz_index3(point);
-      if (index > (esdf.size[0]*esdf.size[1]*esdf.size[2])) ROS_INFO("WARNING: Parsing index is greater than array sizes!");
-      // esdf.data[index] = (double)(xyzis[i+3]);
-      // Use the hyperbolic tan function from the btraj paper
-      // esdf = v_max*(tanh(d - e) + 1)/2
-      if (xyzis[i+3] >= 0.0) {
-        esdf.data[index] = (double)(5.0*(tanh(xyzis[i+3] - exp(1.0)) + 1.0)/2.0);
-      }
-      else {
-        esdf.data[index] = (double)(0.0);
-      }
-      esdf.seen[index] = (xyzis[i+4]>0.0);
+  // Parse xyzis into esdf_mat
+  int index;
+  float point[3];
+  for (int i=0; i<(5*(PC2msg.width)); i=i+5) {
+    point[0] = xyzis[i]; point[1] = xyzis[i+1]; point[2] = xyzis[i+2];
+    index = xyz_index3(point);
+    if (index > (esdf.size[0]*esdf.size[1]*esdf.size[2])) ROS_INFO("WARNING: Parsing index is greater than array sizes!");
+    // esdf.data[index] = (double)(xyzis[i+3]);
+    // Use the hyperbolic tan function from the btraj paper
+    // esdf = v_max*(tanh(d - e) + 1)/2
+    if (xyzis[i+3] >= 0.0) {
+      esdf.data[index] = (double)(5.0*(tanh(xyzis[i+3] - exp(1.0)) + 1.0)/2.0);
     }
-
-    ROS_INFO("ESDF Updated!");
-    newCloud = 0; // Parsed the latest pointCloud2 object
+    else {
+      esdf.data[index] = (double)(0.0);
+    }
+    esdf.seen[index] = (xyzis[i+4]>0.0);
   }
 }
 
@@ -865,14 +957,18 @@ int main(int argc, char **argv)
   ros::NodeHandle n;
 
   // Initialize planner object
+  ROS_INFO("Initializing msfm3d planner...");
   Msfm3d planner;
   planner.ground = 0;
+  planner.esdf_or_octomap = 1; // Use an octomap message
   planner.origin[0] = 0.0;
   planner.origin[1] = 0.0;
   planner.origin[2] = 0.0;
+  // planner.name = "X1";
 
   // Get voxblox voxel size parameter
-  n.getParam("/X4/voxblox_node/tsdf_voxel_size", planner.voxel_size);
+  // n.getParam("/X4/voxblox_node/tsdf_voxel_size", planner.voxel_size);
+  planner.voxel_size = 0.5;
 
   /**
    * The subscribe() call is how you tell ROS that you want to receive messages
@@ -889,15 +985,23 @@ int main(int argc, char **argv)
    * is the number of messages that will be buffered up before beginning to throw
    * away the oldest ones.
    */
-  ros::Subscriber sub1 = n.subscribe("/X4/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
+  // if (planner.esdf_or_octomap) {
+    ROS_INFO("Subscribing to Occupancy Grid...");
+    ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  // }
+  // else {
+  //   ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
+  //   ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
+  // }
+  ROS_INFO("Subscribing to robot state...");
   ros::Subscriber sub2 = n.subscribe("/gazebo/link_states", 1, &Msfm3d::callback_position, &planner);
 
-  ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("/X4/nearest_frontier", 5);
+  ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("/X1/nearest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
   frontierGoal.header.frame_id = planner.frame;
 
   // Publish goal point to interface with btraj
-  ros::Publisher pub4 = n.advertise<nav_msgs::Path>("/X4/frontier_goal_pathmsg", 5);
+  ros::Publisher pub4 = n.advertise<nav_msgs::Path>("/X1/frontier_goal_pathmsg", 5);
   geometry_msgs::PoseStamped goalPose;
   nav_msgs::Path frontierPath;
   goalPose.header.frame_id = planner.frame;
@@ -909,8 +1013,8 @@ int main(int argc, char **argv)
   goalPose.header.seq = 1;
   frontierPath.poses.push_back(goalPose);
 
-  ros::Publisher pub2 = n.advertise<nav_msgs::Path>("/X4/planned_path", 5);
-  ros::Publisher pub3 = n.advertise<visualization_msgs::MarkerArray>("/X4/frontier", 100);
+  ros::Publisher pub2 = n.advertise<nav_msgs::Path>("/X1/planned_path", 5);
+  ros::Publisher pub3 = n.advertise<visualization_msgs::MarkerArray>("/X1/frontier", 100);
 
   /**
    * ros::spin() will enter a loop, pumping callbacks.  With this version, all
@@ -925,19 +1029,20 @@ int main(int argc, char **argv)
   float frontierList[15];
   double frontierCost[5];
   float goal[3] = {0.0, 0.0, 0.0};
+  ROS_INFO("Starting planner...");
   r.sleep();
   while (ros::ok())
   {
     r.sleep();
     ros::spinOnce();
     ROS_INFO("Planner Okay.");
-    planner.parsePointCloud();
+    planner.parseMap();
     // Heartbeat status update
     if (planner.receivedPosition){
-      ROS_INFO("X4 Position: [x: %f, y: %f, z: %f]", planner.position[0], planner.position[1], planner.position[2]);
+      ROS_INFO("X1 Position: [x: %f, y: %f, z: %f]", planner.position[0], planner.position[1], planner.position[2]);
       i = planner.xyz_index3(planner.position);
       ROS_INFO("Index at Position: %d", i);
-      if (!planner.newCloud){
+      if (planner.receivedOctomap){
         ROS_INFO("ESDF at Position: %f", planner.esdf.data[i]);
 
         // Find frontier cells and add them to planner.frontier for output to file.
