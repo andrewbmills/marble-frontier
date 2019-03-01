@@ -25,7 +25,8 @@ function [path] = frontierPlan(occGrid, position, hblob, minObsDist, figNum)
     [i_goal, j_goal] = ind2sub(size(occGrid), idNext);
     path = findPathContinuous(reachGrid, [i_goal, j_goal], [position(1), position(2)]);
     
-    if nargin == 5
+    global gridPlots;
+    if nargin == 5 && gridPlots
         figure(figNum)
         subplot(2,2,1);
         h = pcolor(satSpeedGrid);

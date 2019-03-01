@@ -1,4 +1,4 @@
-classdef agent < handle
+classdef Agent < handle
     %UNTITLED Summary of this class goes here
     %   Detailed explanation goes here
     
@@ -12,10 +12,11 @@ classdef agent < handle
         gridDims
         sensor % [range (m), field of view (radians]
         controlLims % [maxSpeed, maxTurnRate, maxDecel]
+        run
     end
    
     methods
-        function obj = agent(state0, occGrid0, gridDims, sensor, maxControl)
+        function obj = Agent(state0, occGrid0, gridDims, sensor, maxControl)
             obj.state = state0; % [x_pos, y_pos, angle, speed]
             obj.stateHistory = [0, obj.state'];
             obj.occGrid = occGrid0;
@@ -24,6 +25,7 @@ classdef agent < handle
             obj.sensor = [10; 2*pi];
             obj.controlLims = [5; 180*pi/180; 0.1*9.81];
             obj.path = [state0(1), state0(2)];
+            obj.run = true;
 %             obj.carrot = [0, 1]; % 0 distance along path segment 1
             if nargin == 4
                 obj.sensor = sensor;
@@ -77,8 +79,7 @@ classdef agent < handle
                 obj.gridDims, obj.sensor);
         end
         
-        function plot(obj, k)
-            figure(k)
+        function plot(obj)
             h = pcolor(obj.occGrid);
             hold on
             plot(obj.state(1)+0.5, obj.state(2)+0.5, 'r*')
@@ -89,10 +90,8 @@ classdef agent < handle
             [m, n] = size(obj.occGrid);
             axis([1 n 1 m]);
             set(h, 'EdgeColor', 'none');
-            set(gcf, 'Position', [1, 1, 1080, 1080]);
             axis equal
             axis tight
-            tightfig;
             hold off
         end
         
