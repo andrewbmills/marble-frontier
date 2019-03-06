@@ -21,7 +21,7 @@ class LinkStateToOdometry:
 			print('Could not find robot state information in /gazebo/link_states/')
 		else:
 			self.Odometry.pose.pose = data.pose[self.link_id]
-			self.Odometry.pose.pose.position.z = self.Odometry.pose.pose.position.z + 1.5
+			self.Odometry.pose.pose.position.z = self.Odometry.pose.pose.position.z + 0.75
 			self.Odometry.twist.twist = data.twist[self.link_id]
 		
 		# Add time stamp

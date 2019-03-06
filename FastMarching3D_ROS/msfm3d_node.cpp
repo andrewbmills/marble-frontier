@@ -9,7 +9,7 @@
 #include <geometry_msgs/PointStamped.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <nav_msgs/Path.h>
-#include <nav_msgs/Odom.h>
+#include <nav_msgs/Odometry.h>
 #include <octomap/octomap.h>
 #include <octomap/ColorOcTree.h>
 #include <octomap_msgs/Octomap.h>
@@ -608,7 +608,7 @@ void updateFrontier(Msfm3d& planner){
         frontier = 0;
       }
 
-      // If the current voxel is a frontier, add the  current voxel location to the cost and frontierList
+      // If the current voxel is a frontier, add the  current voxel location to the planner.frontier array
       if (frontier) {
         frontier = 0; // reset for next loop
         planner.frontier[i] = 1;
@@ -653,7 +653,7 @@ void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5]){
 }
 
 void findEntrance(Msfm3d& planner, float entranceList[15], double cost[5]){
-  // findEntrace scans through the environment arrays and returns the 5 closest entrance locations in reachability distance.
+  // findEntrance scans through the environment arrays and returns the 5 closest entrance locations in reachability distance.
   int npixels = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
   float point[3];
   int slot = 0;
@@ -1003,7 +1003,7 @@ int main(int argc, char **argv)
   //   ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
-  ros::Subscriber sub2 = n.subscribe("/X1/true_odom", 1, &Msfm3d::callback_position, &planner);
+  ros::Subscriber sub2 = n.subscribe("/X1/odom_truth", 1, &Msfm3d::callback_position, &planner);
 
   ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("/X1/nearest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
