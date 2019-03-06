@@ -143,7 +143,7 @@ class guidance_controller:
 		self.vehicle_type = vehicle_type; # vehicle type (ground vs air)
 		self.controller_type = controller_type; # Type of guidance controller from guidance
 		self.speed = float(speed) # m/s
-		self.Tstar = 3.0 # seconds
+		self.Tstar = 1.5 # seconds
 
 		# Booleans for first subscription receive
 		self.positionUpdated = 0

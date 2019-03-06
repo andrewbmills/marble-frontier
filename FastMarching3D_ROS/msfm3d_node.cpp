@@ -185,14 +185,13 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
   if (!receivedOctomap) receivedOctomap = 1;
 
   // Free/Allocate the tree memory
-  octomap::AbstractOcTree* abstree = octomap_msgs::binaryMsgToMap(*msg); // OcTree object for storing Octomap data.
-  ROS_INFO("Octomap converted to AbstractOcTree.");
-  // octomap::OcTree* mytree = dynamic_cast<octomap::OcTree*>(abstree);
-  octomap::OcTree* mytree = (octomap::OcTree*)abstree;
+  // ROS_INFO("Converting Octomap msg to AbstractOcTree...");
+  // octomap::AbstractOcTree* abstree = new octomap::AbstractOcTree(msg->resolution);
+  // abstree = octomap_msgs::binaryMsgToMap(*msg); // OcTree object for storing Octomap data.
+  // ROS_INFO("Octomap converted to AbstractOcTree.");
+  octomap::OcTree* mytree = new octomap::OcTree(msg->resolution);
+  mytree = (octomap::OcTree*)octomap_msgs::binaryMsgToMap(*msg);
   ROS_INFO("AbstractOcTree cast into OcTree.");
-  // octomap::OcTree thistree = *mytree;
-  // ROS_INFO("OcTree pointer stored as OcTree object.");
-  // tree = *tree_pointer;
 
   ROS_INFO("Parsing Octomap...");
   // Make sure the tree is at the same resolution as the esdf we're creating.  If it's not, change the resolution.
@@ -206,14 +205,14 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
   double x, y, z;
   mytree->getMetricMin(x, y, z);
   ROS_INFO("Got Minimum map dimensions.");
-  esdf.min[0] = (float)x - voxel_size;
-  esdf.min[1] = (float)y - voxel_size;
-  esdf.min[2] = (float)z - voxel_size;
+  esdf.min[0] = (float)x - 1.5*voxel_size;
+  esdf.min[1] = (float)y - 1.5*voxel_size;
+  esdf.min[2] = (float)z - 1.5*voxel_size;
   mytree->getMetricMax(x, y, z);
   ROS_INFO("Got Maximum map dimensions.");
-  esdf.max[0] = (float)x + voxel_size;
-  esdf.max[1] = (float)y + voxel_size;
-  esdf.max[2] = (float)z + voxel_size;
+  esdf.max[0] = (float)x + 1.5*voxel_size;
+  esdf.max[1] = (float)y + 1.5*voxel_size;
+  esdf.max[2] = (float)z + 1.5*voxel_size;
   for (int i=0; i<3; i++) esdf.size[i] = roundf((esdf.max[i]-esdf.min[i])/voxel_size) + 1;
 
   // Print out the max and min values with the size values.
@@ -230,28 +229,58 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
 
   // Loop through tree and extract occupancy info into esdf.data and seen/not into esdf.seen
   double size, value;
-  float point[3];
-  int idx, depth;
+  float point[3], lower_corner[3];
+  int idx, depth, width;
+  int lowest_depth = (int)mytree->getTreeDepth();
+  ROS_INFO("Starting tree iterator on OcTree with max depth %d", lowest_depth);
   for(octomap::OcTree::leaf_iterator it = mytree->begin_leafs(),
        end=mytree->end_leafs(); it!=end; ++it)
   {
     // Get data from node
-    size = it.getSize();
-    value = (double)it->getValue();
     depth = (int)it.getDepth();
-
-    // Put data into esdf
     point[0] = (float)it.getX();
     point[1] = (float)it.getY();
     point[2] = (float)it.getZ();
-    idx = xyz_index3(point);
-    esdf.data[idx] = 1.0 - value;
-    esdf.seen[idx] = 1;
+    size = it.getSize();
+    if (it->getValue() > 0){
+      value = 0.0;
+    } else{
+      value = 1.0;
+    }
+
+    // Put data into esdf
+    if (depth == lowest_depth){
+      idx = xyz_index3(point);
+      // std::cout << "Node value: " << it->getValue() << std::endl;
+      // ROS_INFO("Assigning an ESDF value at index %d with depth %d and size %f. (%f, %f, %f)", idx, depth, size, point[0], point[1], point[2]);
+      esdf.data[idx] = value;
+      esdf.seen[idx] = 1;
+    } else{ // Fill in all the voxels internal to the leaf
+      width = (int)std::pow(2.0, (double)(lowest_depth-depth));
+      for (int i=0; i<3; i++){
+        lower_corner[i] = point[i] - size/2.0 + voxel_size/2.0;
+      }
+      // ROS_INFO("Point (%f, %f, %f) is not at the base depth.  It is %d voxels wide.", point[0], point[1], point[2], width);
+      // ROS_INFO("Filling in leaf at depth %d with size %f.  The lower corner is at (%f, %f, %f)", depth, size, lower_corner[0], lower_corner[1], lower_corner[2]);
+      for (int i=0; i<width; i++){
+        point[0] = lower_corner[0] + i*voxel_size;
+        for (int j=0; j<width; j++){
+          point[1] = lower_corner[1] + j*voxel_size;
+          for (int k=0; k<width; k++){
+            point[2] = lower_corner[2] + k*voxel_size;
+            idx = xyz_index3(point);
+            esdf.data[idx] = value;
+            esdf.seen[idx] = 1;
+          }
+        }
+      }
+    }
   }
 
   // Free memory for AbstractOcTree object pointer
-  free(abstree);
-  free(tree);
+  ROS_INFO("Freeing OcTree and AbstractOcTree memory.");
+  // delete abstree;
+  delete mytree;
 
   // newMap = 1;
   ROS_INFO("OctoMap message received!");
@@ -265,80 +294,6 @@ void Msfm3d::callback(sensor_msgs::PointCloud2 msg)
   newMap = 1;
   ROS_INFO("ESDF PointCloud2 received!");
 }
-
-// void Msfm3d::parseMap()
-// {
-//   if (newMap){
-//     if (esdf_or_octomap){
-//       parseOctomap();
-//     }
-//     else {
-//       parsePointCloud();
-//     }
-//     ROS_INFO("ESDF Updated!");
-//     newMap = 0;
-//   } else {
-//     ROS_INFO("No new map information.");
-//   }
-// }
-
-// void Msfm3d::parseOctomap()
-// {
-//   ROS_INFO("Parsing Octomap...");
-//   // Make sure the tree is at the same resolution as the esdf we're creating.  If it's not, change the resolution.
-//   ROS_INFO("Tree resolution is %f meters.", tree->getResolution());
-//   if (tree->getResolution() != (double)voxel_size) {
-//     tree->setResolution((double)voxel_size);
-//     tree->prune();
-//   }
-
-//   // Parse out ESDF struct dimensions from the the AbstractOcTree object
-//   double x, y, z;
-//   tree->getMetricMin(x, y, z);
-//   ROS_INFO("Got Minimum map dimensions.");
-//   esdf.min[0] = (float)x - voxel_size;
-//   esdf.min[1] = (float)y - voxel_size;
-//   esdf.min[2] = (float)z - voxel_size;
-//   tree->getMetricMax(x, y, z);
-//   ROS_INFO("Got Maximum map dimensions.");
-//   esdf.max[0] = (float)x + voxel_size;
-//   esdf.max[1] = (float)y + voxel_size;
-//   esdf.max[2] = (float)z + voxel_size;
-//   for (int i=0; i<3; i++) esdf.size[i] = roundf((esdf.max[i]-esdf.min[i])/voxel_size) + 1;
-
-//   // Print out the max and min values with the size values.
-//   ROS_INFO("The (x,y,z) ranges are (%0.2f to %0.2f, %0.2f to %0.2f, %0.2f to %0.2f).", esdf.min[0], esdf.max[0], esdf.min[1], esdf.max[1], esdf.min[2], esdf.max[2]);
-//   ROS_INFO("The ESDF dimension sizes are %d, %d, and %d.", esdf.size[0], esdf.size[1], esdf.size[2]);
-
-//   // Free and allocate memory for the esdf.data and esdf.seen pointer arrays
-//   delete[] esdf.data;
-//   esdf.data = NULL;
-//   esdf.data = new double [esdf.size[0]*esdf.size[1]*esdf.size[2]] { }; // Initialize all values to zero.
-//   delete[] esdf.seen;
-//   esdf.seen = NULL;
-//   esdf.seen = new bool [esdf.size[0]*esdf.size[1]*esdf.size[2]] { }; // Initialize all values to zero.
-
-//   // Loop through tree and extract occupancy info into esdf.data and seen/not into esdf.seen
-//   double size, value;
-//   float point[3];
-//   int idx, depth;
-//   for(octomap::OcTree::leaf_iterator it = tree->begin_leafs(),
-//        end=tree->end_leafs(); it!=end; ++it)
-//   {
-//     // Get data from node
-//     size = it.getSize();
-//     value = (double)it->getValue();
-//     depth = (int)it.getDepth();
-
-//     // Put data into esdf
-//     point[0] = (float)it.getX();
-//     point[1] = (float)it.getY();
-//     point[2] = (float)it.getZ();
-//     idx = xyz_index3(point);
-//     esdf.data[idx] = value;
-//     esdf.seen[idx] = 1;
-//   }
-// }
 
 void Msfm3d::parsePointCloud()
 {
@@ -639,13 +594,17 @@ void updateFrontier(Msfm3d& planner){
         for (int j=0; j<4; j++) {
           if (!planner.esdf.seen[neighbor[j]]  && !(i == neighbor[j])) frontier = 1;
         }
-        if (!planner.esdf.seen[neighbor[5]]  && !(i == neighbor[5])) frontier = 1;
+        // if (!planner.esdf.seen[neighbor[5]]  && !(i == neighbor[5])) frontier = 1;
       }
       // Check if the point is on the ground if it is a ground robot
       if (frontier && planner.ground) {
         // Only consider frontiers on the floor
-        if (planner.esdf.data[neighbor[5]] > (0.01)) frontier = 0;
-        if (!planner.esdf.seen[neighbor[5]]) frontier = 0;
+        // if (planner.esdf.data[neighbor[5]] > (0.01)) frontier = 0;
+        // if (!planner.esdf.seen[neighbor[5]]) frontier = 0;
+
+        // Only consider frontiers close in z-coordinate (temporary hack)
+        if (abs(planner.position[2] - point[2]) >= 2*planner.voxel_size) frontier = 0;
+
         // Eliminate frontiers that are adjacent to occupied cells (unless it's the bottom neighbor for the ground case)
         for (int j=0; j<5; j++) {
           if (planner.esdf.data[neighbor[j]] < (0.01) && planner.esdf.seen[neighbor[j]]) frontier = 0;
@@ -1024,7 +983,7 @@ int main(int argc, char **argv)
   // Initialize planner object
   ROS_INFO("Initializing msfm3d planner...");
   Msfm3d planner;
-  planner.ground = 0;
+  planner.ground = 1;
   planner.esdf_or_octomap = 1; // Use an octomap message
   planner.origin[0] = 0.0;
   planner.origin[1] = 0.0;
