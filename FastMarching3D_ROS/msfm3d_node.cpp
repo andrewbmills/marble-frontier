@@ -9,6 +9,7 @@
 #include <geometry_msgs/PointStamped.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <nav_msgs/Path.h>
+#include <nav_msgs/Odom.h>
 #include <octomap/octomap.h>
 #include <octomap/ColorOcTree.h>
 #include <octomap_msgs/Octomap.h>
@@ -100,7 +101,7 @@ class Msfm3d
 
     void callback(sensor_msgs::PointCloud2 msg); // Subscriber callback function for PC2 msg (ESDF)
     void callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg); // Subscriber callback function for Octomap msg
-    void callback_position(const gazebo_msgs::LinkStates msg); // Subscriber callback for robot position
+    void callback_position(const nav_msgs::Odometry msg); // Subscriber callback for robot position
     // void parseMap(); // Function to parse map msg into a format that msfm3d can use
     void parsePointCloud(); // Function to parse pointCloud2 into an esdf format that msfm3d can use
     // void parseOctomap(); // Function to parse Octomap msg into a formate that msfm3d can use
@@ -150,33 +151,17 @@ void Msfm3d::getEuler()
   }
 }
 
-void Msfm3d::callback_position(const gazebo_msgs::LinkStates msg)
+void Msfm3d::callback_position(const nav_msgs::Odometry msg)
 {
-  // Find the link index
-  int i = 0;
-  if (link_id == -1){
-    while (link_id == -1) {
-      // if (msg.name[i] == "X1::X1/base_link") link_id = i;
-      if (msg.name[i] == "X1::X1/base_link") link_id = i;
-      if (i > 200) link_id = i;
-      i++;
-    }
-  }
-  if (link_id > 200) {
-    ROS_INFO("ERROR: Can't find vehicle state in /gazebo/link_states/.");
-  }
-  else {
-    ROS_INFO("Getting vehicle pose with link_id = %d...", link_id);
-    if (!receivedPosition) receivedPosition = 1;
-    position[0] = msg.pose[link_id].position.x;
-    position[1] = msg.pose[link_id].position.y;
-    position[2] = msg.pose[link_id].position.z;
-    q.x = msg.pose[link_id].orientation.x;
-    q.y = msg.pose[link_id].orientation.y;
-    q.z = msg.pose[link_id].orientation.z;
-    q.w = msg.pose[link_id].orientation.w;
-    ROS_INFO("Robot pose updated!");
-  }
+  if (!receivedPosition) receivedPosition = 1;
+  position[0] = msg.pose.pose.position.x;
+  position[1] = msg.pose.pose.position.y;
+  position[2] = msg.pose.pose.position.z;
+  q.x = msg.pose.pose.orientation.x;
+  q.y = msg.pose.pose.orientation.y;
+  q.z = msg.pose.pose.orientation.z;
+  q.w = msg.pose.pose.orientation.w;
+  ROS_INFO("Robot pose updated!");
 }
 
 void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
@@ -1018,7 +1003,7 @@ int main(int argc, char **argv)
   //   ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
-  ros::Subscriber sub2 = n.subscribe("/gazebo/link_states", 1, &Msfm3d::callback_position, &planner);
+  ros::Subscriber sub2 = n.subscribe("/X1/true_odom", 1, &Msfm3d::callback_position, &planner);
 
   ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("/X1/nearest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
