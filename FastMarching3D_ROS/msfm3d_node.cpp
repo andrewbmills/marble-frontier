@@ -85,7 +85,7 @@ class Msfm3d
     bool receivedOctomap = 0;
     bool newMap = 0;
     bool esdf_or_octomap = 0; // Boolean to use an esdf PointCloud2 or an Octomap as input
-    float voxel_size; // voxblox voxel size
+    float voxel_size, bubble_radius; // map voxel size, and bubble radius
     float position[3] = {69.0, 420.0, 1337.0}; // robot position
     float euler[3]; // robot orientation in euler angles
     float R[9]; // Rotation matrix
@@ -676,7 +676,7 @@ void updateFrontier(Msfm3d& planner){
     _point.z = point[2];
 
     // Check if the voxel has been seen and is unoccupied
-    if (planner.esdf.seen[i] && (planner.esdf.data[i]>0.0) && planner.inBoundary(point)){
+    if (planner.esdf.seen[i] && (planner.esdf.data[i]>0.0) && planner.inBoundary(point) && (dist3(point, planner.position) >= planner.bubble_radius)){
 
       // Check if the voxel is a frontier by querying adjacent voxels
       for (int j=0; j<3; j++) query[j] = point[j];
@@ -1098,6 +1098,7 @@ int main(int argc, char **argv)
   planner.origin[0] = 0.0;
   planner.origin[1] = 0.0;
   planner.origin[2] = 0.0;
+  planner.bubble_radius = 3.0;
   // Set planner bounds so that the robot doesn't exit a defined volume
   // planner.bounds.set = 1;
   // planner.bounds.xmin = -5.0;
