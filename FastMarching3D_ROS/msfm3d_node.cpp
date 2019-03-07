@@ -520,44 +520,56 @@ void Msfm3d::updatePath(const float goal[3]){
   // Run loop until the path is within a voxel of the robot.
   while ((dist_robot2path > 2.0*voxel_size) && (path.size() < 30000)) {
     // Find the corner indices to the current point
-    for (int i=0; i<3; i++) ijk000[i] = floor((point[i] - esdf.min[i])/voxel_size);
-    corner[0] = mindex3(ijk000[0], ijk000[1], ijk000[2], esdf.size[0], esdf.size[1]);
-    corner[1] = mindex3(ijk000[0] + 1, ijk000[1], ijk000[2], esdf.size[0], esdf.size[1]);
-    corner[2] = mindex3(ijk000[0], ijk000[1] + 1, ijk000[2], esdf.size[0], esdf.size[1]);
-    corner[3] = mindex3(ijk000[0] + 1, ijk000[1] + 1, ijk000[2], esdf.size[0], esdf.size[1]);
-    corner[4] = mindex3(ijk000[0], ijk000[1], ijk000[2] + 1, esdf.size[0], esdf.size[1]);
-    corner[5] = mindex3(ijk000[0] + 1, ijk000[1], ijk000[2] + 1, esdf.size[0], esdf.size[1]);
-    corner[6] = mindex3(ijk000[0], ijk000[1] + 1, ijk000[2] + 1, esdf.size[0], esdf.size[1]);
-    corner[7] = mindex3(ijk000[0] + 1, ijk000[1] + 1, ijk000[2] + 1, esdf.size[0], esdf.size[1]);
+    // for (int i=0; i<3; i++) ijk000[i] = floor((point[i] - esdf.min[i])/voxel_size);
+    // corner[0] = mindex3(ijk000[0], ijk000[1], ijk000[2], esdf.size[0], esdf.size[1]);
+    // corner[1] = mindex3(ijk000[0] + 1, ijk000[1], ijk000[2], esdf.size[0], esdf.size[1]);
+    // corner[2] = mindex3(ijk000[0], ijk000[1] + 1, ijk000[2], esdf.size[0], esdf.size[1]);
+    // corner[3] = mindex3(ijk000[0] + 1, ijk000[1] + 1, ijk000[2], esdf.size[0], esdf.size[1]);
+    // corner[4] = mindex3(ijk000[0], ijk000[1], ijk000[2] + 1, esdf.size[0], esdf.size[1]);
+    // corner[5] = mindex3(ijk000[0] + 1, ijk000[1], ijk000[2] + 1, esdf.size[0], esdf.size[1]);
+    // corner[6] = mindex3(ijk000[0], ijk000[1] + 1, ijk000[2] + 1, esdf.size[0], esdf.size[1]);
+    // corner[7] = mindex3(ijk000[0] + 1, ijk000[1] + 1, ijk000[2] + 1, esdf.size[0], esdf.size[1]);
 
     // ROS_INFO("Corner indices found");
     // Compute the gradients at each corner point.
-    for (int i=0; i<8; i++) {
-      neighbor[0] = corner[i] - 1; // i-1
-      neighbor[1] = corner[i] + 1; // i+1
-      neighbor[2] = corner[i] - esdf.size[0]; // j-1
-      neighbor[3] = corner[i] + esdf.size[0]; // j+1
-      neighbor[4] = corner[i] - esdf.size[0]*esdf.size[1]; // k-1
-      neighbor[5] = corner[i] + esdf.size[0]*esdf.size[1]; // k+1
-      // ROS_INFO("Neighbor indices found of corner point %d", i);
-      for (int j=0; j<3; j++) gradcorner[3*i+j] = 0.5*(float)(reach[neighbor[2*j]] - reach[neighbor[2*j+1]]); // Central Difference Operator (Try Sobel if this is bad)
+    // for (int i=0; i<8; i++) {
+    //   neighbor[0] = corner[i] - 1; // i-1
+    //   neighbor[1] = corner[i] + 1; // i+1
+    //   neighbor[2] = corner[i] - esdf.size[0]; // j-1
+    //   neighbor[3] = corner[i] + esdf.size[0]; // j+1
+    //   neighbor[4] = corner[i] - esdf.size[0]*esdf.size[1]; // k-1
+    //   neighbor[5] = corner[i] + esdf.size[0]*esdf.size[1]; // k+1
+    //   // ROS_INFO("Neighbor indices found of corner point %d", i);
+    //   for (int j=0; j<3; j++) gradcorner[3*i+j] = 0.5*(float)(reach[neighbor[2*j]] - reach[neighbor[2*j+1]]); // Central Difference Operator (Try Sobel if this is bad)
+    // }
+	
+  	// Find the current point's grid indices and it's 6 neighbor voxel indices.
+  	idx = xyz_index3(point);
+	neighbor[0] = idx - 1; // i-1
+    neighbor[1] = idx + 1; // i+1
+    neighbor[2] = idx - esdf.size[0]; // j-1
+    neighbor[3] = idx + esdf.size[0]; // j+1
+    neighbor[4] = idx - esdf.size[0]*esdf.size[1]; // k-1
+    neighbor[5] = idx + esdf.size[0]*esdf.size[1]; // k+1
+    // ROS_INFO("Neighbor indices found of corner point %d", i);
+    for (int j=0; j<3; j++) {
+      grad[j] = 0.5*(float)(reach[neighbor[2*j]] - reach[neighbor[2*j+1]]); // Central Difference Operator (Try Sobel if this is bad)
     }
-
     // ROS_INFO("gradients found at each corner point.");
     // Linearly interpolate in 3D to find the gradient at the current point.
-    index3_xyz(corner[0], xyz000);
-    xd = (point[0] - xyz000[0])/voxel_size;
-    yd = (point[1] - xyz000[1])/voxel_size;
-    zd = (point[2] - xyz000[2])/voxel_size;
-    for (int i=0; i<3; i++){
-      c00 = (1.0-xd)*gradcorner[i] + xd*gradcorner[3+i];
-      c01 = (1.0-xd)*gradcorner[12+i] + xd*gradcorner[15+i];
-      c10 = (1.0-xd)*gradcorner[6+i] + xd*gradcorner[9+i];
-      c11 = (1.0-xd)*gradcorner[18+i] + xd*gradcorner[21+i];
-      c0 = (1.0-yd)*c00 + yd*c10;
-      c1 = (1.0-yd)*c01 + yd*c11;
-      grad[i] = (1.0-zd)*c0 + zd*c1;
-    }
+    // index3_xyz(corner[0], xyz000);
+    // xd = (point[0] - xyz000[0])/voxel_size;
+    // yd = (point[1] - xyz000[1])/voxel_size;
+    // zd = (point[2] - xyz000[2])/voxel_size;
+    // for (int i=0; i<3; i++){
+    //   c00 = (1.0-xd)*gradcorner[i] + xd*gradcorner[3+i];
+    //   c01 = (1.0-xd)*gradcorner[12+i] + xd*gradcorner[15+i];
+    //   c10 = (1.0-xd)*gradcorner[6+i] + xd*gradcorner[9+i];
+    //   c11 = (1.0-xd)*gradcorner[18+i] + xd*gradcorner[21+i];
+    //   c0 = (1.0-yd)*c00 + yd*c10;
+    //   c1 = (1.0-yd)*c01 + yd*c11;
+    //   grad[i] = (1.0-zd)*c0 + zd*c1;
+    // }
 
     // Normalize the size of the gradient vector if it is too large
     grad_norm = std::sqrt(grad[0]*grad[0] + grad[1]*grad[1] + grad[2]*grad[2]);
