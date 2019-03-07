@@ -1,4 +1,4 @@
-function [path] = frontierPlan(occGrid, position, hblob, minObsDist, figNum)
+function [path] = frontierPlan(occGrid, position, hblob, minObsDist, neighbors, figNum)
 %   (occupancy grid, agent position, blob detector, minimum obstacle distance, figure number)
     %% Create Reachability Grid
     speedGrid = bwdist(occGrid);
@@ -20,10 +20,24 @@ function [path] = frontierPlan(occGrid, position, hblob, minObsDist, figNum)
         return
     end
   
+    % Find the cost to reach the frontiers
     frontCost = frontGrid.*reachGrid + (1 - frontGrid)*1e6;
-    [~, idNext] = min(frontCost(:));
-    [i_goal, j_goal] = ind2sub(size(occGrid), idNext);
-    path = findPathContinuous(reachGrid, [i_goal, j_goal], [position(1), position(2)]);
+    % Find the N lowest cost frontiers
+    % TODO decide on optimum N.  >150 was seen once
+    [~, idNext] = mink(frontCost(:), 500);
+
+    % Check all of the neighbors to decide which goal to explore
+    goal = deconflictGoal(occGrid, frontCost, idNext, neighbors);
+
+    % If there's no goal (potentially because all of them are already taken
+    % by other agents), stay in place for now
+    if isempty(goal)
+        path = [round(position(1)), round(position(2))];
+        return
+    end
+
+    % Compute the path to the chosen frontier
+    path = findPathContinuous(reachGrid, goal, [position(1), position(2)]);
     
     global gridPlots;
     if nargin == 5 && gridPlots

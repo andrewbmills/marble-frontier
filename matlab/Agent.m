@@ -3,6 +3,7 @@ classdef Agent < handle
     %   Detailed explanation goes here
     
     properties
+        id
         state
         stateHistory
         path
@@ -12,11 +13,13 @@ classdef Agent < handle
         gridDims
         sensor % [range (m), field of view (radians]
         controlLims % [maxSpeed, maxTurnRate, maxDecel]
+        neighbors = Neighbor.empty % array of the agents current in communication with self
         run
     end
    
     methods
-        function obj = Agent(state0, occGrid0, gridDims, sensor, maxControl)
+        function obj = Agent(id, state0, occGrid0, gridDims, sensor, maxControl)
+            obj.id = id;
             obj.state = state0; % [x_pos, y_pos, angle, speed]
             obj.stateHistory = [0, obj.state'];
             obj.occGrid = occGrid0;
@@ -27,9 +30,9 @@ classdef Agent < handle
             obj.path = [state0(1), state0(2)];
             obj.run = true;
 %             obj.carrot = [0, 1]; % 0 distance along path segment 1
-            if nargin == 4
+            if nargin == 5
                 obj.sensor = sensor;
-            elseif nargin == 5
+            elseif nargin == 6
                 obj.controlLims = maxControl;
             end
         end
