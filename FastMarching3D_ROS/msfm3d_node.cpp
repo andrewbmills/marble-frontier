@@ -1144,7 +1144,7 @@ int main(int argc, char **argv)
   frontierGoal.header.frame_id = planner.frame;
 
   // Publish goal point to interface with btraj
-  ros::Publisher pub4 = n.advertise<nav_msgs::PoseStamped>("/X1/frontier_goal_pose", 5);
+  ros::Publisher pub4 = n.advertise<geometry_msgs::PoseStamped>("/X1/frontier_goal_pose", 5);
   geometry_msgs::PoseStamped goalPose;
   goalPose.header.frame_id = planner.frame;
   goalPose.pose.position.x = 0.0;
