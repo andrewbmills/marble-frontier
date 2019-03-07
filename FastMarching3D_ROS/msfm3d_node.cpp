@@ -1137,24 +1137,21 @@ int main(int argc, char **argv)
   //   ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
-  ros::Subscriber sub2 = n.subscribe("/X1/odom_truth", 1, &Msfm3d::callback_position, &planner);
+  ros::Subscriber sub2 = n.subscribe("/husky_odom", 1, &Msfm3d::callback_position, &planner);
 
   ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("/X1/nearest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
   frontierGoal.header.frame_id = planner.frame;
 
   // Publish goal point to interface with btraj
-  ros::Publisher pub4 = n.advertise<nav_msgs::Path>("/X1/frontier_goal_pathmsg", 5);
+  ros::Publisher pub4 = n.advertise<nav_msgs::PoseStamped>("/X1/frontier_goal_pose", 5);
   geometry_msgs::PoseStamped goalPose;
-  nav_msgs::Path frontierPath;
   goalPose.header.frame_id = planner.frame;
-  frontierPath.header.frame_id = planner.frame;
   goalPose.pose.position.x = 0.0;
   goalPose.pose.position.y = 0.0;
   goalPose.pose.position.z = 0.0;
   goalPose.pose.orientation.w = 1.0;
   goalPose.header.seq = 1;
-  frontierPath.poses.push_back(goalPose);
 
   ros::Publisher pub2 = n.advertise<nav_msgs::Path>("/X1/planned_path", 5);
   ros::Publisher pub3 = n.advertise<visualization_msgs::MarkerArray>("/X1/frontier", 100);
@@ -1217,15 +1214,14 @@ int main(int argc, char **argv)
           for (int i=0; i<3; i++) goal[i] = frontierList[12+i];
 
           // Write a new frontier goal path for publishing
-          frontierPath.header.stamp = ros::Time::now();
-          frontierPath.poses[0].header.stamp = ros::Time::now();
-          frontierPath.poses[0].pose.position.x = frontierList[12];
-          frontierPath.poses[0].pose.position.y = frontierList[13];
-          frontierPath.poses[0].pose.position.z = frontierList[14] + 1.5;
+          goalPose.header.stamp = ros::Time::now();
+          goalPose.pose.position.x = frontierList[12];
+          goalPose.pose.position.y = frontierList[13];
+          goalPose.pose.position.z = frontierList[14];
         }
         // Publish path, goal point, and goal point only path
         pub1.publish(frontierGoal);
-        pub4.publish(frontierPath);
+        pub4.publish(goalPose);
         ROS_INFO("Goal point published!");
 
         // Output and publish path
