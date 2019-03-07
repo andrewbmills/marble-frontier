@@ -80,6 +80,7 @@ class Msfm3d
     }
     std::string frame = "world";
     bool ground = 0;
+    float wheel_bottom_dist = 0.0;
     bool receivedPosition = 0;
     bool receivedMap = 0;
     bool newMap = 0;
@@ -112,12 +113,13 @@ class Msfm3d
     };
     struct boundary {
       bool set = 0;
-      float xmin, xmax, ymin, ymax, zmin, zmax;
+      float xmin = 0.0, xmax = 0.0, ymin = 0.0, ymax = 0.0, zmin = 0.0, zmax = 0.0;
     };
 
     orientation q; // robot orientation in quaternions
     ESDF esdf; // ESDF struct object
     boundary bounds; // xyz boundary of possible goal locations
+    boundary vehicleVolume; // xyz boundary of the vehicle bounding box in rectilinear coordinates for collision detection/avoidance
 
     void callback(sensor_msgs::PointCloud2 msg); // Subscriber callback function for PC2 msg (ESDF)
     void callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg); // Subscriber callback function for Octomap msg
@@ -131,6 +133,7 @@ class Msfm3d
     void updateFrontierMsg(); // Updates the frontiermsg MarkerArray with the frontier matrix for publishing
     void clusterFrontier(const float radius); // Clusters the frontier pointCloud with euclidean distance within a radius
     bool inBoundary(const float point[3]); // Checks if a point is inside the planner boundaries
+    bool collisionCheck(const float point[3]); // Checks if the robot being at the current point (given vehicleVolume) intersects with the obstacle environment (esdf)
 };
 
 bool Msfm3d::inBoundary(const float point[3])
@@ -144,6 +147,40 @@ bool Msfm3d::inBoundary(const float point[3])
   } else {
     // No boundary exists so every point is inside.
     return 1;
+  }
+}
+
+bool collisionCheck(const float point[3]) 
+{
+  // Get indices corresponding to the voxels occupied by the vehicle
+  int lower_corner[3], voxel_width[3], idx, npixels = esdf.size[0]*esdf.size[1]*esdf.size[2]; // xyz point of the lower left of the vehicle rectangle
+  lower_corner[0] = point[0] + vehicleVolume.xmin;
+  lower_corner[1] = point[1] + vehicleVolume.ymin;
+  lower_corner[2] = point[2] + vehicleVolume.zmin;
+  voxel_width[0] = roundf((vehicleVolume.xmax - vehicleVolume.xmin)/voxel_size);
+  voxel_width[1] = roundf((vehicleVolume.xmax - vehicleVolume.xmin)/voxel_size);
+  voxel_width[2] = roundf((vehicleVolume.xmax - vehicleVolume.xmin)/voxel_size);
+  bool collision = 0;
+  float query[3];
+
+  // Loop through all of the voxels occupied by the vehicle
+  for (int i=0; i<voxel_width[0]; i++){
+    query[0] = lower_corner[0] + i*voxel_size;
+    for (int j=0; j<voxel_width[1]; j++){
+      query[1] = lower_corner[1] + j*voxel_size;
+      for (int k=0; k<voxel_width[2]; k++){
+        query[2] = lower_corner[2] + k*voxel_size;
+        idx = xyz_index3(query);
+        // Check to see if idx is inside a valid index
+        if (idx < 0 || idx >= npixels ) {
+          if (ground && (query[2] >= (point[2] - wheel_bottom_dist + voxel_size/2.0)) && esdf.data[idx] < 0.0) return 1; // Check for collisions above the wheels on the ground robot
+          if (!ground && esdf.data[idx] < 0.0) return 1; // Check for air vehicle collision
+          if (ground && (query[2] <= (point[2] - wheel_bottom_dist - voxel_size/2.0)) && esdf.data[idx] > 0.0) { // Check for wheel contact with the ground for the ground vehicle
+            ROS_INFO("Original path doesn't keep the ground vehicle on the ground, replanning to next closest frontier voxel...");
+            return 1;
+        }
+      }
+    }
   }
 }
 
@@ -486,7 +523,7 @@ void Msfm3d::clusterFrontier(const float radius) {
 }
 
 void Msfm3d::updatePath(const float goal[3]){
-  int npixels = esdf.size[0]*esdf.size[1]*esdf.size[2];
+  int npixels = esdf.size[0]*esdf.size[1]*esdf.size[2], idx; // size of the reachability array, index in reachability array of the current path voxel.
   int ijk000[3]; // i,j,k indices of corner[0]
   float xyz000[3]; // x,y,z, coordinates of corner[0];
   int corner[8]; // indices of the corners of the 8 closest voxels to the current point
@@ -495,7 +532,7 @@ void Msfm3d::updatePath(const float goal[3]){
   float query[3]; // intermediate x,y,z coordinates for another operation
   float grad[3]; // gradient at the current point
   float gradcorner[24]; // corner voxel gradients
-  float grad_norm; // norm of the gradient vector
+  float grad_norm = 1.0; // norm of the gradient vector
   float dist_robot2path = 10*voxel_size; // distance of the robot to the path
   float position2D[2];
   float point2D[2];
@@ -503,14 +540,13 @@ void Msfm3d::updatePath(const float goal[3]){
 
   // 3D Interpolation intermediate values from https://en.wikipedia.org/wiki/Trilinear_interpolation
   float xd, yd, zd, c00, c01, c10, c11, c0, c1; // 3D linear interpolation weights.
-  float step = voxel_size/4.0;
+  float step = voxel_size/2.0;
 
   // Path message for ROS
   nav_msgs::Path newpathmsg;
   geometry_msgs::PoseStamped pose;
   newpathmsg.header.frame_id = frame;
 
-  // ROS_INFO("Variables declared.");
   // Clear the path vector to prep for adding new elements.
   for (int i=0; i<3; i++){
     point[i] = goal[i];
@@ -518,7 +554,7 @@ void Msfm3d::updatePath(const float goal[3]){
   }
 
   // Run loop until the path is within a voxel of the robot.
-  while ((dist_robot2path > 2.0*voxel_size) && (path.size() < 30000)) {
+  while ((dist_robot2path > 2.0*voxel_size) && (path.size() < 30000) && grad_norm >= 0.00001) {
     // Find the corner indices to the current point
     // for (int i=0; i<3; i++) ijk000[i] = floor((point[i] - esdf.min[i])/voxel_size);
     // corner[0] = mindex3(ijk000[0], ijk000[1], ijk000[2], esdf.size[0], esdf.size[1]);
@@ -545,7 +581,7 @@ void Msfm3d::updatePath(const float goal[3]){
 	
   	// Find the current point's grid indices and it's 6 neighbor voxel indices.
   	idx = xyz_index3(point);
-	neighbor[0] = idx - 1; // i-1
+    neighbor[0] = idx - 1; // i-1
     neighbor[1] = idx + 1; // i+1
     neighbor[2] = idx - esdf.size[0]; // j-1
     neighbor[3] = idx + esdf.size[0]; // j+1
@@ -553,8 +589,24 @@ void Msfm3d::updatePath(const float goal[3]){
     neighbor[5] = idx + esdf.size[0]*esdf.size[1]; // k+1
     // ROS_INFO("Neighbor indices found of corner point %d", i);
     for (int j=0; j<3; j++) {
-      grad[j] = 0.5*(float)(reach[neighbor[2*j]] - reach[neighbor[2*j+1]]); // Central Difference Operator (Try Sobel if this is bad)
+      grad[j] = 0; // Initialize to zero in case neither neighbor has been assigned a reachability value.
+      // Check if the neighbor voxel has no reachability matrix value
+      if (reach[neighbor[2*j]] > 0.0 && reach[neighbor[2*j+1]] > 0.0){
+        grad[j] = 0.5*(float)(reach[neighbor[2*j]] - reach[neighbor[2*j+1]]); // Central Difference Operator (Try Sobel if this is bad)
+        // ROS_INFO("Using Central Difference Operator for %d coordinate for path gradient.", j);
+      } else {
+        if (reach[neighbor[2*j]] > 0.0) {
+          grad[j] = 0.5*(float)(reach[neighbor[2*j]] - reach[idx]); // Intermediate Difference Operator (with previous neighbor)
+          // ROS_INFO("Using Backward Intermediate Difference Operator for %d coordinate for path gradient.", j);
+        }
+        if (reach[neighbor[2*j + 1]] > 0.0) {
+          grad[j] = 0.5*(float)(reach[idx] - reach[neighbor[2*j+1]]); // Intermediate Difference Operator (with next neighbor)
+          // ROS_INFO("Using Forward Intermediate Difference Operator for %d coordinate for path gradient.", j);
+        }
+      }
     }
+    // ROS_INFO("Gradient at point [%f, %f, %f] is [%f, %f, %f].", point[0], point[1], point[2], grad[0], grad[1], grad[2]);
+
     // ROS_INFO("gradients found at each corner point.");
     // Linearly interpolate in 3D to find the gradient at the current point.
     // index3_xyz(corner[0], xyz000);
@@ -573,8 +625,8 @@ void Msfm3d::updatePath(const float goal[3]){
 
     // Normalize the size of the gradient vector if it is too large
     grad_norm = std::sqrt(grad[0]*grad[0] + grad[1]*grad[1] + grad[2]*grad[2]);
-    if (grad_norm > 0.25){
-      for (int i=0; i<3; i++) grad[i] = std::sqrt(0.25)*grad[i]/grad_norm;
+    if (grad_norm > 1.0){
+      for (int i=0; i<3; i++) grad[i] = std::sqrt(1.0)*grad[i]/grad_norm;
     }
     if (grad_norm < 0.05){
       for (int i=0; i<3; i++) grad[i] = std::sqrt(0.05)*grad[i]/grad_norm;
@@ -584,8 +636,10 @@ void Msfm3d::updatePath(const float goal[3]){
     // ROS_INFO("Gradients: [%f, %f, %f]", grad[0], grad[1], grad[2]);
     // Update point and add to path
     for (int i=0; i<3; i++) {
-      point[i] = point[i] + step*grad[i];
-      path.push_back(point[i]);
+      if (grad_norm >= 0.00001){
+        point[i] = point[i] + step*grad[i];
+        path.push_back(point[i]);
+      }
     }
     // ROS_INFO("[%f, %f, %f] added to path.", point[0], point[1], point[2]);
 
@@ -598,10 +652,13 @@ void Msfm3d::updatePath(const float goal[3]){
       dist_robot2path = dist2(position2D, point2D);
     }
     else {dist_robot2path = dist3(position, point);}
+
+    // Check for a collision with the environment to make sure this goal point is feasible.
+
   }
 
   // Add path vector to path message for plotting in rviz
-  ROS_INFO("Path finished of length %d", (int)path.size());
+  ROS_INFO("Path finished of length %d", (int)(path.size()/3.0));
   for (int i=(path.size()-3); i>=0; i=i-3){
     pose.header.frame_id = frame;
     pose.pose.position.x = path[i];
