@@ -81,11 +81,10 @@ class Msfm3d
     std::string frame = "world";
     bool ground = 0;
     bool receivedPosition = 0;
-    bool receivedPointCloud = 0;
-    bool receivedOctomap = 0;
+    bool receivedMap = 0;
     bool newMap = 0;
     bool esdf_or_octomap = 0; // Boolean to use an esdf PointCloud2 or an Octomap as input
-    float voxel_size, bubble_radius; // map voxel size, and bubble radius
+    float voxel_size, bubble_radius = 1.5; // map voxel size, and bubble radius
     float position[3] = {69.0, 420.0, 1337.0}; // robot position
     float euler[3]; // robot orientation in euler angles
     float R[9]; // Rotation matrix
@@ -202,7 +201,7 @@ void Msfm3d::callback_position(const nav_msgs::Odometry msg)
 void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
 {
   ROS_INFO("Getting OctoMap message...");
-  if (!receivedOctomap) receivedOctomap = 1;
+  if (!receivedMap) receivedMap = 1;
 
   // Free/Allocate the tree memory
   // ROS_INFO("Converting Octomap msg to AbstractOcTree...");
@@ -309,7 +308,7 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
 void Msfm3d::callback(sensor_msgs::PointCloud2 msg)
 {
   ROS_INFO("Getting ESDF PointCloud2...");
-  if (!receivedPointCloud) receivedPointCloud = 1;
+  if (!receivedMap) receivedMap = 1;
   PC2msg = msg;
   newMap = 1;
   ROS_INFO("ESDF PointCloud2 received!");
@@ -559,6 +558,7 @@ void Msfm3d::updatePath(const float goal[3]){
       c1 = (1.0-yd)*c01 + yd*c11;
       grad[i] = (1.0-zd)*c0 + zd*c1;
     }
+
     // Normalize the size of the gradient vector if it is too large
     grad_norm = std::sqrt(grad[0]*grad[0] + grad[1]*grad[1] + grad[2]*grad[2]);
     if (grad_norm > 0.25){
@@ -1094,11 +1094,11 @@ int main(int argc, char **argv)
   ROS_INFO("Initializing msfm3d planner...");
   Msfm3d planner;
   planner.ground = 1;
-  planner.esdf_or_octomap = 1; // Use an octomap message
+  planner.esdf_or_octomap = 0; // Use an octomap message
   planner.origin[0] = 0.0;
   planner.origin[1] = 0.0;
   planner.origin[2] = 0.0;
-  planner.bubble_radius = 3.0;
+  // planner.bubble_radius = 3.0;
   // Set planner bounds so that the robot doesn't exit a defined volume
   // planner.bounds.set = 1;
   // planner.bounds.xmin = -5.0;
@@ -1130,15 +1130,15 @@ int main(int argc, char **argv)
    * away the oldest ones.
    */
   // if (planner.esdf_or_octomap) {
-    ROS_INFO("Subscribing to Occupancy Grid...");
-    ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  // ROS_INFO("Subscribing to Occupancy Grid...");
+  // ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);  
   // }
   // else {
-  //   ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
-  //   ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
+  ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
+  ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
-  ros::Subscriber sub2 = n.subscribe("/husky_odom", 1, &Msfm3d::callback_position, &planner);
+  ros::Subscriber sub2 = n.subscribe("/X1/odom_truth", 1, &Msfm3d::callback_position, &planner);
 
   ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("/X1/nearest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
@@ -1177,13 +1177,13 @@ int main(int argc, char **argv)
     r.sleep();
     ros::spinOnce();
     ROS_INFO("Planner Okay.");
-    // planner.parseMap();
+    planner.parsePointCloud();
     // Heartbeat status update
     if (planner.receivedPosition){
       ROS_INFO("X1 Position: [x: %f, y: %f, z: %f]", planner.position[0], planner.position[1], planner.position[2]);
       i = planner.xyz_index3(planner.position);
       ROS_INFO("Index at Position: %d", i);
-      if (planner.receivedOctomap){
+      if (planner.receivedMap){
         ROS_INFO("ESDF at Position: %f", planner.esdf.data[i]);
 
         // Find frontier cells and add them to planner.frontier for output to file.
@@ -1196,7 +1196,7 @@ int main(int argc, char **argv)
         // Call msfm3d function
         tStart = clock();
         ROS_INFO("Reachability matrix calculating...");
-        reach(planner, 1, 1, 10);
+        reach(planner, 1, 1, 50);
         ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
 
         // Choose a new goal point if previous point is no longer a frontier
