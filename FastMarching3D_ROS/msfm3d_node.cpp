@@ -124,7 +124,7 @@ class Msfm3d
 
     void callback(sensor_msgs::PointCloud2 msg); // Subscriber callback function for PC2 msg (ESDF)
     void callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg); // Subscriber callback function for Octomap msg
-    void callback_position(const goemetry_msgs::PoseStamped msg); // Subscriber callback for robot position
+    void callback_position(const geometry_msgs::PoseStamped msg); // Subscriber callback for robot position
     void parsePointCloud(); // Function to parse pointCloud2 into an esdf format that msfm3d can use
     int xyz_index3(const float point[3]);
     void index3_xyz(const int index, float point[3]);
