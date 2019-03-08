@@ -16,11 +16,12 @@
 #include <octomap/ColorOcTree.h>
 #include <octomap_msgs/Octomap.h>
 #include <octomap_msgs/conversions.h>
-// pcl_ros and pcl libraries
+// pcl libraries
 #include <pcl/ModelCoefficients.h>
 #include <pcl/point_types.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/filters/extract_indices.h>
+#include <pcl/filters/radius_outlier_removal.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/kdtree/kdtree.h>
@@ -79,29 +80,7 @@ class Msfm3d
       entrance = NULL;
       tree = NULL;
     }
-    std::string frame = "world";
-    bool ground = 0;
-    float wheel_bottom_dist = 0.0;
-    bool receivedPosition = 0;
-    bool receivedMap = 0;
-    bool newMap = 0;
-    bool esdf_or_octomap = 0; // Boolean to use an esdf PointCloud2 or an Octomap as input
-    float voxel_size, bubble_radius = 1.5; // map voxel size, and bubble radius
-    float position[3] = {69.0, 420.0, 1337.0}; // robot position
-    float euler[3]; // robot orientation in euler angles
-    float R[9]; // Rotation matrix
-    float origin[3]; // location in xyz coordinates where the robot entered the environment
-    double * reach; // reachability grid (output from reach())
-    bool * frontier;
-    pcl::PointCloud<pcl::PointXYZ>::Ptr frontierCloud; // Frontier PCL
-    bool * entrance;
-    int frontier_size = 0;
-    int link_id = -1;
-    sensor_msgs::PointCloud2 PC2msg;
-    nav_msgs::Path pathmsg;
-    visualization_msgs::MarkerArray frontiermsg;
-    octomap::OcTree* tree; // OcTree object for holding Octomap
-
+    // Structure definitions
     struct ESDF {
       double * data; // esdf matrix pointer
       bool * seen; // seen matrix pointer
@@ -117,24 +96,54 @@ class Msfm3d
       float xmin = 0.0, xmax = 0.0, ymin = 0.0, ymax = 0.0, zmin = 0.0, zmax = 0.0;
     };
 
+    // Vehicle parameters
+    bool ground = 0; // whether the vehicle is a ground vehicle
+    float wheel_bottom_dist = 0.0;
+    boundary vehicleVolume; // xyz boundary of the vehicle bounding box in rectilinear coordinates for collision detection/avoidance
+    float position[3] = {69.0, 420.0, 1337.0}; // robot position
+    float euler[3]; // robot orientation in euler angles
+    float R[9]; // Rotation matrix
+
+    // Environment/Sensor parameters
+    std::string frame = "world";
+    bool esdf_or_octomap = 0; // Boolean to use an esdf PointCloud2 or an Octomap as input
+    bool receivedPosition = 0, receivedMap = 0;
+    bool newMap = 0;
+    float voxel_size, bubble_radius = 1.5; // map voxel size, and bubble radius
+    float origin[3]; // location in xyz coordinates where the robot entered the environment
+    
+    double * reach; // reachability grid (output from reach())
+    sensor_msgs::PointCloud2 PC2msg;
+    nav_msgs::Path pathmsg;
+    visualization_msgs::MarkerArray frontiermsg;
+    octomap::OcTree* tree; // OcTree object for holding Octomap
+
+    // Frontier and frontier filter parameters
+    bool * frontier;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr frontierCloud; // Frontier PCL
+    bool * entrance;
+    int frontier_size = 0, filter_neighbors = 0;
+    double filter_radius = 1.0;
+    bool frontierFilterOn = 0;
+
     orientation q; // robot orientation in quaternions
     ESDF esdf; // ESDF struct object
     boundary bounds; // xyz boundary of possible goal locations
-    boundary vehicleVolume; // xyz boundary of the vehicle bounding box in rectilinear coordinates for collision detection/avoidance
 
     void callback(sensor_msgs::PointCloud2 msg); // Subscriber callback function for PC2 msg (ESDF)
     void callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg); // Subscriber callback function for Octomap msg
-    void callback_position(const geometry_msgs::PoseStamped msg); // Subscriber callback for robot position
+    void callback_position(const nav_msgs::Odometry msg); // Subscriber callback for robot position
     void parsePointCloud(); // Function to parse pointCloud2 into an esdf format that msfm3d can use
     int xyz_index3(const float point[3]);
     void index3_xyz(const int index, float point[3]);
     void getEuler(); // Updates euler array given the current quaternion values
     void getRotationMatrix(); // Updates Rotation Matrix given the current quaternion values
-    void updatePath(const float goal[3]); // Updates the path vector from the goal frontier point to the robot location
+    bool updatePath(const float goal[3]); // Updates the path vector from the goal frontier point to the robot location
     void updateFrontierMsg(); // Updates the frontiermsg MarkerArray with the frontier matrix for publishing
     void clusterFrontier(const float radius); // Clusters the frontier pointCloud with euclidean distance within a radius
     bool inBoundary(const float point[3]); // Checks if a point is inside the planner boundaries
     bool collisionCheck(const float point[3]); // Checks if the robot being at the current point (given vehicleVolume) intersects with the obstacle environment (esdf)
+    void filterFrontier();
 };
 
 bool Msfm3d::inBoundary(const float point[3])
@@ -151,6 +160,36 @@ bool Msfm3d::inBoundary(const float point[3])
   }
 }
 
+void Msfm3d::filterFrontier()
+{
+  // Apply the radius outlier filter to the frontier pointCloud object instantiation (frontierCloud) and then remove the filtered values from the frontier object.
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::RadiusOutlierRemoval<pcl::PointXYZ> outrem;
+  float query[3];
+  int idx;
+
+  // build the filter
+  outrem.setInputCloud(frontierCloud);
+  outrem.setRadiusSearch(filter_radius);
+  outrem.setMinNeighborsInRadius(filter_neighbors);
+  outrem.setNegative(true);
+  // apply filter
+  outrem.filter (*cloud_filtered);
+
+  // Iterate through the filtered points and remove them from the frontier array.
+  for(size_t i=0; i<cloud_filtered->points.size(); ++i){
+    // ROS_INFO("[%0.3f, %0.3f, %0.3f]", cloud_filtered->points[i].x, cloud_filtered->points[i].y, cloud_filtered->points[i].z);
+    if (!isnan(cloud_filtered->points[i].x)){
+      query[0] = cloud_filtered->points[i].x;
+      query[1] = cloud_filtered->points[i].y;
+      query[2] = cloud_filtered->points[i].z;
+      idx = xyz_index3(query);
+      frontier[idx] = 0;
+      // ROS_INFO("Frontier point at [%f, %f, %f] has been filtered.", query[0], query[1], query[2]);
+    }
+  }
+}
+
 bool Msfm3d::collisionCheck(const float point[3]) 
 {
   // Get indices corresponding to the voxels occupied by the vehicle
@@ -164,7 +203,8 @@ bool Msfm3d::collisionCheck(const float point[3])
   bool collision = 0;
   float query[3];
 
-  // Loop through all of the voxels occupied by the vehicle
+  // Loop through all of the voxels occupied by the vehicle and check for occupancy to detect a collision
+  // Return when a collision is detected
   for (int i=0; i<voxel_width[0]; i++){
     query[0] = lower_corner[0] + i*voxel_size;
     for (int j=0; j<voxel_width[1]; j++){
@@ -225,16 +265,16 @@ void Msfm3d::getEuler()
   }
 }
 
-void Msfm3d::callback_position(const geometry_msgs::PoseStamped msg)
+void Msfm3d::callback_position(const nav_msgs::Odometry msg)
 {
   if (!receivedPosition) receivedPosition = 1;
-  position[0] = msg.pose.position.x;
-  position[1] = msg.pose.position.y;
-  position[2] = msg.pose.position.z;
-  q.x = msg.pose.orientation.x;
-  q.y = msg.pose.orientation.y;
-  q.z = msg.pose.orientation.z;
-  q.w = msg.pose.orientation.w;
+  position[0] = msg.pose.pose.position.x;
+  position[1] = msg.pose.pose.position.y;
+  position[2] = msg.pose.pose.position.z;
+  q.x = msg.pose.pose.orientation.x;
+  q.y = msg.pose.pose.orientation.y;
+  q.z = msg.pose.pose.orientation.z;
+  q.w = msg.pose.pose.orientation.w;
   ROS_INFO("Robot pose updated!");
 }
 
@@ -525,7 +565,8 @@ void Msfm3d::clusterFrontier(const float radius) {
   }
 }
 
-void Msfm3d::updatePath(const float goal[3]){
+bool Msfm3d::updatePath(const float goal[3])
+{
   int npixels = esdf.size[0]*esdf.size[1]*esdf.size[2], idx; // size of the reachability array, index in reachability array of the current path voxel.
   int ijk000[3]; // i,j,k indices of corner[0]
   float xyz000[3]; // x,y,z, coordinates of corner[0];
@@ -657,7 +698,14 @@ void Msfm3d::updatePath(const float goal[3]){
     else {dist_robot2path = dist3(position, point);}
 
     // Check for a collision with the environment to make sure this goal point is feasible.
-
+    if (vehicleVolume.set) {
+      if (collisionCheck(point)){
+        // Take the goal point out of the frontier and entrance arrays
+        frontier[xyz_index3(goal)] = 0;
+        entrance[xyz_index3(goal)] = 0;
+        return 0;
+      }
+    }
   }
 
   // Add path vector to path message for plotting in rviz
@@ -670,7 +718,9 @@ void Msfm3d::updatePath(const float goal[3]){
     newpathmsg.poses.push_back(pose);
   }
   pathmsg = newpathmsg;
+  return 1;
 }
+
 
 void Msfm3d::updateFrontierMsg() {
   visualization_msgs::Marker marker;
@@ -728,6 +778,9 @@ void updateFrontier(Msfm3d& planner){
   ROS_INFO("Previous frontier deleted.  Allocating new frontier of size %d...", npixels);
   planner.frontier = NULL;
   planner.frontier = new bool [npixels] { }; // Initialize the frontier array as size npixels with all values false.
+
+  // Initialize the pointCloud version of the frontier
+  planner.frontierCloud->clear();
   ROS_INFO("New frontier array added with all values set to false.");
 
   delete[] planner.entrance;
@@ -813,6 +866,12 @@ void updateFrontier(Msfm3d& planner){
     }
   }
   ROS_INFO("Frontier updated.");
+
+  // Filter the updated frontier with pcl::radius_outlier_filter
+  if (planner.frontierFilterOn){
+    planner.filterFrontier();
+    ROS_INFO("Frontier filtered.");
+  }
 }
 
 void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5]){
@@ -1184,7 +1243,14 @@ int main(int argc, char **argv)
 
   // Get voxblox voxel size parameter
   // n.getParam("/X4/voxblox_node/tsdf_voxel_size", planner.voxel_size);
-  planner.voxel_size = 0.1;
+
+  // Voxel size for Octomap or Voxblox
+  planner.voxel_size = 0.2;
+
+  // Frontier filter parameters
+  planner.frontierFilterOn = 1;
+  planner.filter_radius = 5*planner.voxel_size;
+  planner.filter_neighbors = 10;
 
   /**
    * The subscribe() call is how you tell ROS that you want to receive messages
@@ -1202,15 +1268,15 @@ int main(int argc, char **argv)
    * away the oldest ones.
    */
   // if (planner.esdf_or_octomap) {
-  ROS_INFO("Subscribing to Occupancy Grid...");
-  ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  // ROS_INFO("Subscribing to Occupancy Grid...");
+  // ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
   // }
   // else {
-  // ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
-  // ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
+  ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
+  ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
-  ros::Subscriber sub2 = n.subscribe("/X1/odom_truth/pose", 1, &Msfm3d::callback_position, &planner);
+  ros::Subscriber sub2 = n.subscribe("/X1/odom_truth", 1, &Msfm3d::callback_position, &planner);
 
   ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("/X1/nearest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
@@ -1235,6 +1301,7 @@ int main(int argc, char **argv)
    * will exit when Ctrl-C is pressed, or the node is shutdown by the master.
    */
   int i = 0;
+  bool goalFound = 0;
   ros::Rate r(1); // 1 hz
   clock_t tStart;
   int npixels;
@@ -1249,7 +1316,7 @@ int main(int argc, char **argv)
     r.sleep();
     ros::spinOnce();
     ROS_INFO("Planner Okay.");
-    // planner.parsePointCloud();
+    planner.parsePointCloud();
     // Heartbeat status update
     if (planner.receivedPosition){
       ROS_INFO("X1 Position: [x: %f, y: %f, z: %f]", planner.position[0], planner.position[1], planner.position[2]);
@@ -1272,35 +1339,42 @@ int main(int argc, char **argv)
         ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
 
         // Choose a new goal point if previous point is no longer a frontier
-        if (!planner.frontier[planner.xyz_index3(goal)]){
-          // Find frontiers
-          findFrontier(planner, frontierList, frontierCost);
-          for (int i=0; i<5; i++) ROS_INFO("Frontier Position: [x: %f, y: %f, z: %f, cost: %f]", frontierList[3*i], frontierList[3*i+1], frontierList[3*i+2], frontierCost[i]);
+        if (!planner.frontier[planner.xyz_index3(goal)] || !planner.updatePath(goal)) {
+          while (!goalFound){
+            // Find frontiers
+            findFrontier(planner, frontierList, frontierCost);
 
-          // If there are no frontiers available, head to the entrance
-          if (frontierCost[4] >= 1e5) findEntrance(planner, frontierList, frontierCost);
+            // If there are no frontiers available, head to the entrance
+            if (frontierCost[4] >= 1e5) findEntrance(planner, frontierList, frontierCost);
 
-          // Write a new frontier goal location for publishing
-          frontierGoal.point.x = frontierList[12];
-          frontierGoal.point.y = frontierList[13];
-          frontierGoal.point.z = frontierList[14];
-          for (int i=0; i<3; i++) goal[i] = frontierList[12+i];
+            // Write a new frontier goal location for publishing
+            frontierGoal.point.x = frontierList[12];
+            frontierGoal.point.y = frontierList[13];
+            frontierGoal.point.z = frontierList[14];
+            for (int i=0; i<3; i++) goal[i] = frontierList[12+i];
 
-          // Write a new frontier goal path for publishing
-          goalPose.header.stamp = ros::Time::now();
-          goalPose.pose.position.x = frontierList[12];
-          goalPose.pose.position.y = frontierList[13];
-          goalPose.pose.position.z = frontierList[14];
+            // Write a new frontier goal path for publishing
+            goalPose.header.stamp = ros::Time::now();
+            goalPose.pose.position.x = frontierList[12];
+            goalPose.pose.position.y = frontierList[13];
+            goalPose.pose.position.z = frontierList[14];
+
+            // Find a path to the goal point
+            goalFound = planner.updatePath(goal);
+          }
         }
+
+        for (int i=0; i<5; i++) ROS_INFO("Frontier Position: [x: %f, y: %f, z: %f, cost: %f]", frontierList[3*i], frontierList[3*i+1], frontierList[3*i+2], frontierCost[i]);
+
         // Publish path, goal point, and goal point only path
         pub1.publish(frontierGoal);
         pub4.publish(goalPose);
         ROS_INFO("Goal point published!");
 
         // Output and publish path
-        planner.updatePath(goal);
         pub2.publish(planner.pathmsg);
         ROS_INFO("Path to goal published!");
+        goalFound = 0;
 
         // Output reach matrix to .csv
         // if (spins < 2) {
