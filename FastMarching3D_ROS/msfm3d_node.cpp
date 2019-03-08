@@ -7,6 +7,7 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <gazebo_msgs/LinkStates.h>
 #include <geometry_msgs/PointStamped.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <nav_msgs/Path.h>
 #include <nav_msgs/Odometry.h>
@@ -123,7 +124,7 @@ class Msfm3d
 
     void callback(sensor_msgs::PointCloud2 msg); // Subscriber callback function for PC2 msg (ESDF)
     void callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg); // Subscriber callback function for Octomap msg
-    void callback_position(const nav_msgs::Odometry msg); // Subscriber callback for robot position
+    void callback_position(const goemetry_msgs::PoseStamped msg); // Subscriber callback for robot position
     void parsePointCloud(); // Function to parse pointCloud2 into an esdf format that msfm3d can use
     int xyz_index3(const float point[3]);
     void index3_xyz(const int index, float point[3]);
@@ -224,16 +225,16 @@ void Msfm3d::getEuler()
   }
 }
 
-void Msfm3d::callback_position(const nav_msgs::Odometry msg)
+void Msfm3d::callback_position(const geometry_msgs::PoseStamped msg)
 {
   if (!receivedPosition) receivedPosition = 1;
-  position[0] = msg.pose.pose.position.x;
-  position[1] = msg.pose.pose.position.y;
-  position[2] = msg.pose.pose.position.z;
-  q.x = msg.pose.pose.orientation.x;
-  q.y = msg.pose.pose.orientation.y;
-  q.z = msg.pose.pose.orientation.z;
-  q.w = msg.pose.pose.orientation.w;
+  position[0] = msg.pose.position.x;
+  position[1] = msg.pose.position.y;
+  position[2] = msg.pose.position.z;
+  q.x = msg.pose.orientation.x;
+  q.y = msg.pose.orientation.y;
+  q.z = msg.pose.orientation.z;
+  q.w = msg.pose.orientation.w;
   ROS_INFO("Robot pose updated!");
 }
 
@@ -1209,7 +1210,7 @@ int main(int argc, char **argv)
   ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
-  ros::Subscriber sub2 = n.subscribe("/X1/odom_truth", 1, &Msfm3d::callback_position, &planner);
+  ros::Subscriber sub2 = n.subscribe("/X1/odom_truth/pose", 1, &Msfm3d::callback_position, &planner);
 
   ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("/X1/nearest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
