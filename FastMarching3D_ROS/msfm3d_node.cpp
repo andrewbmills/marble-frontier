@@ -178,11 +178,13 @@ bool Msfm3d::collisionCheck(const float point[3])
           if (ground && (query[2] <= (point[2] - wheel_bottom_dist - voxel_size/2.0)) && esdf.data[idx] > 0.0) { // Check for wheel contact with the ground for the ground vehicle
             ROS_INFO("Original path doesn't keep the ground vehicle on the ground, replanning to next closest frontier voxel...");
             return 1;
+          }
         }
       }
     }
   }
 }
+
 
 void Msfm3d::getRotationMatrix()
 {
