@@ -150,7 +150,7 @@ bool Msfm3d::inBoundary(const float point[3])
   }
 }
 
-bool collisionCheck(const float point[3]) 
+bool Msfm3d::collisionCheck(const float point[3]) 
 {
   // Get indices corresponding to the voxels occupied by the vehicle
   int lower_corner[3], voxel_width[3], idx, npixels = esdf.size[0]*esdf.size[1]*esdf.size[2]; // xyz point of the lower left of the vehicle rectangle
