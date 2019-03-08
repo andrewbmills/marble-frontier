@@ -1184,7 +1184,7 @@ int main(int argc, char **argv)
 
   // Get voxblox voxel size parameter
   // n.getParam("/X4/voxblox_node/tsdf_voxel_size", planner.voxel_size);
-  planner.voxel_size = 0.2;
+  planner.voxel_size = 0.1;
 
   /**
    * The subscribe() call is how you tell ROS that you want to receive messages
@@ -1202,12 +1202,12 @@ int main(int argc, char **argv)
    * away the oldest ones.
    */
   // if (planner.esdf_or_octomap) {
-  // ROS_INFO("Subscribing to Occupancy Grid...");
-  // ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);  
+  ROS_INFO("Subscribing to Occupancy Grid...");
+  ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
   // }
   // else {
-  ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
-  ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
+  // ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
+  // ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
   ros::Subscriber sub2 = n.subscribe("/X1/odom_truth/pose", 1, &Msfm3d::callback_position, &planner);
@@ -1249,7 +1249,7 @@ int main(int argc, char **argv)
     r.sleep();
     ros::spinOnce();
     ROS_INFO("Planner Okay.");
-    planner.parsePointCloud();
+    // planner.parsePointCloud();
     // Heartbeat status update
     if (planner.receivedPosition){
       ROS_INFO("X1 Position: [x: %f, y: %f, z: %f]", planner.position[0], planner.position[1], planner.position[2]);
