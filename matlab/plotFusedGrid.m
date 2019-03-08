@@ -17,6 +17,7 @@ function plotFusedGrid(agents, k)
     
     for agent = agents
         plot(agent.state(1)+0.5, agent.state(2)+0.5, 'r*');
+        text(agent.state(1)+1.5, agent.state(2)+1.5, num2str(agent.id), 'Color', 'red', 'FontSize', 12)
         if ~isempty(agent.path)
             plot(agent.path(:,1)+0.5, agent.path(:,2)+0.5, 'r');
         end

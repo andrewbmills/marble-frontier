@@ -12,20 +12,24 @@ image = imread('example_environment.PNG');
 grayimage = rgb2gray(image);
 occGrid = (grayimage/255)<=0.8;
 % load('FrontierPaper40x40_Fig5.mat')
-h1 = pcolor(occGrid);
-set(h1, 'EdgeColor', 'none');
 [m, n] = size(occGrid);
 
 %% Some global variables to define behavior
 global gridPlots;
 gridPlots = 0; % Plot the frontier plots or not
-global plotFused;
+% These used to be globals, don't need to be
 plotFused = 1; % Plot all robots on one graph
-global plotAgents;
-plotAgents = 1; % Plot individual robot views on single graph, automatically sized
+plotAgents = 0; % Plot individual robot views on single graph, automatically sized
+plotRealtime = 0; % Plot the agent paths as they are calculated instead of all at once
+plotOccGrid = 0; % Plot the actual occgrid for reference
+
+if plotOccGrid
+    h1 = pcolor(occGrid);
+    set(h1, 'EdgeColor', 'none');
+end
 
 %% Use this to decide how many agents to run
-numAgents = 4;
+numAgents = 9;
 
 %% Generate robot(s)
 x_agent = [144; 30; 0; 5]; % x (m), y (m), heading (rad from north), speed (m/s)
@@ -115,6 +119,7 @@ while any([agents.run])
     for agent = agents
         % Start with the assumption we can't communicate with anyone
         agent.neighbors = Neighbor.empty;
+
         % Check comm, fuse maps, and get goals from other nearby agents
         for i=1 : length(agents)
             if agent.id ~= agents(i).id && checkLoS(agent.state(1:2), agents(i).state(1:2), occGrid)
@@ -131,14 +136,25 @@ while any([agents.run])
                 %TODO Optimize the comm hopping next 30 lines
                 store = true;
                 for j=1 : length(agent.neighbors)
+                    % If it's already in our list, we just need to make sure that it's up-to-date
                     if agent.neighbors(j).id == agents(i).id
+                        % Clear the replan flag for neighbors that haven't reset yet
+                        agent.neighbors(j).replan = false;
+                        agent.neighbors(j).cost = agents(i).cost;
+                        % Need to check the current goal point for the neighbors because it may have changed since
+                        % our neighbor received it, depending on the order of the neighbors
+                        if ~isempty(agents(i).path)
+                            agent.neighbors(j).goal = agents(i).path(end, :);
+                        else
+                            agent.neighbors(j).goal = [];
+                        end
                         store = false;
                         break;
                     end
                 end
 
                 if store
-                    agent.neighbors(end+1) = Neighbor(agents(i).id, npath);
+                    agent.neighbors(end+1) = Neighbor(agents(i).id, npath, agents(i).cost);
                 end
 
                 for j=1 : length(agents(i).neighbors)
@@ -153,6 +169,15 @@ while any([agents.run])
 
                         if store
                             agent.neighbors(end+1) = agents(i).neighbors(j);
+                            % Clear the replan flag for neighbors that haven't reset yet
+                            agent.neighbors(end).replan = false;
+                            % Need to check the current goal point for the neighbors because it may have changed since
+                            % our neighbor received it, depending on the order of the neighbors
+                            if ~isempty(agents(agents(i).neighbors(j).id).path)
+                                agent.neighbors(end).goal = agents(agents(i).neighbors(j).id).path(end, :);
+                            else
+                                agent.neighbors(end).goal = [];
+                            end
                         end
                     end
                 end
@@ -163,7 +188,22 @@ while any([agents.run])
         if (mod(t, dt_plan) == 0)
             if ~isempty(agent.path)
                 if ~frontierCheck(agent.path(end,2), agent.path(end,1), agent.occGrid)
-                    agent.path = frontierPlan(agent.occGrid, agent.state(1:2), hblob, minObsDist, agent.neighbors, 5); % (occupancy grid, agent position, blob detector, minimum obstacle distance, figure number)
+                    if agent.id == 7
+                        test = 1;
+                    end
+                    [agent.path, agent.cost] = frontierPlan(agent.occGrid, agent.state(1:2), hblob, minObsDist, agent.neighbors, 5); % (occupancy grid, agent position, blob detector, minimum obstacle distance, figure number)
+                    % Check to see if any neighbors need to be replanned because we took their goal point
+                    for neighbor = agent.neighbors
+                        % If the id is after us, they'll be forced to
+                        % replan due to cost anyway
+                        % if neighbor.replan && neighbor.id < agent.id
+                        if neighbor.replan
+                            id = neighbor.id;
+                            % [agents(id).path, agents(id).cost] = frontierPlan(agents(id).occGrid, agents(id).state(1:2), hblob, minObsDist, agents(id).neighbors, 5);
+                            agents(id).path = [round(agents(id).state(1)), round(agents(id).state(2))];
+                            agents(id).cost = [];
+                        end
+                    end
                 end
             else
                 agent.run = false;
@@ -171,13 +211,13 @@ while any([agents.run])
         end
 
         % Evolve state until the end of the path is no longer a frontier
-        if size(agent.path,2) == 1
+        if size(agent.path, 1) == 1 && agent.path(1) ~= round(agent.state(1)) && agent.path(2) ~= round(agent.state(2))
             agent.state(3) = wrapToPi(agent.state(3) + pi/2);
-        else
+        elseif size(agent.path, 1) > 1
             % Move the agent unless the path is empty, or if there's only
             % one point, which likely means the path is our current
             % position, which is saved to keep checking for frontiers
-            if ~isempty(agent.path) && length(agent.path) > 2
+            if ~isempty(agent.path)
                 agent.move(dt, 5);
             end
         end
@@ -190,11 +230,15 @@ while any([agents.run])
             % TODO fix this to display correct vehicle
             error('vehicle 1 collided with environment');
         end
+        
+        if plotRealtime && plotFused && (mod(t, dt_plot) == 0)
+            plotFusedGrid(agents, 2);
+        end
     end
-    
+
     % Plot vehicle positions and belief grid
     if (mod(t, dt_plot) == 0)
-        if plotFused
+        if ~plotRealtime && plotFused
             plotFusedGrid(agents, 2);
         end
         if plotAgents

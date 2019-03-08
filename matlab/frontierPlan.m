@@ -1,4 +1,4 @@
-function [path] = frontierPlan(occGrid, position, hblob, minObsDist, neighbors, figNum)
+function [path, cost] = frontierPlan(occGrid, position, hblob, minObsDist, neighbors, figNum)
 %   (occupancy grid, agent position, blob detector, minimum obstacle distance, figure number)
     %% Create Reachability Grid
     speedGrid = bwdist(occGrid);
@@ -17,6 +17,7 @@ function [path] = frontierPlan(occGrid, position, hblob, minObsDist, neighbors, 
     frontGrid = double(labels >= 1);
     if sum(frontGrid(:)) <= 10
         path = [];
+        cost = [];
         return
     end
   
@@ -27,7 +28,7 @@ function [path] = frontierPlan(occGrid, position, hblob, minObsDist, neighbors, 
     [~, idNext] = mink(frontCost(:), 500);
 
     % Check all of the neighbors to decide which goal to explore
-    goal = deconflictGoal(occGrid, frontCost, idNext, neighbors);
+    [goal, cost] = deconflictGoal(occGrid, frontCost, idNext, neighbors);
 
     % If there's no goal (potentially because all of them are already taken
     % by other agents), stay in place for now

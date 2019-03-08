@@ -7,6 +7,7 @@ classdef Agent < handle
         state
         stateHistory
         path
+        cost % Cost to reach the current goal point
         tLook % Lookahead time for guidance controller
 %         carrot % path distance parameter
         occGrid
