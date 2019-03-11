@@ -22,14 +22,12 @@
 #include <pcl/io/pcd_io.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/radius_outlier_removal.h>
-#include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/statistical_outlier_removal.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/kdtree/kdtree.h>
-#include <pcl/sample_consensus/method_types.h>
-#include <pcl/sample_consensus/model_types.h>
-#include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/segmentation/extract_clusters.h>
+//pcl ROS
+#include <pcl_conversions/pcl_conversions.h>
 // Custom libraries
 #include "msfm3d.c"
 
@@ -109,14 +107,13 @@ class Msfm3d
     std::string frame = "world";
     bool esdf_or_octomap = 0; // Boolean to use an esdf PointCloud2 or an Octomap as input
     bool receivedPosition = 0, receivedMap = 0;
-    bool newMap = 0;
     float voxel_size, bubble_radius = 1.5; // map voxel size, and bubble radius
     float origin[3]; // location in xyz coordinates where the robot entered the environment
     
     double * reach; // reachability grid (output from reach())
     sensor_msgs::PointCloud2 PC2msg;
     nav_msgs::Path pathmsg;
-    visualization_msgs::MarkerArray frontiermsg;
+    // visualization_msgs::MarkerArray frontiermsg;
     octomap::OcTree* tree; // OcTree object for holding Octomap
 
     // Frontier and frontier filter parameters
@@ -127,6 +124,7 @@ class Msfm3d
     double filter_radius = 1.0;
     bool frontierFilterOn = 0;
     std::vector<pcl::PointIndices> frontierClusterIndices;
+    sensor_msgs::PointCloud2 frontiermsg;
 
     orientation q; // robot orientation in quaternions
     ESDF esdf; // ESDF struct object
@@ -142,7 +140,7 @@ class Msfm3d
     void getRotationMatrix(); // Updates Rotation Matrix given the current quaternion values
     bool updatePath(const float goal[3]); // Updates the path vector from the goal frontier point to the robot location
     void updateFrontierMsg(); // Updates the frontiermsg MarkerArray with the frontier matrix for publishing
-    void clusterFrontier(const float radius); // Clusters the frontier pointCloud with euclidean distance within a radius
+    void clusterFrontier(); // Clusters the frontier pointCloud with euclidean distance within a radius
     bool inBoundary(const float point[3]); // Checks if a point is inside the planner boundaries
     bool collisionCheck(const float point[3]); // Checks if the robot being at the current point (given vehicleVolume) intersects with the obstacle environment (esdf)
     void filterFrontier();
@@ -178,20 +176,89 @@ void Msfm3d::filterFrontier()
   outrem.setMeanK(50);
   outrem.setStddevMulThresh(1.0);
   outrem.setNegative(true);
-  // apply filter
-  outrem.filter (*cloud_filtered);
+  outrem.filter(*cloud_filtered);
 
   // Iterate through the filtered points and remove them from the frontier array.
-  for(size_t i=0; i<cloud_filtered->points.size(); ++i){
-    if (!isnan(cloud_filtered->points[i].x)){
-      query[0] = cloud_filtered->points[i].x;
-      query[1] = cloud_filtered->points[i].y;
-      query[2] = cloud_filtered->points[i].z;
-      idx = xyz_index3(query);
-      frontier[idx] = 0;
-      // ROS_INFO("Frontier point at [%f, %f, %f] has been filtered.", query[0], query[1], query[2]);
-    }
+  for (pcl::PointCloud<pcl::PointXYZ>::iterator it=cloud_filtered->begin(); it!=cloud_filtered->end(); ++it){
+    query[0] = it->x;
+    query[1] = it->y;
+    query[2] = it->z;
+    idx = xyz_index3(query);
+    frontier[idx] = 0;
   }
+  ROS_INFO("%d points filtered from the initial frontier.", (int)cloud_filtered->size());
+
+  // Remove the outliers from the frontierCloud object
+  outrem.setNegative(false);
+  outrem.filter(*frontierCloud);
+}
+
+void Msfm3d::clusterFrontier()
+{
+  ROS_INFO("frontierCloud before clustering has: %d data points.", (int)frontierCloud->points.size());
+
+  // Create cloud pointer to store the removed points
+  pcl::PointCloud<pcl::PointXYZ>::Ptr removed_points (new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::PointIndices::Ptr inliers (new pcl::PointIndices());
+  pcl::ExtractIndices<pcl::PointXYZ> extract;
+
+  // Creating the KdTree object for the search method of the extraction
+  pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+  tree->setInputCloud(frontierCloud);
+
+  // Clear previous frontierClusterIndices
+  frontierClusterIndices.clear();
+
+  // Initialize euclidean cluster extraction object
+  pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
+  ec.setClusterTolerance(1.5*voxel_size); // Clusters must be made of contiguous sections of frontier (within sqrt(2)*voxel_size of each other)
+  ec.setMinClusterSize(15); // Cluster must be at least 15 voxels in size
+  // ec.setMaxClusterSize (30);
+  ec.setSearchMethod(tree);
+  ec.setInputCloud(frontierCloud);
+  ec.extract(frontierClusterIndices);
+
+  // Iterate through clusters and write to file
+  // int j = 0;
+  // pcl::PCDWriter writer;
+  for (std::vector<pcl::PointIndices>::const_iterator it = frontierClusterIndices.begin(); it != frontierClusterIndices.end(); ++it){
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
+    for (std::vector<int>::const_iterator pit=it->indices.begin(); pit!=it->indices.end(); ++pit){
+      // cloud_cluster->points.push_back(frontierCloud->points[*pit]);
+      inliers->indices.push_back(*pit);
+    }
+    // cloud_cluster->width = cloud_cluster->points.size ();
+    // cloud_cluster->height = 1;
+    // cloud_cluster->is_dense = true;
+
+    // std::cout << "PointCloud representing the Cluster: " << cloud_cluster->points.size () << " data points." << std::endl;
+    // std::stringstream ss;
+    // ss << "pcl_clusters/cloud_cluster_" << j << ".pcd";
+    // writer.write<pcl::PointXYZ> (ss.str (), *cloud_cluster, false); //*
+    // j++;
+  }
+
+  // Loop through the remaining points in frontierCloud and remove them from the frontier bool array
+  extract.setInputCloud(frontierCloud);
+  extract.setIndices(inliers);
+  extract.setNegative(true);
+  extract.filter(*removed_points);
+  float query[3];
+  int idx;
+  for (pcl::PointCloud<pcl::PointXYZ>::iterator it=removed_points->begin(); it!=removed_points->end(); ++it){
+    query[0] = it->x;
+    query[1] = it->y;
+    query[2] = it->z;
+    idx = xyz_index3(query);
+    frontier[idx] = 0;
+    // ROS_INFO("Removed frontier voxel at (%f, %f, %f).", query[0], query[1], query[2]);
+  }
+
+  // Filter frontierCloud to keep only the inliers
+  extract.setNegative(false);
+  extract.filter(*frontierCloud);
+  ROS_INFO("Frontier cloud after clustering has %d points.", (int)frontierCloud->points.size());
+
 }
 
 bool Msfm3d::collisionCheck(const float point[3]) 
@@ -382,10 +449,7 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
 
   // Free memory for AbstractOcTree object pointer
   ROS_INFO("Freeing OcTree and AbstractOcTree memory.");
-  // delete abstree;
   delete mytree;
-
-  // newMap = 1;
   ROS_INFO("OctoMap message received!");
 }
 
@@ -394,7 +458,6 @@ void Msfm3d::callback(sensor_msgs::PointCloud2 msg)
   ROS_INFO("Getting ESDF PointCloud2...");
   if (!receivedMap) receivedMap = 1;
   PC2msg = msg;
-  newMap = 1;
   ROS_INFO("ESDF PointCloud2 received!");
 }
 
@@ -457,7 +520,6 @@ void Msfm3d::parsePointCloud()
     point[0] = xyzis[i]; point[1] = xyzis[i+1]; point[2] = xyzis[i+2];
     index = xyz_index3(point);
     if (index > (esdf.size[0]*esdf.size[1]*esdf.size[2])) ROS_INFO("WARNING: Parsing index is greater than array sizes!");
-    // esdf.data[index] = (double)(xyzis[i+3]);
     // Use the hyperbolic tan function from the btraj paper
     // esdf = v_max*(tanh(d - e) + 1)/2
     if (xyzis[i+3] >= 0.0) {
@@ -483,90 +545,6 @@ int Msfm3d::xyz_index3(const float point[3])
   int ind[3];
   for (int i=0; i<3; i++) ind[i] = roundf((point[i]-esdf.min[i])/voxel_size);
   return mindex3(ind[0], ind[1], ind[2], esdf.size[0], esdf.size[1]);
-}
-
-void Msfm3d::clusterFrontier(const float radius) {
-  ROS_INFO("frontierCloud before filtering has: %d data points.", (int)frontierCloud->points.size());
-
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_f (new pcl::PointCloud<pcl::PointXYZ>);
-
-  // Create the filtering object: downsample the dataset using a leaf size of 1cm
-  // pcl::VoxelGrid<pcl::PointXYZ> vg;
-  // pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZ>);
-  // vg.setInputCloud (cloud);
-  // vg.setLeafSize (0.01f, 0.01f, 0.01f);
-  // vg.filter (*cloud_filtered);
-  // std::cout << "PointCloud after filtering has: " << cloud_filtered->points.size ()  << " data points." << std::endl; //*
-
-  // Create the segmentation object for the planar model and set all the parameters
-  pcl::SACSegmentation<pcl::PointXYZ> seg;
-  pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
-  pcl::ModelCoefficients::Ptr coefficients (new pcl::ModelCoefficients);
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_plane (new pcl::PointCloud<pcl::PointXYZ> ());
-  pcl::PCDWriter writer;
-  seg.setOptimizeCoefficients (true);
-  seg.setModelType (pcl::SACMODEL_PLANE);
-  seg.setMethodType (pcl::SAC_RANSAC);
-  seg.setMaxIterations (100);
-  seg.setDistanceThreshold (0.2);
-
-  int i=0, nr_points = (int) frontierCloud->points.size ();
-  while (frontierCloud->points.size () > 0.3 * nr_points)
-  {
-    // Segment the largest planar component from the remaining cloud
-    seg.setInputCloud (frontierCloud);
-    seg.segment (*inliers, *coefficients);
-    if (inliers->indices.size () == 0)
-    {
-      std::cout << "Could not estimate a planar model for the given dataset." << std::endl;
-      break;
-    }
-
-    // Extract the planar inliers from the input cloud
-    pcl::ExtractIndices<pcl::PointXYZ> extract;
-    extract.setInputCloud (frontierCloud);
-    extract.setIndices (inliers);
-    extract.setNegative (false);
-
-    // Get the points associated with the planar surface
-    extract.filter (*cloud_plane);
-    std::cout << "PointCloud representing the planar component: " << cloud_plane->points.size () << " data points." << std::endl;
-
-    // Remove the planar inliers, extract the rest
-    extract.setNegative (true);
-    extract.filter (*cloud_f);
-    *frontierCloud = *cloud_f;
-  }
-
-  // Creating the KdTree object for the search method of the extraction
-  pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
-  tree->setInputCloud (frontierCloud);
-
-  std::vector<pcl::PointIndices> cluster_indices;
-  pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
-  ec.setClusterTolerance (0.2); // 0.2m
-  ec.setMinClusterSize (15);
-  ec.setMaxClusterSize (100);
-  ec.setSearchMethod (tree);
-  ec.setInputCloud (frontierCloud);
-  ec.extract (cluster_indices);
-
-  int j = 0;
-  for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin (); it != cluster_indices.end (); ++it)
-  {
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
-    for (std::vector<int>::const_iterator pit = it->indices.begin (); pit != it->indices.end (); ++pit)
-      cloud_cluster->points.push_back (frontierCloud->points[*pit]); //*
-    cloud_cluster->width = cloud_cluster->points.size ();
-    cloud_cluster->height = 1;
-    cloud_cluster->is_dense = true;
-
-    std::cout << "PointCloud representing the Cluster: " << cloud_cluster->points.size () << " data points." << std::endl;
-    std::stringstream ss;
-    ss << "cloud_cluster_" << j << ".pcd";
-    writer.write<pcl::PointXYZ> (ss.str (), *cloud_cluster, false); //*
-    j++;
-  }
 }
 
 bool Msfm3d::updatePath(const float goal[3])
@@ -603,30 +581,6 @@ bool Msfm3d::updatePath(const float goal[3])
 
   // Run loop until the path is within a voxel of the robot.
   while ((dist_robot2path > 2.0*voxel_size) && (path.size() < 30000) && grad_norm >= 0.00001) {
-    // Find the corner indices to the current point
-    // for (int i=0; i<3; i++) ijk000[i] = floor((point[i] - esdf.min[i])/voxel_size);
-    // corner[0] = mindex3(ijk000[0], ijk000[1], ijk000[2], esdf.size[0], esdf.size[1]);
-    // corner[1] = mindex3(ijk000[0] + 1, ijk000[1], ijk000[2], esdf.size[0], esdf.size[1]);
-    // corner[2] = mindex3(ijk000[0], ijk000[1] + 1, ijk000[2], esdf.size[0], esdf.size[1]);
-    // corner[3] = mindex3(ijk000[0] + 1, ijk000[1] + 1, ijk000[2], esdf.size[0], esdf.size[1]);
-    // corner[4] = mindex3(ijk000[0], ijk000[1], ijk000[2] + 1, esdf.size[0], esdf.size[1]);
-    // corner[5] = mindex3(ijk000[0] + 1, ijk000[1], ijk000[2] + 1, esdf.size[0], esdf.size[1]);
-    // corner[6] = mindex3(ijk000[0], ijk000[1] + 1, ijk000[2] + 1, esdf.size[0], esdf.size[1]);
-    // corner[7] = mindex3(ijk000[0] + 1, ijk000[1] + 1, ijk000[2] + 1, esdf.size[0], esdf.size[1]);
-
-    // ROS_INFO("Corner indices found");
-    // Compute the gradients at each corner point.
-    // for (int i=0; i<8; i++) {
-    //   neighbor[0] = corner[i] - 1; // i-1
-    //   neighbor[1] = corner[i] + 1; // i+1
-    //   neighbor[2] = corner[i] - esdf.size[0]; // j-1
-    //   neighbor[3] = corner[i] + esdf.size[0]; // j+1
-    //   neighbor[4] = corner[i] - esdf.size[0]*esdf.size[1]; // k-1
-    //   neighbor[5] = corner[i] + esdf.size[0]*esdf.size[1]; // k+1
-    //   // ROS_INFO("Neighbor indices found of corner point %d", i);
-    //   for (int j=0; j<3; j++) gradcorner[3*i+j] = 0.5*(float)(reach[neighbor[2*j]] - reach[neighbor[2*j+1]]); // Central Difference Operator (Try Sobel if this is bad)
-    // }
-	
   	// Find the current point's grid indices and it's 6 neighbor voxel indices.
   	idx = xyz_index3(point);
     neighbor[0] = idx - 1; // i-1
@@ -653,24 +607,7 @@ bool Msfm3d::updatePath(const float goal[3])
         }
       }
     }
-    // ROS_INFO("Gradient at point [%f, %f, %f] is [%f, %f, %f].", point[0], point[1], point[2], grad[0], grad[1], grad[2]);
-
-    // ROS_INFO("gradients found at each corner point.");
-    // Linearly interpolate in 3D to find the gradient at the current point.
-    // index3_xyz(corner[0], xyz000);
-    // xd = (point[0] - xyz000[0])/voxel_size;
-    // yd = (point[1] - xyz000[1])/voxel_size;
-    // zd = (point[2] - xyz000[2])/voxel_size;
-    // for (int i=0; i<3; i++){
-    //   c00 = (1.0-xd)*gradcorner[i] + xd*gradcorner[3+i];
-    //   c01 = (1.0-xd)*gradcorner[12+i] + xd*gradcorner[15+i];
-    //   c10 = (1.0-xd)*gradcorner[6+i] + xd*gradcorner[9+i];
-    //   c11 = (1.0-xd)*gradcorner[18+i] + xd*gradcorner[21+i];
-    //   c0 = (1.0-yd)*c00 + yd*c10;
-    //   c1 = (1.0-yd)*c01 + yd*c11;
-    //   grad[i] = (1.0-zd)*c0 + zd*c1;
-    // }
-
+    
     // Normalize the size of the gradient vector if it is too large
     grad_norm = std::sqrt(grad[0]*grad[0] + grad[1]*grad[1] + grad[2]*grad[2]);
     if (grad_norm > 1.0){
@@ -727,53 +664,65 @@ bool Msfm3d::updatePath(const float goal[3])
 
 
 void Msfm3d::updateFrontierMsg() {
-  visualization_msgs::Marker marker;
-  visualization_msgs::MarkerArray newMarkerArray;
-  int npixels = esdf.size[0]*esdf.size[1]*esdf.size[2];
-  int count = 1;
-  float point[3];
-  int diff;
-  for (int i=0; i<npixels; i++){
-    if (frontier[i]){
-      index3_xyz(i, point);
-      marker.header.frame_id = frame;
-      marker.header.stamp = ros::Time();
-      marker.id = count;
-      marker.type = visualization_msgs::Marker::CUBE;
-      marker.action = visualization_msgs::Marker::ADD;
-      marker.pose.position.x = point[0];
-      marker.pose.position.y = point[1];
-      marker.pose.position.z = point[2];
-      marker.pose.orientation.x = 0.0;
-      marker.pose.orientation.y = 0.0;
-      marker.pose.orientation.z = 0.0;
-      marker.pose.orientation.w = 1.0;
-      marker.scale.x = voxel_size;
-      marker.scale.y = voxel_size;
-      marker.scale.z = voxel_size;
-      marker.color.a = 0.75; // Alpha value
-      marker.color.r = 0.0; // red
-      marker.color.g = 1.0; // green
-      marker.color.b = 0.0; // blue
-      newMarkerArray.markers.push_back(marker);
-      count++;
-    }
-  }
-  if (frontier_size < count) {
-    diff = count - frontier_size;
-    for (int i=0; i < diff; i++){
-      marker.header.frame_id = frame;
-      marker.header.stamp = ros::Time();
-      marker.id = frontier_size + i + 1;
-      marker.type = visualization_msgs::Marker::CUBE;
-      marker.action = visualization_msgs::Marker::DELETE;
-      newMarkerArray.markers.push_back(marker);
-    }
-  }
-  frontier_size = count;
-  frontiermsg = newMarkerArray;
-}
+  // visualization_msgs::Marker marker;
+  // visualization_msgs::MarkerArray newMarkerArray;
+  // int npixels = esdf.size[0]*esdf.size[1]*esdf.size[2];
+  // int count = 1;
+  // float point[3];
+  // int diff;
+  // for (int i=0; i<npixels; i++){
+  //   if (frontier[i]){
+  //     index3_xyz(i, point);
+  //     marker.header.frame_id = frame;
+  //     marker.header.stamp = ros::Time();
+  //     marker.id = count;
+  //     marker.type = visualization_msgs::Marker::CUBE;
+  //     marker.action = visualization_msgs::Marker::ADD;
+  //     marker.pose.position.x = point[0];
+  //     marker.pose.position.y = point[1];
+  //     marker.pose.position.z = point[2];
+  //     marker.pose.orientation.x = 0.0;
+  //     marker.pose.orientation.y = 0.0;
+  //     marker.pose.orientation.z = 0.0;
+  //     marker.pose.orientation.w = 1.0;
+  //     marker.scale.x = voxel_size;
+  //     marker.scale.y = voxel_size;
+  //     marker.scale.z = voxel_size;
+  //     marker.color.a = 0.75; // Alpha value
+  //     marker.color.r = 0.0; // red
+  //     marker.color.g = 1.0; // green
+  //     marker.color.b = 0.0; // blue
+  //     newMarkerArray.markers.push_back(marker);
+  //     count++;
+  //   }
+  // }
+  // if (frontier_size < count) {
+  //   diff = count - frontier_size;
+  //   for (int i=0; i < diff; i++){
+  //     marker.header.frame_id = frame;
+  //     marker.header.stamp = ros::Time();
+  //     marker.id = frontier_size + i + 1;
+  //     marker.type = visualization_msgs::Marker::CUBE;
+  //     marker.action = visualization_msgs::Marker::DELETE;
+  //     newMarkerArray.markers.push_back(marker);
+  //   }
+  // }
+  // frontier_size = count;
+  // frontiermsg = newMarkerArray;
 
+  // Declare a new cloud to store the converted message
+  sensor_msgs::PointCloud2 newPointCloud2;
+
+  // Convert from pcl::PointCloud to sensor_msgs::PointCloud2
+  pcl::toROSMsg(*frontierCloud, newPointCloud2);
+  newPointCloud2.header.seq = 1;
+  newPointCloud2.header.stamp = ros::Time();
+  newPointCloud2.header.frame_id = frame;
+
+  // Update the old message
+  frontiermsg = newPointCloud2;
+
+}
 
 void updateFrontier(Msfm3d& planner){
   ROS_INFO("Beginning Frontier update step...");
@@ -874,8 +823,11 @@ void updateFrontier(Msfm3d& planner){
   // Filter the updated frontier with pcl::radius_outlier_filter
   if (planner.frontierFilterOn){
     planner.filterFrontier();
-    ROS_INFO("Frontier filtered.");
   }
+
+  // Cluster the frontier into euclidean distance groups
+  planner.clusterFrontier();
+
 }
 
 void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5]){
@@ -1229,7 +1181,7 @@ int main(int argc, char **argv)
   ROS_INFO("Initializing msfm3d planner...");
   Msfm3d planner;
   planner.ground = 1;
-  planner.esdf_or_octomap = 0; // Use an octomap message
+  planner.esdf_or_octomap = 1; // Use a TSDF message (0) or Use an octomap message (1)
   planner.origin[0] = 0.0;
   planner.origin[1] = 0.0;
   planner.origin[2] = 0.0;
@@ -1252,7 +1204,7 @@ int main(int argc, char **argv)
   planner.voxel_size = 0.2;
 
   // Frontier filter parameters
-  planner.frontierFilterOn = 1;
+  planner.frontierFilterOn = 0;
   // planner.filter_radius = 5*planner.voxel_size;
   // planner.filter_neighbors = 10;
 
@@ -1272,12 +1224,12 @@ int main(int argc, char **argv)
    * away the oldest ones.
    */
   // if (planner.esdf_or_octomap) {
-  // ROS_INFO("Subscribing to Occupancy Grid...");
-  // ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  ROS_INFO("Subscribing to Occupancy Grid...");
+  ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
   // }
   // else {
-  ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
-  ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
+  // ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
+  // ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
   ros::Subscriber sub2 = n.subscribe("/X1/odom_truth", 1, &Msfm3d::callback_position, &planner);
@@ -1297,7 +1249,8 @@ int main(int argc, char **argv)
   goalPose.header.seq = 1;
 
   ros::Publisher pub2 = n.advertise<nav_msgs::Path>("/X1/planned_path", 5);
-  ros::Publisher pub3 = n.advertise<visualization_msgs::MarkerArray>("/X1/frontier", 100);
+  // ros::Publisher pub3 = n.advertise<visualization_msgs::MarkerArray>("/X1/frontier", 100);
+  ros::Publisher pub3 = n.advertise<sensor_msgs::PointCloud2>("/X1/frontier", 5);
 
   /**
    * ros::spin() will enter a loop, pumping callbacks.  With this version, all
@@ -1320,7 +1273,9 @@ int main(int argc, char **argv)
     r.sleep();
     ros::spinOnce();
     ROS_INFO("Planner Okay.");
-    planner.parsePointCloud();
+    if (planner.receivedMap && !planner.esdf_or_octomap){
+      planner.parsePointCloud();
+    }
     // Heartbeat status update
     if (planner.receivedPosition){
       ROS_INFO("X1 Position: [x: %f, y: %f, z: %f]", planner.position[0], planner.position[1], planner.position[2]);
