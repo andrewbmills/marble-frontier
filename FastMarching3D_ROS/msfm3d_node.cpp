@@ -23,6 +23,7 @@
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/radius_outlier_removal.h>
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/statistical_outlier_removal.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/kdtree/kdtree.h>
 #include <pcl/sample_consensus/method_types.h>
@@ -125,6 +126,7 @@ class Msfm3d
     int frontier_size = 0, filter_neighbors = 0;
     double filter_radius = 1.0;
     bool frontierFilterOn = 0;
+    std::vector<pcl::PointIndices> frontierClusterIndices;
 
     orientation q; // robot orientation in quaternions
     ESDF esdf; // ESDF struct object
@@ -164,21 +166,23 @@ void Msfm3d::filterFrontier()
 {
   // Apply the radius outlier filter to the frontier pointCloud object instantiation (frontierCloud) and then remove the filtered values from the frontier object.
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZ>);
-  pcl::RadiusOutlierRemoval<pcl::PointXYZ> outrem;
+  // pcl::RadiusOutlierRemoval<pcl::PointXYZ> outrem;
+  pcl::StatisticalOutlierRemoval<pcl::PointXYZ> outrem;
   float query[3];
   int idx;
 
   // build the filter
   outrem.setInputCloud(frontierCloud);
-  outrem.setRadiusSearch(filter_radius);
-  outrem.setMinNeighborsInRadius(filter_neighbors);
+  // outrem.setRadiusSearch(filter_radius);
+  // outrem.setMinNeighborsInRadius(filter_neighbors);
+  outrem.setMeanK(50);
+  outrem.setStddevMulThresh(1.0);
   outrem.setNegative(true);
   // apply filter
   outrem.filter (*cloud_filtered);
 
   // Iterate through the filtered points and remove them from the frontier array.
   for(size_t i=0; i<cloud_filtered->points.size(); ++i){
-    // ROS_INFO("[%0.3f, %0.3f, %0.3f]", cloud_filtered->points[i].x, cloud_filtered->points[i].y, cloud_filtered->points[i].z);
     if (!isnan(cloud_filtered->points[i].x)){
       query[0] = cloud_filtered->points[i].x;
       query[1] = cloud_filtered->points[i].y;
@@ -1249,8 +1253,8 @@ int main(int argc, char **argv)
 
   // Frontier filter parameters
   planner.frontierFilterOn = 1;
-  planner.filter_radius = 5*planner.voxel_size;
-  planner.filter_neighbors = 10;
+  // planner.filter_radius = 5*planner.voxel_size;
+  // planner.filter_neighbors = 10;
 
   /**
    * The subscribe() call is how you tell ROS that you want to receive messages
