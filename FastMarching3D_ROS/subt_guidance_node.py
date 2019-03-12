@@ -83,7 +83,12 @@ class guidance_controller:
 		path = self.path
 		start = np.array([path[0,0], path[1,0], path[2,0]])
 		goal = np.array([path[0,-1], path[1,-1], path[2,-1]])
-		p_L2, v_L2 = guidance.find_Lookahead_Discrete_3D(path, p_robot, self.speed*self.Tstar, 0, 0)
+		if (self.path.shape[1] < 2):
+			p_L2 = goal
+			v_L2 = (goal - p_robot)/np.linalg.norm(goal - p_robot)
+			print("Path is only one point long, heading to goal point.")
+		else:
+			p_L2, v_L2 = guidance.find_Lookahead_Discrete_3D(path, p_robot, self.speed*self.Tstar, 0, 0)
 
 		# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
 		if (np.linalg.norm(p_L2 - start) <= 0.05 and np.linalg.norm(p_robot - goal) <= 0.9*self.speed*self.Tstar):
@@ -143,7 +148,7 @@ class guidance_controller:
 		self.vehicle_type = vehicle_type; # vehicle type (ground vs air)
 		self.controller_type = controller_type; # Type of guidance controller from guidance
 		self.speed = float(speed) # m/s
-		self.Tstar = 2.0 # seconds
+		self.Tstar = 1.5 # seconds
 
 		# Booleans for first subscription receive
 		self.positionUpdated = 0
