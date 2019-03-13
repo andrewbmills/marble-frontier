@@ -290,19 +290,19 @@ void Msfm3d::clusterFrontier(const bool print2File)
 
 }
 
-bool filterCloudRadius(const float r, const pcl::PointXYZ point, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointIndices::Ptr inliers)
+bool filterCloudRadius(const float radius, const pcl::PointXYZ point, const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointIndices::Ptr inliers)
 {
   // filterRadius returns the indices in cloud that are within euclidean distance r of point (x,y,z).
 
   // Find all indices within r of point (x,y,z)
-  float dist2, r2 = r*r, dx, dy, dz;
+  float distance_squared, radius_squared = radius*radius, delta_x, delta_y, detla_z;
   // for (std::vector<int>::const_iterator it=cond_inliers->indices.begin(); it!=cond_inliers->indices.end(); ++it){
   for (int i = 0; i<(int)cloud->points.size(); i++){
-    dx = point.x - cloud->points[i].x;
-    dy = point.y - cloud->points[i].y;
-    dz = point.z - cloud->points[i].z;
-    dist2 = (dx*dx) + (dy*dy) + (dz*dz);
-    if (dist2 < r2) inliers->indices.push_back(i);  // Add indices that are within the radius to inliers
+    delta_x = point.x - cloud->points[i].x;
+    delta_y = point.y - cloud->points[i].y;
+    delta_z = point.z - cloud->points[i].z;
+    distance_squared = (delta_x*delta_x) + (delta_y*delta_y) + (delta_z*delta_z);
+    if (distance_squared < radius_squared) inliers->indices.push_back(i);  // Add indices that are within the radius to inliers
   }
 
   // Return false if there are no points in cloud within r of point (x,y,z)
@@ -312,7 +312,7 @@ bool filterCloudRadius(const float r, const pcl::PointXYZ point, pcl::PointCloud
     return 0;
 }
 
-void Msfm3d::greedyGrouping(const float r, const bool print2File)
+void Msfm3d::greedyGrouping(const float radius, const bool print2File)
 {
   // greedGrouping generates a vector of (pcl::PointIndices) where each entry in the vector is a greedily sampled group of points within radius of a randomly sampled frontier member.
   // Algorithm:
@@ -376,7 +376,7 @@ void Msfm3d::greedyGrouping(const float r, const bool print2File)
 
       // Find all the voxels in ungrouped_cloud that are within r of sample_point
       pcl::PointIndices::Ptr group(new pcl::PointIndices);
-      filterCloudRadius(r, sample_point, ungrouped_cloud, group);
+      filterCloudRadius(radius, sample_point, ungrouped_cloud, group);
       ROS_INFO("Found %d points within %f of the sample point.", (int)group->indices.size(), r);
 
       // Resize greedyGroups to make room for a new group
