@@ -1,7 +1,8 @@
-// g++ msfm3d_node.cpp -g -o msfm3d_node.o -I /opt/ros/melodic/include -I /usr/include/c++/7.3.0 -I /home/andrew/catkin_ws/devel/include -I /home/andrew/catkin_ws/src/octomap_msgs/include -I /usr/include/pcl-1.8 -I /usr/include/eigen3 -L /usr/lib/x86_64-linux-gnu -L /home/andrew/catkin_ws/devel/lib -L /opt/ros/melodic/lib -Wl,-rpath,opt/ros/melodic/lib -lroscpp -lrosconsole -lrostime -lroscpp_serialization -loctomap -lboost_system -lpcl_common -lpcl_io -lpcl_filters -lpcl_features -lpcl_kdtree -lpcl_sample_consensus -lpcl_segmentation
+// g++ msfm3d_node.cpp -g -o msfm3d_node.o -I /opt/ros/melodic/include -I /usr/include/c++/7.3.0 -I /home/andrew/catkin_ws/devel/include -I /home/andrew/catkin_ws/src/octomap_msgs/include -I /usr/include/pcl-1.8 -I /usr/include/eigen3 -L /usr/lib/x86_64-linux-gnu -L /home/andrew/catkin_ws/devel/lib -L /opt/ros/melodic/lib -Wl,-rpath,opt/ros/melodic/lib -lroscpp -lrosconsole -lrostime -lroscpp_serialization -loctomap -lboost_system -lpcl_common -lpcl_io -lpcl_filters -lpcl_features -lpcl_kdtree -lpcl_segmentation
 
 
 #include <math.h>
+#include <algorithm>
 // ROS libraries
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -23,6 +24,7 @@
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/radius_outlier_removal.h>
 #include <pcl/filters/statistical_outlier_removal.h>
+#include <pcl/filters/conditional_removal.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/kdtree/kdtree.h>
 #include <pcl/segmentation/extract_clusters.h>
@@ -118,13 +120,18 @@ class Msfm3d
 
     // Frontier and frontier filter parameters
     bool * frontier;
-    pcl::PointCloud<pcl::PointXYZ>::Ptr frontierCloud; // Frontier PCL
     bool * entrance;
     int frontier_size = 0, filter_neighbors = 0;
     double filter_radius = 1.0;
     bool frontierFilterOn = 0;
-    std::vector<pcl::PointIndices> frontierClusterIndices;
-    sensor_msgs::PointCloud2 frontiermsg;
+      // Clustering/Filtering
+      pcl::PointCloud<pcl::PointXYZ>::Ptr frontierCloud; // Frontier PCL
+      std::vector<pcl::PointIndices> frontierClusterIndices;
+      // ROS Interfacing
+      sensor_msgs::PointCloud2 frontiermsg;
+      // Frontier Grouping
+      std::vector<pcl::PointIndices> greedyGroups;
+      pcl::PointCloud<pcl::PointXYZ> greedyCenters;
 
     orientation q; // robot orientation in quaternions
     ESDF esdf; // ESDF struct object
@@ -140,10 +147,11 @@ class Msfm3d
     void getRotationMatrix(); // Updates Rotation Matrix given the current quaternion values
     bool updatePath(const float goal[3]); // Updates the path vector from the goal frontier point to the robot location
     void updateFrontierMsg(); // Updates the frontiermsg MarkerArray with the frontier matrix for publishing
-    void clusterFrontier(); // Clusters the frontier pointCloud with euclidean distance within a radius
+    void clusterFrontier(const bool print2File); // Clusters the frontier pointCloud with euclidean distance within a radius
     bool inBoundary(const float point[3]); // Checks if a point is inside the planner boundaries
     bool collisionCheck(const float point[3]); // Checks if the robot being at the current point (given vehicleVolume) intersects with the obstacle environment (esdf)
     void filterFrontier();
+    void greedyGrouping(const float r, const bool print2File);
 };
 
 bool Msfm3d::inBoundary(const float point[3])
@@ -193,14 +201,24 @@ void Msfm3d::filterFrontier()
   outrem.filter(*frontierCloud);
 }
 
-void Msfm3d::clusterFrontier()
+void Msfm3d::clusterFrontier(const bool print2File)
 {
-  ROS_INFO("frontierCloud before clustering has: %d data points.", (int)frontierCloud->points.size());
+  // clusterFrontier takes as input the frontierCloud and the voxel_size and extracts contiguous clusters of minimum size round(12.0/voxel_size) (60 for voxel_size=0.2) voxels.
+  // The indices of the cluster members are stored in frontierClusterIndices and the unclustered voxels are filtered from frontierCloud.
+  // Input:
+  //    - Msfm3d.frontierCloud (pcl::PointCloud<pcl::PointXYZ>::Ptr)
+  //    - Msfm3d.voxel_size (float)
+  // Output:
+  //    - Msfm3d.frontierClusterIndices (std::vector<pcl::PointIndices>)
+  //    - Msfm3d.frontierCloud (pcl::PointCloud<pcl::PointXYZ>::Ptr)
+  //
+  // Lines commented out include debugging ROS_INFO() text and .pcd file storage of the frontier cluster PointClouds.
+
+  ROS_INFO("Frontier cloud before clustering has: %d data points.", (int)frontierCloud->points.size());
 
   // Create cloud pointer to store the removed points
   pcl::PointCloud<pcl::PointXYZ>::Ptr removed_points (new pcl::PointCloud<pcl::PointXYZ>);
   pcl::PointIndices::Ptr inliers (new pcl::PointIndices());
-  pcl::ExtractIndices<pcl::PointXYZ> extract;
 
   // Creating the KdTree object for the search method of the extraction
   pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
@@ -212,33 +230,36 @@ void Msfm3d::clusterFrontier()
   // Initialize euclidean cluster extraction object
   pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
   ec.setClusterTolerance(1.5*voxel_size); // Clusters must be made of contiguous sections of frontier (within sqrt(2)*voxel_size of each other)
-  ec.setMinClusterSize(15); // Cluster must be at least 15 voxels in size
+  ec.setMinClusterSize(roundf(12.0/voxel_size)); // Cluster must be at least 15 voxels in size
   // ec.setMaxClusterSize (30);
   ec.setSearchMethod(tree);
   ec.setInputCloud(frontierCloud);
   ec.extract(frontierClusterIndices);
 
   // Iterate through clusters and write to file
-  // int j = 0;
-  // pcl::PCDWriter writer;
+  int j = 0;
+  pcl::PCDWriter writer;
   for (std::vector<pcl::PointIndices>::const_iterator it = frontierClusterIndices.begin(); it != frontierClusterIndices.end(); ++it){
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
     for (std::vector<int>::const_iterator pit=it->indices.begin(); pit!=it->indices.end(); ++pit){
-      // cloud_cluster->points.push_back(frontierCloud->points[*pit]);
-      inliers->indices.push_back(*pit);
+      if (print2File) cloud_cluster->points.push_back(frontierCloud->points[*pit]);
+      inliers->indices.push_back(*pit); // Indices to keep in frontierCloud
     }
-    // cloud_cluster->width = cloud_cluster->points.size ();
-    // cloud_cluster->height = 1;
-    // cloud_cluster->is_dense = true;
+    if (print2File) {
+      cloud_cluster->width = cloud_cluster->points.size ();
+      cloud_cluster->height = 1;
+      cloud_cluster->is_dense = true;
 
-    // std::cout << "PointCloud representing the Cluster: " << cloud_cluster->points.size () << " data points." << std::endl;
-    // std::stringstream ss;
-    // ss << "pcl_clusters/cloud_cluster_" << j << ".pcd";
-    // writer.write<pcl::PointXYZ> (ss.str (), *cloud_cluster, false); //*
-    // j++;
+      std::cout << "PointCloud representing the Cluster: " << cloud_cluster->points.size () << " data points." << std::endl;
+      std::stringstream ss;
+      ss << "pcl_clusters/cloud_cluster_" << j << ".pcd";
+      writer.write<pcl::PointXYZ> (ss.str (), *cloud_cluster, false); //*
+      j++;
+    } 
   }
 
   // Loop through the remaining points in frontierCloud and remove them from the frontier bool array
+  pcl::ExtractIndices<pcl::PointXYZ> extract;
   extract.setInputCloud(frontierCloud);
   extract.setIndices(inliers);
   extract.setNegative(true);
@@ -259,6 +280,136 @@ void Msfm3d::clusterFrontier()
   extract.filter(*frontierCloud);
   ROS_INFO("Frontier cloud after clustering has %d points.", (int)frontierCloud->points.size());
 
+  // Get new indices of Frontier Clusters after filtering (extract filter does not preserve indices);
+  frontierClusterIndices.clear();
+  tree->setInputCloud(frontierCloud);
+  ec.setSearchMethod(tree);
+  ec.setInputCloud(frontierCloud);
+  ec.extract(frontierClusterIndices);
+
+}
+
+bool filterCloudRadius(const float r, const pcl::PointXYZ point, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointIndices::Ptr inliers)
+{
+  // filterRadius returns the indices in cloud that are within euclidean distance r of point (x,y,z).
+
+  // Find all indices within r of point (x,y,z)
+  float dist2, r2 = r*r, dx, dy, dz;
+  // for (std::vector<int>::const_iterator it=cond_inliers->indices.begin(); it!=cond_inliers->indices.end(); ++it){
+  for (int i = 0; i<(int)cloud->points.size(); i++){
+    dx = point.x - cloud->points[i].x;
+    dy = point.y - cloud->points[i].y;
+    dz = point.z - cloud->points[i].z;
+    dist2 = (dx*dx) + (dy*dy) + (dz*dz);
+    if (dist2 < r2) inliers->indices.push_back(i);
+  }
+
+  // Return false if there are no points in cloud within r of point (x,y,z)
+  if (inliers->indices.size() > 0)
+    return 1;
+  else
+    return 0;
+}
+
+void Msfm3d::greedyGrouping(const float r, const bool print2File)
+{
+  // greedGrouping generates a vector of (pcl::PointIndices) where each entry in the vector is a greedily sampled group of points within radius of a randomly sampled frontier member.
+  // Algorithm:
+  //    0) clusterCount = 0; groupCount = 0;
+  //    1) Add all indices in the current cluster (frontierClusterIndices[clusterCount]) to ungrouped
+  //    2) While ungroupedIndices.size > 0
+  //      a) Sample an index from ungroupedIndices and get its point location (x, y, z)
+  //      b) Filter the ungrouped to ranges (x-r,y-r,z-r):(x+r, y+r, z+r) where r is radius
+  //      c) Remove all indices that are within r of (x,y,z) from ungroupedIndices and add them to greedyCluster[groupCount]
+  //      d) groupCount++;
+  //    3) clusterCount++, GoTo 1)
+  // Inputs:
+  //    - Msfm3d.frontierClusterIndices (std::vector<pcl::PointIndices>)
+  //    - Msfm3d.frontierCloud (pcl::PointCloud<pcl::PointXYZ>::Ptr)
+  //    - radius (float)
+  // Outputs:
+  //    - Msfm3d.greedyGroups (std::vector<pcl::PointIndices>)
+  //    - Msfm3d.greedyCenters (pcl::PointCloud<pcl::PointXYZ>)
+  //
+  // Each greedy group is used as a source for the pose sampling function.
+
+  // Intialize random seed:
+  srand(time(NULL));
+
+  int groupCount = 0;
+  int clusterCount = 0;
+  greedyGroups.clear();
+  greedyCenters.clear();
+
+  ROS_INFO("Beginning greedy grouping of %d clusters with sizes:", (int)frontierClusterIndices.size());
+  for (int i=0; i<frontierClusterIndices.size(); i++) std::cout << frontierClusterIndices[i].indices.size() << " ";
+  std::cout << std::endl;
+
+  // Loop through all of the frontier clusters
+  for (std::vector<pcl::PointIndices>::const_iterator it=frontierClusterIndices.begin(); it!=frontierClusterIndices.end(); ++it){
+
+    // Initialize a PointIndices pointer of all the ungrouped points in the current cluster
+    pcl::PointIndices::Ptr ungrouped(new pcl::PointIndices);
+    for (std::vector<int>::const_iterator pit=it->indices.begin(); pit!=it->indices.end(); ++pit) ungrouped->indices.push_back(*pit);
+
+    // Go until every member of ungrouped is in a greedy group
+    while (ungrouped->indices.size() > 0){
+      // Reset/Update ungrouped PointCloud
+      pcl::PointCloud<pcl::PointXYZ>::Ptr ungrouped_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+      pcl::ExtractIndices<pcl::PointXYZ> extract;
+      extract.setInputCloud(frontierCloud);
+      extract.setIndices(ungrouped);
+      extract.filter(*ungrouped_cloud);
+      ROS_INFO("Initializing ungrouped_cloud for group %d containing %d points.", groupCount, (int)ungrouped_cloud->points.size());
+
+      // Sample a random index from ungrouped
+      int sample_id = ungrouped->indices[(rand() % (int)ungrouped->indices.size())];
+      pcl::PointXYZ sample_point = frontierCloud->points[sample_id];
+      ROS_INFO("Sampled index %d which is located at (%f, %f, %f).", sample_id, sample_point.x, sample_point.y, sample_point.z);
+
+      // Find all the voxels in ungrouped_cloud that are within r of sample_point
+      pcl::PointIndices::Ptr group(new pcl::PointIndices);
+      filterCloudRadius(r, sample_point, ungrouped_cloud, group);
+      ROS_INFO("Found %d points within %f of the sample point.", (int)group->indices.size(), r);
+
+      // Resize greedyGroups to make room for a new group
+      greedyGroups.resize(greedyGroups.size() + 1);
+
+      // Add grouped indices to greedyGroups
+
+      for (std::vector<int>::const_iterator git=group->indices.begin(); git!=group->indices.end(); ++git){
+        greedyGroups[groupCount].indices.push_back(ungrouped->indices[*git]); // Add indices to group
+        ungrouped->indices[*git] = -1;
+      }
+
+      // Removed grouped indices from ungrouped  (This command removes all members of ungrouped->indices that have a value of -1)
+      ungrouped->indices.erase(std::remove(ungrouped->indices.begin(), ungrouped->indices.end(), -1), ungrouped->indices.end());
+
+      // Add sample_point to greedyCenters
+      greedyCenters.points.push_back(sample_point);
+
+      // Add group clouds to file for debugging
+      int j = 0;
+      pcl::PCDWriter writer;
+      pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
+      for (std::vector<int>::const_iterator fit=greedyGroups[groupCount].indices.begin(); fit!=greedyGroups[groupCount].indices.end(); ++fit){
+        if (print2File) cloud_cluster->points.push_back(frontierCloud->points[*fit]);
+      }
+      if (print2File) {
+        cloud_cluster->width = cloud_cluster->points.size ();
+        cloud_cluster->height = 1;
+        cloud_cluster->is_dense = true;
+
+        // std::cout << "PointCloud representing the group: " << cloud_cluster->points.size () << " data points." << std::endl;
+        std::stringstream ss;
+        ss << "pcl_clusters/cloud_cluster_" << clusterCount << "_group_" << groupCount << ".pcd";
+        // std::cout << "Writing to file " << ss.str() << std::endl;
+        writer.write<pcl::PointXYZ> (ss.str(), *cloud_cluster, false); //*
+      }
+      groupCount++;
+    }
+    clusterCount++;
+  }
 }
 
 bool Msfm3d::collisionCheck(const float point[3]) 
@@ -664,52 +815,6 @@ bool Msfm3d::updatePath(const float goal[3])
 
 
 void Msfm3d::updateFrontierMsg() {
-  // visualization_msgs::Marker marker;
-  // visualization_msgs::MarkerArray newMarkerArray;
-  // int npixels = esdf.size[0]*esdf.size[1]*esdf.size[2];
-  // int count = 1;
-  // float point[3];
-  // int diff;
-  // for (int i=0; i<npixels; i++){
-  //   if (frontier[i]){
-  //     index3_xyz(i, point);
-  //     marker.header.frame_id = frame;
-  //     marker.header.stamp = ros::Time();
-  //     marker.id = count;
-  //     marker.type = visualization_msgs::Marker::CUBE;
-  //     marker.action = visualization_msgs::Marker::ADD;
-  //     marker.pose.position.x = point[0];
-  //     marker.pose.position.y = point[1];
-  //     marker.pose.position.z = point[2];
-  //     marker.pose.orientation.x = 0.0;
-  //     marker.pose.orientation.y = 0.0;
-  //     marker.pose.orientation.z = 0.0;
-  //     marker.pose.orientation.w = 1.0;
-  //     marker.scale.x = voxel_size;
-  //     marker.scale.y = voxel_size;
-  //     marker.scale.z = voxel_size;
-  //     marker.color.a = 0.75; // Alpha value
-  //     marker.color.r = 0.0; // red
-  //     marker.color.g = 1.0; // green
-  //     marker.color.b = 0.0; // blue
-  //     newMarkerArray.markers.push_back(marker);
-  //     count++;
-  //   }
-  // }
-  // if (frontier_size < count) {
-  //   diff = count - frontier_size;
-  //   for (int i=0; i < diff; i++){
-  //     marker.header.frame_id = frame;
-  //     marker.header.stamp = ros::Time();
-  //     marker.id = frontier_size + i + 1;
-  //     marker.type = visualization_msgs::Marker::CUBE;
-  //     marker.action = visualization_msgs::Marker::DELETE;
-  //     newMarkerArray.markers.push_back(marker);
-  //   }
-  // }
-  // frontier_size = count;
-  // frontiermsg = newMarkerArray;
-
   // Declare a new cloud to store the converted message
   sensor_msgs::PointCloud2 newPointCloud2;
 
@@ -721,7 +826,6 @@ void Msfm3d::updateFrontierMsg() {
 
   // Update the old message
   frontiermsg = newPointCloud2;
-
 }
 
 void updateFrontier(Msfm3d& planner){
@@ -771,7 +875,7 @@ void updateFrontier(Msfm3d& planner){
       // ROS_INFO("Neighbor indices for cell %d are %d, %d, %d, %d, %d, and %d.", i, neighbor[0], neighbor[1], neighbor[2], neighbor[3], neighbor[4], neighbor[5]);
       // Check if the neighbor indices are unseen voxels
       if (planner.ground) {
-        for (int j=0; j<5; j++) {
+        for (int j=0; j<4; j++) {
           if (!planner.esdf.seen[neighbor[j]] && !(i == neighbor[j])) frontier = 1;
         }
       }
@@ -790,7 +894,7 @@ void updateFrontier(Msfm3d& planner){
         // if (!planner.esdf.seen[neighbor[5]]) frontier = 0;
 
         // Only consider frontiers close in z-coordinate (temporary hack)
-        if (abs(planner.position[2] - point[2]) >= 2*planner.voxel_size) frontier = 0;
+        // if (abs(planner.position[2] - point[2]) >= 2*planner.voxel_size) frontier = 0;
 
         // Eliminate frontiers that are adjacent to occupied cells (unless it's the bottom neighbor for the ground case)
         for (int j=0; j<6; j++) {
@@ -826,7 +930,10 @@ void updateFrontier(Msfm3d& planner){
   }
 
   // Cluster the frontier into euclidean distance groups
-  planner.clusterFrontier();
+  planner.clusterFrontier(true);
+
+  // Group frontier within each cluster with greedy algorithm
+  planner.greedyGrouping(4*planner.voxel_size, true);
 
 }
 
@@ -1282,15 +1389,16 @@ int main(int argc, char **argv)
       i = planner.xyz_index3(planner.position);
       ROS_INFO("Index at Position: %d", i);
       if (planner.receivedMap){
-        ROS_INFO("ESDF at Position: %f", planner.esdf.data[i]);
+        ROS_INFO("ESDF or Occupancy at Position: %f", planner.esdf.data[i]);
 
         // Find frontier cells and add them to planner.frontier for output to file.
         // Publish frontiers as MarkerArray
         updateFrontier(planner);
         planner.updateFrontierMsg();
         pub3.publish(planner.frontiermsg);
-        ROS_INFO("Frontier MarkerArray published!");
-        
+        ROS_INFO("Frontier published!");
+        return 1;
+
         // Call msfm3d function
         tStart = clock();
         ROS_INFO("Reachability matrix calculating...");
