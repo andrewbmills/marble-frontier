@@ -101,16 +101,18 @@ class Msfm3d
     // Vehicle parameters
     bool ground = 0; // whether the vehicle is a ground vehicle
     float wheel_bottom_dist = 0.0;
-    boundary vehicleVolume; // xyz boundary of the vehicle bounding box in rectilinear coordinates for collision detection/avoidance
     float position[3] = {69.0, 420.0, 1337.0}; // robot position
     float euler[3]; // robot orientation in euler angles
     float R[9]; // Rotation matrix
+    boundary vehicleVolume; // xyz boundary of the vehicle bounding box in rectilinear coordinates for collision detection/avoidance
 
     // Environment/Sensor parameters
     std::string frame = "world";
     bool esdf_or_octomap = 0; // Boolean to use an esdf PointCloud2 or an Octomap as input
-    bool receivedPosition = 0, receivedMap = 0;
-    float voxel_size, bubble_radius = 1.5; // map voxel size, and bubble radius
+    bool receivedPosition = 0;
+    bool receivedMap = 0;
+    float voxel_size;
+    float bubble_radius = 1.5; // map voxel size, and bubble radius
     float origin[3]; // location in xyz coordinates where the robot entered the environment
     
     double * reach; // reachability grid (output from reach())
@@ -120,11 +122,12 @@ class Msfm3d
     octomap::OcTree* tree; // OcTree object for holding Octomap
 
     // Frontier and frontier filter parameters
+    bool frontierFilterOn = 0;
     bool * frontier;
     bool * entrance;
-    int frontier_size = 0, filter_neighbors = 0;
+    int frontier_size = 0;
+    int filter_neighbors = 0;
     double filter_radius = 1.0;
-    bool frontierFilterOn = 0;
       // Clustering/Filtering
       pcl::PointCloud<pcl::PointXYZ>::Ptr frontierCloud; // Frontier PCL
       std::vector<pcl::PointIndices> frontierClusterIndices;
@@ -292,12 +295,15 @@ void Msfm3d::clusterFrontier(const bool print2File)
 
 bool filterCloudRadius(const float radius, const pcl::PointXYZ point, const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointIndices::Ptr inliers)
 {
-  // filterRadius returns the indices in cloud that are within euclidean distance r of point (x,y,z).
+  // filterRadius returns the indices (inside inliers->indices) in cloud that are within euclidean distance r of point (x,y,z).
 
   // Find all indices within r of point (x,y,z)
-  float distance_squared, radius_squared = radius*radius, delta_x, delta_y, detla_z;
-  // for (std::vector<int>::const_iterator it=cond_inliers->indices.begin(); it!=cond_inliers->indices.end(); ++it){
-  for (int i = 0; i<(int)cloud->points.size(); i++){
+  float distance_squared;
+  float delta_x;
+  float delta_y;
+  float delta_z;
+  float radius_squared = radius*radius;
+  for (int i = 0; i<(int)cloud->points.size(); i++) { // This line is vague, consider modifying with a more explicit range of values
     delta_x = point.x - cloud->points[i].x;
     delta_y = point.y - cloud->points[i].y;
     delta_z = point.z - cloud->points[i].z;
@@ -338,8 +344,11 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
   std::random_device rd;
   std::mt19937 mt(rd()); // Really random (much better than using rand())
 
+  // Initialize counts of the current group and cluster in the algorithm
   int groupCount = 0;
   int clusterCount = 0;
+
+  // Clear the greedy cluster arrays in the msfm3d object
   greedyGroups.clear();
   greedyCenters.clear();
 
@@ -419,13 +428,13 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
   }
 }
 
-bool Msfm3d::collisionCheck(const float point[3]) 
+bool Msfm3d::collisionCheck(const float position[3]) 
 {
   // Get indices corresponding to the voxels occupied by the vehicle
   int lower_corner[3], voxel_width[3], idx, npixels = esdf.size[0]*esdf.size[1]*esdf.size[2]; // xyz point of the lower left of the vehicle rectangle
-  lower_corner[0] = point[0] + vehicleVolume.xmin;
-  lower_corner[1] = point[1] + vehicleVolume.ymin;
-  lower_corner[2] = point[2] + vehicleVolume.zmin;
+  lower_corner[0] = position[0] + vehicleVolume.xmin;
+  lower_corner[1] = position[1] + vehicleVolume.ymin;
+  lower_corner[2] = position[2] + vehicleVolume.zmin;
   voxel_width[0] = roundf((vehicleVolume.xmax - vehicleVolume.xmin)/voxel_size);
   voxel_width[1] = roundf((vehicleVolume.xmax - vehicleVolume.xmin)/voxel_size);
   voxel_width[2] = roundf((vehicleVolume.xmax - vehicleVolume.xmin)/voxel_size);
@@ -443,9 +452,13 @@ bool Msfm3d::collisionCheck(const float point[3])
         idx = xyz_index3(query);
         // Check to see if idx is inside a valid index
         if (idx < 0 || idx >= npixels ) {
-          if (ground && (query[2] >= (point[2] - wheel_bottom_dist + voxel_size/2.0)) && esdf.data[idx] < 0.0) return 1; // Check for collisions above the wheels on the ground robot
-          if (!ground && esdf.data[idx] < 0.0) return 1; // Check for air vehicle collision
-          if (ground && (query[2] <= (point[2] - wheel_bottom_dist - voxel_size/2.0)) && esdf.data[idx] > 0.0) { // Check for wheel contact with the ground for the ground vehicle
+          if (ground && (query[2] >= (position[2] - wheel_bottom_dist + voxel_size/2.0)) && esdf.data[idx] < 0.0) {
+          	return 1; // Check for collisions above the wheels on the ground robot
+      	  }
+          if (!ground && esdf.data[idx] < 0.0) {
+          	return 1; // Check for air vehicle collision
+          }
+          if (ground && (query[2] <= (position[2] - wheel_bottom_dist - voxel_size/2.0)) && esdf.data[idx] > 0.0) { // Check for wheel contact with the ground for the ground vehicle
             ROS_INFO("Original path doesn't keep the ground vehicle on the ground, replanning to next closest frontier voxel...");
             return 1;
           }
@@ -459,6 +472,8 @@ bool Msfm3d::collisionCheck(const float point[3])
 void Msfm3d::getRotationMatrix()
 {
   if (receivedPosition) {
+  	// Compute the 3-2-1 rotation matrix for the vehicle from its current orientation in quaternions (q)
+
     // First Row
     R[0] = q.w*q.w + q.x*q.x - q.y*q.y - q.z*q.z;
     R[1] = 2.0*(q.x*q.y - q.w*q.z);
