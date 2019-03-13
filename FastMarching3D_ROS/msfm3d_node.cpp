@@ -67,6 +67,21 @@ int sign(float a){
   return 0;
 }
 
+// Some orientation and pose structures
+struct Quaternion {
+  float w, x, y, z;
+};
+struct Pose {
+  pcl::PointXYZ position;
+  Eigen::Matrix3f R;
+};
+struct Sensor {
+  float verticalFoV = 0.0; // in degrees
+  float horizontalFoV = 0.0; // in degrees
+  float rMin = 0.0; // in meters
+  float rMax = 1.0; // in meters
+};
+
 //Msfm3d class declaration
 class Msfm3d
 {
@@ -90,10 +105,7 @@ class Msfm3d
       float max[4]; // max and min values in each dimension
       float min[4];
     };
-    struct orientation {
-      float w, x, y, z;
-    };
-    struct boundary {
+    struct Boundary {
       bool set = 0;
       float xmin = 0.0, xmax = 0.0, ymin = 0.0, ymax = 0.0, zmin = 0.0, zmax = 0.0;
     };
@@ -122,12 +134,9 @@ class Msfm3d
     octomap::OcTree* tree; // OcTree object for holding Octomap
 
     // Frontier and frontier filter parameters
-    bool frontierFilterOn = 0;
     bool * frontier;
     bool * entrance;
     int frontier_size = 0;
-    int filter_neighbors = 0;
-    double filter_radius = 1.0;
       // Clustering/Filtering
       pcl::PointCloud<pcl::PointXYZ>::Ptr frontierCloud; // Frontier PCL
       std::vector<pcl::PointIndices> frontierClusterIndices;
@@ -137,9 +146,19 @@ class Msfm3d
       std::vector<pcl::PointIndices> greedyGroups;
       pcl::PointCloud<pcl::PointXYZ> greedyCenters;
 
-    orientation q; // robot orientation in quaternions
+    // Vector of possible goal poses
+    std::vector<Pose> goal_poses;
+
+    // Sensor parameters
+    Sensor camera;
+    camera.verticalFoV = 45.0;
+    camera.horizontalFoV = 60.0;
+    camera.rMin = 1.0;
+    camera.rMax = 5.0;
+
+    Quaternion q; // robot orientation in quaternions
     ESDF esdf; // ESDF struct object
-    boundary bounds; // xyz boundary of possible goal locations
+    Boundary bounds; // xyz boundary of possible goal locations
 
     void callback(sensor_msgs::PointCloud2 msg); // Subscriber callback function for PC2 msg (ESDF)
     void callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg); // Subscriber callback function for Octomap msg
@@ -154,8 +173,9 @@ class Msfm3d
     void clusterFrontier(const bool print2File); // Clusters the frontier pointCloud with euclidean distance within a radius
     bool inBoundary(const float point[3]); // Checks if a point is inside the planner boundaries
     bool collisionCheck(const float point[3]); // Checks if the robot being at the current point (given vehicleVolume) intersects with the obstacle environment (esdf)
-    void filterFrontier();
     void greedyGrouping(const float r, const bool print2File);
+    bool raycast(const pcl::PointXYZ start, const pcl::PointXYZ end);
+    Pose samplePose(const pcl::PointXYZ centroid, const Sensor camera, const int sampleLimit);
 };
 
 bool Msfm3d::inBoundary(const float point[3])
@@ -170,39 +190,6 @@ bool Msfm3d::inBoundary(const float point[3])
     // No boundary exists so every point is inside.
     return 1;
   }
-}
-
-void Msfm3d::filterFrontier()
-{
-  // Apply the radius outlier filter to the frontier pointCloud object instantiation (frontierCloud) and then remove the filtered values from the frontier object.
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZ>);
-  // pcl::RadiusOutlierRemoval<pcl::PointXYZ> outrem;
-  pcl::StatisticalOutlierRemoval<pcl::PointXYZ> outrem;
-  float query[3];
-  int idx;
-
-  // build the filter
-  outrem.setInputCloud(frontierCloud);
-  // outrem.setRadiusSearch(filter_radius);
-  // outrem.setMinNeighborsInRadius(filter_neighbors);
-  outrem.setMeanK(50);
-  outrem.setStddevMulThresh(1.0);
-  outrem.setNegative(true);
-  outrem.filter(*cloud_filtered);
-
-  // Iterate through the filtered points and remove them from the frontier array.
-  for (pcl::PointCloud<pcl::PointXYZ>::iterator it=cloud_filtered->begin(); it!=cloud_filtered->end(); ++it){
-    query[0] = it->x;
-    query[1] = it->y;
-    query[2] = it->z;
-    idx = xyz_index3(query);
-    frontier[idx] = 0;
-  }
-  ROS_INFO("%d points filtered from the initial frontier.", (int)cloud_filtered->size());
-
-  // Remove the outliers from the frontierCloud object
-  outrem.setNegative(false);
-  outrem.filter(*frontierCloud);
 }
 
 void Msfm3d::clusterFrontier(const bool print2File)
@@ -221,11 +208,11 @@ void Msfm3d::clusterFrontier(const bool print2File)
   ROS_INFO("Frontier cloud before clustering has: %d data points.", (int)frontierCloud->points.size());
 
   // Create cloud pointer to store the removed points
-  pcl::PointCloud<pcl::PointXYZ>::Ptr removed_points (new pcl::PointCloud<pcl::PointXYZ>);
-  pcl::PointIndices::Ptr inliers (new pcl::PointIndices());
+  pcl::PointCloud<pcl::PointXYZ>::Ptr removed_points(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
 
   // Creating the KdTree object for the search method of the extraction
-  pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+  pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree(new pcl::search::KdTree<pcl::PointXYZ>);
   tree->setInputCloud(frontierCloud);
 
   // Clear previous frontierClusterIndices
@@ -236,7 +223,7 @@ void Msfm3d::clusterFrontier(const bool print2File)
   ec.setClusterTolerance(1.5*voxel_size); // Clusters must be made of contiguous sections of frontier (within sqrt(2)*voxel_size of each other)
   ec.setMinClusterSize(roundf(12.0/voxel_size)); // Cluster must be at least 15 voxels in size
   // ec.setMaxClusterSize (30);
-  ec.setSearchMethod(tree);
+  ec.setSearchMethod(kdtree);
   ec.setInputCloud(frontierCloud);
   ec.extract(frontierClusterIndices);
 
@@ -244,7 +231,7 @@ void Msfm3d::clusterFrontier(const bool print2File)
   int j = 0;
   pcl::PCDWriter writer;
   for (std::vector<pcl::PointIndices>::const_iterator it = frontierClusterIndices.begin(); it != frontierClusterIndices.end(); ++it){
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster(new pcl::PointCloud<pcl::PointXYZ>);
     for (std::vector<int>::const_iterator pit=it->indices.begin(); pit!=it->indices.end(); ++pit){
       if (print2File) cloud_cluster->points.push_back(frontierCloud->points[*pit]);
       inliers->indices.push_back(*pit); // Indices to keep in frontierCloud
@@ -467,6 +454,119 @@ bool Msfm3d::collisionCheck(const float position[3])
     }
   }
 }
+
+bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end) {
+  float dx = end.x - start.x;
+  float dy = end.y - start.y;
+  float dz = end.z - start.z;
+  float radius = std::sqrt(dx*dx + dy*dy + dz*dz);
+
+  if (esdf_or_octomap) {
+    // Perform a raycast in Octomap
+    octomap::point3d origin;
+    origin.x = start.x;
+    origin.y = start.y;
+    origin.z = start.z;
+
+    octomap::point3d direction;
+    direction.x = dx;
+    direction.y = dy;
+    direction.z = dz;
+
+    octomap::point3d stop;
+
+    if (tree.castRay(origin, direction, stop, false, (double)radius)) {
+      return false;
+    }
+
+    // Calculate the distance between the end and centroid
+    float diff_x = (end.x - stop.x);
+    float diff_y = (end.y - stop.y);
+    float diff_z = (end.z - stop.z);
+    float distanced = std::sqrt(diff_x*diff_x + diff_y*diff_y + diff_z*diff_z);
+    if (distance > voxel_size) {
+      // castRay hit an unseen voxel before hitting the centroid, sample another point
+      return false;
+    }
+    return true;
+  } else {
+    // I don't have this built out yet
+    ROS_INFO("Occlusion detection is not defined for ESDF at the moment.  Use Octomap for pose sampling.");
+    return false;
+  }
+}
+
+Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const Sensor camera, const int sampleLimit)
+{
+  // samplePose takes as input a greedy frontier group centroid and the Octomap/ESDF and outputs a pose that can view the centroid with no occlusion.
+  //
+  // Inputs-
+  //    - centroid: (x,y,z) location used to generate robotPose
+  //    - sampleLimit: The max number of random samples before the function quits
+  //    - tree: The Octomap ocTree pointer used for raycasting
+  //      --OR--
+  //    - esdf: Raycasting is performed using a bresenham function
+  // Outputs-
+  //    - Pose: robot pose from which the centroid is viewable in the occupancy/esdf map
+  //
+  // If no sample is found, the Pose is populated with NaN's
+
+  // Initialize output pose
+  Pose robotPose; // Pose is returned in ENU (East-North-Up) with a 3-2-1 rotation order
+  robotPose.R.setZero();
+  // Intialize random seed:
+  std::random_device rd;
+  std::mt19937 mt(rd());
+
+  // Uniform continuous distributions over spherical coordinates
+  std::uniform_real_distribution<float> radius_dist(camera.rMin, camera.rMax);
+  std::uniform_real_distribution<float> azimuth_dist(0, 2*M_PI);
+  std::uniform_real_distribution<float> elevation_dist((M_PI - camera.verticalFoV)/2.0, (M_PI + camera.verticalFoV)/2.0);
+
+  for (int i = 0; i < sampleLimit; i++) {
+    // Sample in spherical coordinates
+    float radius_sample = radius_dist(mt);
+    float azimuth_sample = azimuth_dist(mt);
+    float elevation_sample = elevation_dist(mt);
+
+    // Generate sample
+    pcl::PointXYZ sample;
+    sample.x = centroid.x + radius_sample*std::sin(elevation_sample)*std::cos(azimuth_sample);
+    sample.y = centroid.y + radius_sample*std::sin(elevation_sample)*std::sin(azimuth_sample);
+    sample.z = centroid.z + radius_sample*std::cos(elevation_sample);
+
+    // Find the index of the sample
+    int sample_idx = xyz_index3({sample.x, sample.y, sample.z});
+
+    // See if the sample is within the current map range
+    if ((sample_idx < 0) || (sample_idx >= esdf.size[0]*esdf.size[1]*esdf.size[2])) {
+      continue;
+    }
+
+    // See if sample is at an unreachable point (occupied or unseen)
+    if (esdf.data[idx] <= 0.0) {
+      continue;
+    }
+
+    // Check for occlusion
+    if (!raycast(sample, centroid)) {
+      continue;
+    }
+  
+    // This pose is valid! Save it and exit the loop.
+    float sample_yaw = M_PI + azimuth_sample;
+    robotPose.position = sample;
+    robotPose.R(0,0) = std::cos(sample_yaw);
+    robotPose.R(0,1) = -std::sin(sample_yaw);
+    robotPose.R(1,0) = std::sin(sample_yaw);
+    robotPose.R(1,1) = std::cos(sample_yaw);
+    robotPose.R(2,2) = 1.0;
+    break;
+  }
+
+  return robotPose;
+}
+
 
 
 void Msfm3d::getRotationMatrix()
