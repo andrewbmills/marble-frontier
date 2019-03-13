@@ -3,6 +3,7 @@
 
 #include <math.h>
 #include <algorithm>
+#include <random>
 // ROS libraries
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -301,7 +302,7 @@ bool filterCloudRadius(const float r, const pcl::PointXYZ point, pcl::PointCloud
     dy = point.y - cloud->points[i].y;
     dz = point.z - cloud->points[i].z;
     dist2 = (dx*dx) + (dy*dy) + (dz*dz);
-    if (dist2 < r2) inliers->indices.push_back(i);
+    if (dist2 < r2) inliers->indices.push_back(i);  // Add indices that are within the radius to inliers
   }
 
   // Return false if there are no points in cloud within r of point (x,y,z)
@@ -334,7 +335,8 @@ void Msfm3d::greedyGrouping(const float r, const bool print2File)
   // Each greedy group is used as a source for the pose sampling function.
 
   // Intialize random seed:
-  srand(time(NULL));
+  std::random_device rd;
+  std::mt19937 mt(rd()); // Really random (much better than using rand())
 
   int groupCount = 0;
   int clusterCount = 0;
@@ -342,18 +344,22 @@ void Msfm3d::greedyGrouping(const float r, const bool print2File)
   greedyCenters.clear();
 
   ROS_INFO("Beginning greedy grouping of %d clusters with sizes:", (int)frontierClusterIndices.size());
-  for (int i=0; i<frontierClusterIndices.size(); i++) std::cout << frontierClusterIndices[i].indices.size() << " ";
+  for (int i = 0; i < frontierClusterIndices.size(); i++) {
+  	std::cout << frontierClusterIndices[i].indices.size() << " ";
+  }
   std::cout << std::endl;
 
   // Loop through all of the frontier clusters
-  for (std::vector<pcl::PointIndices>::const_iterator it=frontierClusterIndices.begin(); it!=frontierClusterIndices.end(); ++it){
+  for (std::vector<pcl::PointIndices>::const_iterator it = frontierClusterIndices.begin(); it != frontierClusterIndices.end(); ++it) {
 
     // Initialize a PointIndices pointer of all the ungrouped points in the current cluster
     pcl::PointIndices::Ptr ungrouped(new pcl::PointIndices);
-    for (std::vector<int>::const_iterator pit=it->indices.begin(); pit!=it->indices.end(); ++pit) ungrouped->indices.push_back(*pit);
+    for (std::vector<int>::const_iterator pit = it->indices.begin(); pit != it->indices.end(); ++pit) {
+    	ungrouped->indices.push_back(*pit);
+    }
 
     // Go until every member of ungrouped is in a greedy group
-    while (ungrouped->indices.size() > 0){
+    while (ungrouped->indices.size() > 0) {
       // Reset/Update ungrouped PointCloud
       pcl::PointCloud<pcl::PointXYZ>::Ptr ungrouped_cloud(new pcl::PointCloud<pcl::PointXYZ>);
       pcl::ExtractIndices<pcl::PointXYZ> extract;
@@ -363,7 +369,8 @@ void Msfm3d::greedyGrouping(const float r, const bool print2File)
       ROS_INFO("Initializing ungrouped_cloud for group %d containing %d points.", groupCount, (int)ungrouped_cloud->points.size());
 
       // Sample a random index from ungrouped
-      int sample_id = ungrouped->indices[(rand() % (int)ungrouped->indices.size())];
+      std::uniform_int_distribution<int> dist(0, (int)ungrouped->indices.size()-1);
+      int sample_id = ungrouped->indices[dist(mt)];
       pcl::PointXYZ sample_point = frontierCloud->points[sample_id];
       ROS_INFO("Sampled index %d which is located at (%f, %f, %f).", sample_id, sample_point.x, sample_point.y, sample_point.z);
 
@@ -377,7 +384,7 @@ void Msfm3d::greedyGrouping(const float r, const bool print2File)
 
       // Add grouped indices to greedyGroups
 
-      for (std::vector<int>::const_iterator git=group->indices.begin(); git!=group->indices.end(); ++git){
+      for (std::vector<int>::const_iterator git = group->indices.begin(); git != group->indices.end(); ++git) {
         greedyGroups[groupCount].indices.push_back(ungrouped->indices[*git]); // Add indices to group
         ungrouped->indices[*git] = -1;
       }
@@ -391,12 +398,12 @@ void Msfm3d::greedyGrouping(const float r, const bool print2File)
       // Add group clouds to file for debugging
       int j = 0;
       pcl::PCDWriter writer;
-      pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
-      for (std::vector<int>::const_iterator fit=greedyGroups[groupCount].indices.begin(); fit!=greedyGroups[groupCount].indices.end(); ++fit){
+      pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster(new pcl::PointCloud<pcl::PointXYZ>);
+      for (std::vector<int>::const_iterator fit = greedyGroups[groupCount].indices.begin(); fit != greedyGroups[groupCount].indices.end(); ++fit) {
         if (print2File) cloud_cluster->points.push_back(frontierCloud->points[*fit]);
       }
       if (print2File) {
-        cloud_cluster->width = cloud_cluster->points.size ();
+        cloud_cluster->width = cloud_cluster->points.size();
         cloud_cluster->height = 1;
         cloud_cluster->is_dense = true;
 
