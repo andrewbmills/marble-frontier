@@ -147,7 +147,11 @@ class Msfm3d
       pcl::PointCloud<pcl::PointXYZ> greedyCenters;
 
     // Vector of possible goal poses
-    std::vector<Pose> goal_poses;
+    struct View {
+      Pose pose;
+      pcl::PointCloud<pcl::PointXYZ> cloud;
+    };
+    std::vector<View> goalViews;
 
     // Sensor parameters
     Sensor camera;
@@ -176,6 +180,7 @@ class Msfm3d
     void greedyGrouping(const float r, const bool print2File);
     bool raycast(const pcl::PointXYZ start, const pcl::PointXYZ end);
     Pose samplePose(const pcl::PointXYZ centroid, const Sensor camera, const int sampleLimit);
+    void updateGoalPoses();
 };
 
 bool Msfm3d::inBoundary(const float point[3])
@@ -513,6 +518,9 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const Sensor camera, const
 
   // Initialize output pose
   Pose robotPose; // Pose is returned in ENU (East-North-Up) with a 3-2-1 rotation order
+  robotPose.position.x = NAN;
+  robotPose.position.y = NAN;
+  robotPose.position.z = NAN;
   robotPose.R.setZero();
   // Intialize random seed:
   std::random_device rd;
@@ -567,7 +575,69 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const Sensor camera, const
   return robotPose;
 }
 
+void Msfm3d::updateGoalPoses()
+{
+  // Conversion matrix from ENU to EUS
+  Eigen::Matrix4f ENU_to_PCL;
+  ENU_to_PCL << 1, 0, 0, 0
+                0, 0, 1, 0
+                0, -1, 0, 0
+                0, 0, 0, 1;
 
+  // Clear previous goalViews vector
+  goalViews.clear();
+
+  // Loop through the frontier group centroids
+  for (pcl::PointCloud<pcl::PointXYZ>::iterator it = greedyCenters->begin(); it != greedyCenters->end(); ++it) {
+    // Sample an admissable pose that sees the centroid
+    Pose goalPose = samplePose(*it, camera, 50);
+    if std::isnan(goalPose.position.x) {
+      continue;
+    }
+
+    // Convert the goalPose into a 4x4 view matrix in EUS (East Up South) or (Forward-Up-Right)
+    Eigen::Matrix4f camera_pose;
+    camera_pose.setZero();
+    camera_pose.topLeftCorner(3,3) = goalPose.R;
+    camera_pose(0,3) = goalPose.position.x;
+    camera_pose(1,3) = goalPose.position.y;
+    camera_pose(2,3) = goalPose.position.z;
+    camera_pose(3,3) = 1.0;
+    camera_pose = ENU_to_PCL*camera_pose; // Rotate camera_pose into weird PCL EUS coordinates
+
+    // Cull the view frustum points with the pcl function
+    pcl::FrustumCulling<pcl::PointXYZ> fc;
+    fc.setInputCloud(source);
+    fc.setVerticalFOV(camera.verticalFoV);
+    fc.setHorizontalFOV(camera.horizontalFoV);
+    fc.setNearPlaneDistance(camera.rMin);
+    fc.setFarPlaneDistance(camera.rMax);
+    fc.setCameraPose(camera_pose);
+    pcl::PointCloud<pcl::PointXYZ> viewed_cloud;
+    fc.filter(viewed_cloud);
+
+    // Perform raycasting and check which culled cloud points are visible from goalPose.position
+    pcl::PointIndices::Ptr seen(new pcl::PointIndices());
+    for (int i = 0; i < viewed_cloud.points.size(); i++) {
+      if (raycast(goalPose.position, viewed_cloud.points[i])) {
+        seen->indices.push_back(i);
+      }
+    }
+
+    // Extract seen cloud members from viewed_cloud
+    pcl::ExtractIndices<pcl::PointXYZ> extract;
+    extract.setInputCloud(viewed_cloud);
+    extract.setIndices(seen);
+    extract.setNegative(false);
+    extract.filter(viewed_cloud);
+
+    // Add the pose and the viewed frontier indices to the goalViews vector.
+    View sampleView;
+    sampleView.pose = goalPose;
+    sampleView.cloud = viewed_cloud;
+    goalViews.push_back(sampleView);
+  }
+}
 
 void Msfm3d::getRotationMatrix()
 {
