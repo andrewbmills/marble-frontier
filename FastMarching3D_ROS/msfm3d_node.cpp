@@ -26,6 +26,7 @@
 #include <pcl/filters/radius_outlier_removal.h>
 #include <pcl/filters/statistical_outlier_removal.h>
 #include <pcl/filters/conditional_removal.h>
+#include <pcl/filters/frustum_culling.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/kdtree/kdtree.h>
 #include <pcl/segmentation/extract_clusters.h>
@@ -71,15 +72,40 @@ int sign(float a){
 struct Quaternion {
   float w, x, y, z;
 };
+
+Quaternion euler2Quaternion(float yaw, float pitch, float roll) // yaw (Z), pitch (Y), roll (X)
+{
+  // From Wikipedia
+  // Abbreviations for the various angular functions
+  float cy = std::cos(yaw * 0.5);
+  float sy = std::sin(yaw * 0.5);
+  float cp = std::cos(pitch * 0.5);
+  float sp = std::sin(pitch * 0.5);
+  float cr = std::cos(roll * 0.5);
+  float sr = std::sin(roll * 0.5);
+
+  Quaternion q;
+  q.w = cy * cp * cr + sy * sp * sr;
+  q.x = cy * cp * sr - sy * sp * cr;
+  q.y = sy * cp * sr + cy * sp * cr;
+  q.z = sy * cp * cr - cy * sp * sr;
+  return q;
+}
+
 struct Pose {
   pcl::PointXYZ position;
   Eigen::Matrix3f R;
+  Quaternion q;
 };
-struct Sensor {
-  float verticalFoV = 0.0; // in degrees
-  float horizontalFoV = 0.0; // in degrees
-  float rMin = 0.0; // in meters
-  float rMax = 1.0; // in meters
+struct SensorFoV {
+  float verticalFoV; // in degrees
+  float horizontalFoV; // in degrees
+  float rMin; // in meters
+  float rMax; // in meters
+};
+struct View {
+  Pose pose;
+  pcl::PointCloud<pcl::PointXYZ> cloud;
 };
 
 //Msfm3d class declaration
@@ -87,7 +113,7 @@ class Msfm3d
 {
   public:
     // Constructor
-    Msfm3d():
+    Msfm3d(float map_resolution):
     frontierCloud(new pcl::PointCloud<pcl::PointXYZ>)
     {
       reach = NULL;
@@ -95,7 +121,12 @@ class Msfm3d
       esdf.seen = NULL;
       frontier = NULL;
       entrance = NULL;
-      tree = NULL;
+      camera.verticalFoV = 45.0;
+      camera.horizontalFoV = 60.0;
+      camera.rMin = 0.5;
+      camera.rMax = 2.5;
+      voxel_size = map_resolution;
+      mytree = new octomap::OcTree(voxel_size);
     }
     // Structure definitions
     struct ESDF {
@@ -116,7 +147,7 @@ class Msfm3d
     float position[3] = {69.0, 420.0, 1337.0}; // robot position
     float euler[3]; // robot orientation in euler angles
     float R[9]; // Rotation matrix
-    boundary vehicleVolume; // xyz boundary of the vehicle bounding box in rectilinear coordinates for collision detection/avoidance
+    Boundary vehicleVolume; // xyz boundary of the vehicle bounding box in rectilinear coordinates for collision detection/avoidance
 
     // Environment/Sensor parameters
     std::string frame = "world";
@@ -131,7 +162,7 @@ class Msfm3d
     sensor_msgs::PointCloud2 PC2msg;
     nav_msgs::Path pathmsg;
     // visualization_msgs::MarkerArray frontiermsg;
-    octomap::OcTree* tree; // OcTree object for holding Octomap
+    octomap::OcTree* mytree; // OcTree object for holding Octomap
 
     // Frontier and frontier filter parameters
     bool * frontier;
@@ -147,18 +178,10 @@ class Msfm3d
       pcl::PointCloud<pcl::PointXYZ> greedyCenters;
 
     // Vector of possible goal poses
-    struct View {
-      Pose pose;
-      pcl::PointCloud<pcl::PointXYZ> cloud;
-    };
     std::vector<View> goalViews;
 
     // Sensor parameters
-    Sensor camera;
-    camera.verticalFoV = 45.0;
-    camera.horizontalFoV = 60.0;
-    camera.rMin = 1.0;
-    camera.rMax = 5.0;
+    SensorFoV camera;
 
     Quaternion q; // robot orientation in quaternions
     ESDF esdf; // ESDF struct object
@@ -179,7 +202,7 @@ class Msfm3d
     bool collisionCheck(const float point[3]); // Checks if the robot being at the current point (given vehicleVolume) intersects with the obstacle environment (esdf)
     void greedyGrouping(const float r, const bool print2File);
     bool raycast(const pcl::PointXYZ start, const pcl::PointXYZ end);
-    Pose samplePose(const pcl::PointXYZ centroid, const Sensor camera, const int sampleLimit);
+    Pose samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, const int sampleLimit);
     void updateGoalPoses();
 };
 
@@ -218,7 +241,7 @@ void Msfm3d::clusterFrontier(const bool print2File)
 
   // Creating the KdTree object for the search method of the extraction
   pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree(new pcl::search::KdTree<pcl::PointXYZ>);
-  tree->setInputCloud(frontierCloud);
+  kdtree->setInputCloud(frontierCloud);
 
   // Clear previous frontierClusterIndices
   frontierClusterIndices.clear();
@@ -278,8 +301,8 @@ void Msfm3d::clusterFrontier(const bool print2File)
 
   // Get new indices of Frontier Clusters after filtering (extract filter does not preserve indices);
   frontierClusterIndices.clear();
-  tree->setInputCloud(frontierCloud);
-  ec.setSearchMethod(tree);
+  kdtree->setInputCloud(frontierCloud);
+  ec.setSearchMethod(kdtree);
   ec.setInputCloud(frontierCloud);
   ec.extract(frontierClusterIndices);
 
@@ -367,18 +390,18 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
       extract.setInputCloud(frontierCloud);
       extract.setIndices(ungrouped);
       extract.filter(*ungrouped_cloud);
-      ROS_INFO("Initializing ungrouped_cloud for group %d containing %d points.", groupCount, (int)ungrouped_cloud->points.size());
+      // ROS_INFO("Initializing ungrouped_cloud for group %d containing %d points.", groupCount, (int)ungrouped_cloud->points.size());
 
       // Sample a random index from ungrouped
       std::uniform_int_distribution<int> dist(0, (int)ungrouped->indices.size()-1);
       int sample_id = ungrouped->indices[dist(mt)];
       pcl::PointXYZ sample_point = frontierCloud->points[sample_id];
-      ROS_INFO("Sampled index %d which is located at (%f, %f, %f).", sample_id, sample_point.x, sample_point.y, sample_point.z);
+      // ROS_INFO("Sampled index %d which is located at (%f, %f, %f).", sample_id, sample_point.x, sample_point.y, sample_point.z);
 
       // Find all the voxels in ungrouped_cloud that are within r of sample_point
       pcl::PointIndices::Ptr group(new pcl::PointIndices);
       filterCloudRadius(radius, sample_point, ungrouped_cloud, group);
-      ROS_INFO("Found %d points within %f of the sample point.", (int)group->indices.size(), r);
+      // ROS_INFO("Found %d points within %f of the sample point.", (int)group->indices.size(), radius);
 
       // Resize greedyGroups to make room for a new group
       greedyGroups.resize(greedyGroups.size() + 1);
@@ -418,6 +441,7 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
     }
     clusterCount++;
   }
+  ROS_INFO("%d groups generated from the frontier clusters.", groupCount);
 }
 
 bool Msfm3d::collisionCheck(const float position[3]) 
@@ -468,40 +492,37 @@ bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end) {
 
   if (esdf_or_octomap) {
     // Perform a raycast in Octomap
-    octomap::point3d origin;
-    origin.x = start.x;
-    origin.y = start.y;
-    origin.z = start.z;
+    octomap::point3d origin(start.x, start.y, start.z);
 
-    octomap::point3d direction;
-    direction.x = dx;
-    direction.y = dy;
-    direction.z = dz;
+    octomap::point3d direction(dx, dy, dz);
 
     octomap::point3d stop;
 
-    if (tree.castRay(origin, direction, stop, false, (double)radius)) {
+    // ROS_INFO("Calling Octomap castRay function...");
+    if (mytree->castRay(origin, direction, stop, false, (double)radius)) {
       return false;
     }
 
+    // ROS_INFO("Checking if the stop cell is the same as the end cell...");
     // Calculate the distance between the end and centroid
-    float diff_x = (end.x - stop.x);
-    float diff_y = (end.y - stop.y);
-    float diff_z = (end.z - stop.z);
-    float distanced = std::sqrt(diff_x*diff_x + diff_y*diff_y + diff_z*diff_z);
+    float diff_x = (end.x - stop.x());
+    float diff_y = (end.y - stop.y());
+    float diff_z = (end.z - stop.z());
+    float distance = std::sqrt(diff_x*diff_x + diff_y*diff_y + diff_z*diff_z);
     if (distance > voxel_size) {
       // castRay hit an unseen voxel before hitting the centroid, sample another point
       return false;
+    } else {
+      return true;
     }
-    return true;
   } else {
     // I don't have this built out yet
-    ROS_INFO("Occlusion detection is not defined for ESDF at the moment.  Use Octomap for pose sampling.");
-    return false;
+    ROS_INFO("Occlusion detection is not defined for ESDF at the moment.  Use Octomap for pose sampling.  Returning True for all raycasts.");
+    return true;
   }
 }
 
-Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const Sensor camera, const int sampleLimit)
+Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, const int sampleLimit)
 {
   // samplePose takes as input a greedy frontier group centroid and the Octomap/ESDF and outputs a pose that can view the centroid with no occlusion.
   //
@@ -529,8 +550,9 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const Sensor camera, const
   // Uniform continuous distributions over spherical coordinates
   std::uniform_real_distribution<float> radius_dist(camera.rMin, camera.rMax);
   std::uniform_real_distribution<float> azimuth_dist(0, 2*M_PI);
-  std::uniform_real_distribution<float> elevation_dist((M_PI - camera.verticalFoV)/2.0, (M_PI + camera.verticalFoV)/2.0);
+  std::uniform_real_distribution<float> elevation_dist((M_PI - (M_PI/180.0)*camera.verticalFoV)/2.0, (M_PI + (M_PI/180.0)*camera.verticalFoV)/2.0);
 
+  // ROS_INFO("Initialized uniform distributions, sampling poses near the centroid.");
   for (int i = 0; i < sampleLimit; i++) {
     // Sample in spherical coordinates
     float radius_sample = radius_dist(mt);
@@ -543,24 +565,31 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const Sensor camera, const
     sample.y = centroid.y + radius_sample*std::sin(elevation_sample)*std::sin(azimuth_sample);
     sample.z = centroid.z + radius_sample*std::cos(elevation_sample);
 
-    // Find the index of the sample
-    int sample_idx = xyz_index3({sample.x, sample.y, sample.z});
+    // ROS_INFO("Sample #%d is at [%f, %f, %f] from centroid [%f, %f, %f].", i, sample.x, sample.y, sample.z, centroid.x, centroid.y, centroid.z);
 
+    // Find the index of the sample
+    float sample_query[3] = {sample.x, sample.y, sample.z};
+    int sample_idx = xyz_index3(sample_query);
+
+    // ROS_INFO("Sampled point is at index %d", sample_idx);
     // See if the sample is within the current map range
     if ((sample_idx < 0) || (sample_idx >= esdf.size[0]*esdf.size[1]*esdf.size[2])) {
       continue;
     }
 
+    // ROS_INFO("Checking if sampled point is reachable...");
     // See if sample is at an unreachable point (occupied or unseen)
-    if (esdf.data[idx] <= 0.0) {
+    if (esdf.data[sample_idx] <= 0.0) {
       continue;
     }
 
+    // ROS_INFO("Checking if the point is occluded from viewing the centroid...");
     // Check for occlusion
     if (!raycast(sample, centroid)) {
       continue;
     }
-  
+    
+    // ROS_INFO("Returning sample pose...");
     // This pose is valid! Save it and exit the loop.
     float sample_yaw = M_PI + azimuth_sample;
     robotPose.position = sample;
@@ -569,6 +598,8 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const Sensor camera, const
     robotPose.R(1,0) = std::sin(sample_yaw);
     robotPose.R(1,1) = std::cos(sample_yaw);
     robotPose.R(2,2) = 1.0;
+    // Calculate Quaternions
+    robotPose.q = euler2Quaternion(sample_yaw, 0.0, 0.0);
     break;
   }
 
@@ -579,23 +610,26 @@ void Msfm3d::updateGoalPoses()
 {
   // Conversion matrix from ENU to EUS
   Eigen::Matrix4f ENU_to_PCL;
-  ENU_to_PCL << 1, 0, 0, 0
-                0, 0, 1, 0
-                0, -1, 0, 0
+  ENU_to_PCL << 1, 0, 0, 0,
+                0, 0, 1, 0,
+                0, -1, 0, 0,
                 0, 0, 0, 1;
 
   // Clear previous goalViews vector
   goalViews.clear();
 
+  ROS_INFO("Finding feasible poses from which to view frontier groups.");
   // Loop through the frontier group centroids
-  for (pcl::PointCloud<pcl::PointXYZ>::iterator it = greedyCenters->begin(); it != greedyCenters->end(); ++it) {
+  for (pcl::PointCloud<pcl::PointXYZ>::iterator it = greedyCenters.begin(); it != greedyCenters.end(); ++it) {
     // Sample an admissable pose that sees the centroid
+    // ROS_INFO("Sampling an admissable pose that sees the group centroid.");
     Pose goalPose = samplePose(*it, camera, 50);
-    if std::isnan(goalPose.position.x) {
+    if (std::isnan(goalPose.position.x)) {
       continue;
     }
 
     // Convert the goalPose into a 4x4 view matrix in EUS (East Up South) or (Forward-Up-Right)
+    // ROS_INFO("Converting to PCL coordinate system...");
     Eigen::Matrix4f camera_pose;
     camera_pose.setZero();
     camera_pose.topLeftCorner(3,3) = goalPose.R;
@@ -606,37 +640,42 @@ void Msfm3d::updateGoalPoses()
     camera_pose = ENU_to_PCL*camera_pose; // Rotate camera_pose into weird PCL EUS coordinates
 
     // Cull the view frustum points with the pcl function
+    // ROS_INFO("Frustum Culling...");
     pcl::FrustumCulling<pcl::PointXYZ> fc;
-    fc.setInputCloud(source);
+    fc.setInputCloud(frontierCloud);
     fc.setVerticalFOV(camera.verticalFoV);
     fc.setHorizontalFOV(camera.horizontalFoV);
     fc.setNearPlaneDistance(camera.rMin);
     fc.setFarPlaneDistance(camera.rMax);
     fc.setCameraPose(camera_pose);
-    pcl::PointCloud<pcl::PointXYZ> viewed_cloud;
-    fc.filter(viewed_cloud);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr viewed_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    fc.filter(*viewed_cloud);
 
     // Perform raycasting and check which culled cloud points are visible from goalPose.position
+    // ROS_INFO("Raycasting...");
     pcl::PointIndices::Ptr seen(new pcl::PointIndices());
-    for (int i = 0; i < viewed_cloud.points.size(); i++) {
-      if (raycast(goalPose.position, viewed_cloud.points[i])) {
+    for (int i = 0; i < viewed_cloud->points.size(); i++) {
+      if (raycast(goalPose.position, viewed_cloud->points[i])) {
         seen->indices.push_back(i);
       }
     }
 
     // Extract seen cloud members from viewed_cloud
+    // ROS_INFO("Extracting viewed frontier indices...");
     pcl::ExtractIndices<pcl::PointXYZ> extract;
     extract.setInputCloud(viewed_cloud);
     extract.setIndices(seen);
     extract.setNegative(false);
-    extract.filter(viewed_cloud);
+    extract.filter(*viewed_cloud);
 
     // Add the pose and the viewed frontier indices to the goalViews vector.
+    // ROS_INFO("Adding view to vector of potential goal views");
     View sampleView;
     sampleView.pose = goalPose;
-    sampleView.cloud = viewed_cloud;
+    sampleView.cloud = *viewed_cloud;
     goalViews.push_back(sampleView);
   }
+  ROS_INFO("Sampled %d possible goal poses for viewing the frontier.", (int)goalViews.size());
 }
 
 void Msfm3d::getRotationMatrix()
@@ -702,7 +741,8 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
   // octomap::AbstractOcTree* abstree = new octomap::AbstractOcTree(msg->resolution);
   // abstree = octomap_msgs::binaryMsgToMap(*msg); // OcTree object for storing Octomap data.
   // ROS_INFO("Octomap converted to AbstractOcTree.");
-  octomap::OcTree* mytree = new octomap::OcTree(msg->resolution);
+  delete mytree;
+  mytree = new octomap::OcTree(msg->resolution);
   mytree = (octomap::OcTree*)octomap_msgs::binaryMsgToMap(*msg);
   ROS_INFO("AbstractOcTree cast into OcTree.");
 
@@ -791,8 +831,8 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
   }
 
   // Free memory for AbstractOcTree object pointer
-  ROS_INFO("Freeing OcTree and AbstractOcTree memory.");
-  delete mytree;
+  // ROS_INFO("Freeing OcTree memory.");
+  // delete mytree;
   ROS_INFO("OctoMap message received!");
 }
 
@@ -1057,9 +1097,13 @@ void updateFrontier(Msfm3d& planner){
 
       // Create an array of neighbor indices
       for (int j=0; j<3; j++){
-        if (point[j] < (planner.esdf.max[j] - planner.voxel_size)) query[j] = point[j] + planner.voxel_size;
+        if (point[j] < (planner.esdf.max[j] - planner.voxel_size)) {
+          query[j] = point[j] + planner.voxel_size;
+        }
         neighbor[2*j] = planner.xyz_index3(query);
-        if (point[j] > (planner.esdf.min[j] + planner.voxel_size)) query[j] = point[j] - planner.voxel_size;
+        if (point[j] > (planner.esdf.min[j] + planner.voxel_size)) {
+          query[j] = point[j] - planner.voxel_size;
+        }
         neighbor[2*j+1] = planner.xyz_index3(query);
         query[j] = point[j];
       }
@@ -1068,14 +1112,18 @@ void updateFrontier(Msfm3d& planner){
       // Check if the neighbor indices are unseen voxels
       if (planner.ground) {
         for (int j=0; j<4; j++) {
-          if (!planner.esdf.seen[neighbor[j]] && !(i == neighbor[j])) frontier = 1;
+          if (!planner.esdf.seen[neighbor[j]] && !(i == neighbor[j])) {
+            frontier = 1;
+          }
         }
       }
       else {
         // For the time being, exclude the top/bottom neighbor (last two neighbors)
         // for (int j=0; j<6; j++) {
         for (int j=0; j<4; j++) {
-          if (!planner.esdf.seen[neighbor[j]]  && !(i == neighbor[j])) frontier = 1;
+          if (!planner.esdf.seen[neighbor[j]]  && !(i == neighbor[j])) {
+            frontier = 1;
+          }
         }
         // if (!planner.esdf.seen[neighbor[5]]  && !(i == neighbor[5])) frontier = 1;
       }
@@ -1086,17 +1134,23 @@ void updateFrontier(Msfm3d& planner){
         // if (!planner.esdf.seen[neighbor[5]]) frontier = 0;
 
         // Only consider frontiers close in z-coordinate (temporary hack)
-        // if (abs(planner.position[2] - point[2]) >= 2*planner.voxel_size) frontier = 0;
+        if (abs(planner.position[2] - point[2]) >= 3.0*planner.voxel_size) {
+          frontier = 0;
+        }
 
         // Eliminate frontiers that are adjacent to occupied cells (unless it's the bottom neighbor for the ground case)
         for (int j=0; j<6; j++) {
-          if (planner.esdf.data[neighbor[j]] < (0.01) && planner.esdf.seen[neighbor[j]]) frontier = 0;
+          if (planner.esdf.data[neighbor[j]] < (0.01) && planner.esdf.seen[neighbor[j]]) {
+            frontier = 0;
+          }
         }
       }
       else if (frontier && !planner.ground) {
         // Eliminate frontiers that are adjacent to occupied cells
         for (int j=0; j<6; j++) {
-          if (planner.esdf.data[neighbor[j]] < (0.01) && planner.esdf.seen[neighbor[j]]) frontier = 0;
+          if (planner.esdf.data[neighbor[j]] < (0.01) && planner.esdf.seen[neighbor[j]]) {
+            frontier = 0;
+          }
         }
       }
 
@@ -1116,20 +1170,16 @@ void updateFrontier(Msfm3d& planner){
   }
   ROS_INFO("Frontier updated.");
 
-  // Filter the updated frontier with pcl::radius_outlier_filter
-  if (planner.frontierFilterOn){
-    planner.filterFrontier();
-  }
-
   // Cluster the frontier into euclidean distance groups
-  planner.clusterFrontier(true);
+  planner.clusterFrontier(false);
 
   // Group frontier within each cluster with greedy algorithm
-  planner.greedyGrouping(4*planner.voxel_size, true);
+  planner.greedyGrouping(4*planner.voxel_size, false);
 
 }
 
-void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5]){
+void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5])
+{
   // findFrontier scans through the environment arrays and returns the 5 closest frontier locations in reachability distance.
   int npixels = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
   float point[3];
@@ -1163,7 +1213,83 @@ void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5]){
   }
 }
 
-void findEntrance(Msfm3d& planner, float entranceList[15], double cost[5]){
+void closestGoalView(Msfm3d& planner, int viewIndices[5], double cost[5])
+{
+  // findFrontier scans through the environment arrays and returns the 5 closest frontier locations in reachability distance.
+  float point[3];
+  int slot = 0;
+  int idx; // index of the current view pose in the reach matrix
+
+  // Initialize cost list with large descending values.
+  for (int i=0; i<5; i++) {
+    cost[i] = 1e6 - 100*i;
+    viewIndices[i] = -1;
+  }
+
+  // Main  
+  for (int i=0; i<planner.goalViews.size(); i++){
+    point[0] = planner.goalViews[i].pose.position.x;
+    point[1] = planner.goalViews[i].pose.position.y;
+    point[2] = planner.goalViews[i].pose.position.z;
+    idx = planner.xyz_index3(point);
+    if (planner.reach[idx] > (double)0.0) {
+      // Put the new point in the correct slot
+      for (int j=0; j<5; j++) {
+        if (planner.reach[idx]<cost[j]) slot = j;
+      }
+      for (int j=0; j<slot; j++) {
+        cost[j] = cost[j+1];
+        viewIndices[j] = viewIndices[j+1];
+      }
+      cost[slot] = planner.reach[idx];
+      viewIndices[slot] = i;
+      slot = 0;
+    }
+  }
+}
+
+void infoGoalView(Msfm3d& planner, int viewIndices[5], double utility[5])
+{
+   // infoGoalView finds the most "informative" View in the planner.goalViews vector.
+  float point[3];
+  int slot = 0;
+  int idx; // index of the current view pose in the reach matrix
+  double current_utility;
+
+  // Initialize utility list with negative ascending values.
+  for (int i=0; i<5; i++) {
+    utility[i] = -5+i;
+    viewIndices[i] = -1;
+  }
+
+  // Main  
+  for (int i=0; i<planner.goalViews.size(); i++) {
+    point[0] = planner.goalViews[i].pose.position.x;
+    point[1] = planner.goalViews[i].pose.position.y;
+    point[2] = planner.goalViews[i].pose.position.z;
+    idx = planner.xyz_index3(point);
+    if (planner.reach[idx] > (double)0.0) {
+      // Calculate the point's utility
+      current_utility = double(planner.goalViews[i].cloud.points.size())/planner.reach[idx];
+      ROS_INFO("[%.2f, %.2f, %.2f] sees %d voxels at a %.2f cost to travel and has a utility of %.2f.", point[0], point[1], point[2], (int)planner.goalViews[i].cloud.points.size(), planner.reach[idx], current_utility);
+      for (int j=0; j<5; j++) {
+        if (current_utility>utility[j]) {
+          slot = j;
+        }
+      }
+      for (int j=0; j<slot; j++) {
+        utility[j] = utility[j+1];
+        viewIndices[j] = viewIndices[j+1];
+      }
+      utility[slot] = current_utility;
+      viewIndices[slot] = i;
+      slot = 0;
+    }
+  }
+}
+
+void findEntrance(Msfm3d& planner, float entranceList[15], double cost[5])
+{
   // findEntrance scans through the environment arrays and returns the 5 closest entrance locations in reachability distance.
   int npixels = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
   float point[3];
@@ -1195,6 +1321,77 @@ void findEntrance(Msfm3d& planner, float entranceList[15], double cost[5]){
       }
     }
   }
+}
+
+void view2MarkerMsg(const View cameraView, const SensorFoV camera, visualization_msgs::Marker& marker)
+{
+  marker.type = 11; // Traingle List
+  marker.action = visualization_msgs::Marker::ADD;
+
+  // View Frustum Geometry
+  std::vector<Eigen::Vector3f> frustum_points;
+  Eigen::Vector3f camera_position;
+  camera_position << cameraView.pose.position.x, cameraView.pose.position.y, cameraView.pose.position.z;
+  Eigen::Vector3f origin;
+  origin << 0.0, 0.0, 0.0;
+  origin = origin + camera_position;
+  Eigen::Vector3f corner1;
+  corner1 << 1.0, std::sin((M_PI/180.0)*camera.horizontalFoV/2.0), std::sin((M_PI/180.0)*camera.verticalFoV/2.0);
+  corner1 = cameraView.pose.R*(camera.rMax*corner1) + camera_position;
+  Eigen::Vector3f corner2;
+  corner2 << 1.0, -std::sin((M_PI/180.0)*camera.horizontalFoV/2.0), std::sin((M_PI/180.0)*camera.verticalFoV/2.0);
+  corner2 = cameraView.pose.R*(camera.rMax*corner2) + camera_position;
+  Eigen::Vector3f corner3;
+  corner3 << 1.0, -std::sin((M_PI/180.0)*camera.horizontalFoV/2.0), -std::sin((M_PI/180.0)*camera.verticalFoV/2.0);
+  corner3 = cameraView.pose.R*(camera.rMax*corner3) + camera_position;
+  Eigen::Vector3f corner4;
+  corner4 << 1.0, std::sin((M_PI/180.0)*camera.horizontalFoV/2.0), -std::sin((M_PI/180.0)*camera.verticalFoV/2.0);
+  corner4 = cameraView.pose.R*(camera.rMax*corner4) + camera_position;
+  
+  // Write to marker.points[]
+  geometry_msgs::Point robot;
+  robot.x = origin(0);
+  robot.y = origin(1);
+  robot.z = origin(2);
+  geometry_msgs::Point UL;
+  UL.x = corner1(0);
+  UL.y = corner1(1);
+  UL.z = corner1(2);
+  geometry_msgs::Point UR;
+  UR.x = corner2(0);
+  UR.y = corner2(1);
+  UR.z = corner2(2);
+  geometry_msgs::Point BR;
+  BR.x = corner3(0);
+  BR.y = corner3(1);
+  BR.z = corner3(2);
+  geometry_msgs::Point BL;
+  BL.x = corner4(0);
+  BL.y = corner4(1);
+  BL.z = corner4(2);
+  
+  // clear points
+  marker.points.clear();
+
+  // First triangle
+  marker.points.push_back(robot);
+  marker.points.push_back(UL);
+  marker.points.push_back(BL);
+
+  // 2nd triangle
+  marker.points.push_back(robot);
+  marker.points.push_back(UL);
+  marker.points.push_back(UR);
+
+  // 3rd triangle
+  marker.points.push_back(robot);
+  marker.points.push_back(UR);
+  marker.points.push_back(BR);
+
+  // 4th triangle
+  marker.points.push_back(robot);
+  marker.points.push_back(BR);
+  marker.points.push_back(BL);
 }
 
 void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const int nFront) {
@@ -1478,7 +1675,9 @@ int main(int argc, char **argv)
 
   // Initialize planner object
   ROS_INFO("Initializing msfm3d planner...");
-  Msfm3d planner;
+  // Voxel size for Octomap or Voxblox
+  float voxel_size = 0.2;
+  Msfm3d planner(voxel_size);
   planner.ground = 1;
   planner.esdf_or_octomap = 1; // Use a TSDF message (0) or Use an octomap message (1)
   planner.origin[0] = 0.0;
@@ -1498,14 +1697,6 @@ int main(int argc, char **argv)
 
   // Get voxblox voxel size parameter
   // n.getParam("/X4/voxblox_node/tsdf_voxel_size", planner.voxel_size);
-
-  // Voxel size for Octomap or Voxblox
-  planner.voxel_size = 0.2;
-
-  // Frontier filter parameters
-  planner.frontierFilterOn = 0;
-  // planner.filter_radius = 5*planner.voxel_size;
-  // planner.filter_neighbors = 10;
 
   /**
    * The subscribe() call is how you tell ROS that you want to receive messages
@@ -1550,6 +1741,24 @@ int main(int argc, char **argv)
   ros::Publisher pub2 = n.advertise<nav_msgs::Path>("/X1/planned_path", 5);
   // ros::Publisher pub3 = n.advertise<visualization_msgs::MarkerArray>("/X1/frontier", 100);
   ros::Publisher pub3 = n.advertise<sensor_msgs::PointCloud2>("/X1/frontier", 5);
+  ros::Publisher pub5 = n.advertise<visualization_msgs::Marker>("/X1/goalFrustum", 5);
+  visualization_msgs::Marker cameraFrustum;
+  cameraFrustum.header.frame_id = "world";
+  cameraFrustum.id = 0;
+  cameraFrustum.scale.x = 1;
+  cameraFrustum.scale.y = 1;
+  cameraFrustum.scale.z = 1;
+  cameraFrustum.pose.position.x = 0.0;
+  cameraFrustum.pose.position.y = 0.0;
+  cameraFrustum.pose.position.z = 0.0;
+  cameraFrustum.pose.orientation.x = 0.0;
+  cameraFrustum.pose.orientation.y = 0.0;
+  cameraFrustum.pose.orientation.z = 0.0;
+  cameraFrustum.pose.orientation.w = 1.0;
+  cameraFrustum.color.a = 0.85;
+  cameraFrustum.color.r = 0.0;
+  cameraFrustum.color.g = 191.0/255.0;
+  cameraFrustum.color.b = 1.0;
 
   /**
    * ros::spin() will enter a loop, pumping callbacks.  With this version, all
@@ -1558,13 +1767,16 @@ int main(int argc, char **argv)
    */
   int i = 0;
   bool goalFound = 0;
-  ros::Rate r(1); // 1 hz
+  ros::Rate r(0.5); // 0.5 hz
   clock_t tStart;
   int npixels;
   int spins = 0;
+  int goalViewList[5];
+  double goalViewCost[5];
   float frontierList[15];
   double frontierCost[5];
   float goal[3] = {0.0, 0.0, 0.0};
+  
   ROS_INFO("Starting planner...");
   r.sleep();
   while (ros::ok())
@@ -1589,7 +1801,9 @@ int main(int argc, char **argv)
         planner.updateFrontierMsg();
         pub3.publish(planner.frontiermsg);
         ROS_INFO("Frontier published!");
-        return 1;
+
+        // Find goal poses from which to view the frontier
+        planner.updateGoalPoses();
 
         // Call msfm3d function
         tStart = clock();
@@ -1603,27 +1817,46 @@ int main(int argc, char **argv)
             // Find frontiers
             findFrontier(planner, frontierList, frontierCost);
 
+            // Find goal views
+            closestGoalView(planner, goalViewList, goalViewCost);
+            // infoGoalView(planner, goalViewList, goalViewCost);
+
             // If there are no frontiers available, head to the entrance
             if (frontierCost[4] >= 1e5) findEntrance(planner, frontierList, frontierCost);
 
             // Write a new frontier goal location for publishing
-            frontierGoal.point.x = frontierList[12];
-            frontierGoal.point.y = frontierList[13];
-            frontierGoal.point.z = frontierList[14];
-            for (int i=0; i<3; i++) goal[i] = frontierList[12+i];
+            // frontierGoal.point.x = frontierList[12];
+            // frontierGoal.point.y = frontierList[13];
+            // frontierGoal.point.z = frontierList[14];
+            // for (int i=0; i<3; i++) goal[i] = frontierList[12+i];
+            frontierGoal.point.x = planner.goalViews[goalViewList[4]].pose.position.x;
+            frontierGoal.point.y = planner.goalViews[goalViewList[4]].pose.position.y;
+            frontierGoal.point.z = planner.goalViews[goalViewList[4]].pose.position.z;
+            goal[0] = planner.goalViews[goalViewList[4]].pose.position.x;
+            goal[1] = planner.goalViews[goalViewList[4]].pose.position.y;
+            goal[2] = planner.goalViews[goalViewList[4]].pose.position.z;
 
             // Write a new frontier goal path for publishing
             goalPose.header.stamp = ros::Time::now();
-            goalPose.pose.position.x = frontierList[12];
-            goalPose.pose.position.y = frontierList[13];
-            goalPose.pose.position.z = frontierList[14];
+            // goalPose.pose.position.x = frontierList[12];
+            // goalPose.pose.position.y = frontierList[13];
+            // goalPose.pose.position.z = frontierList[14];
+            goalPose.pose.position.x = goal[0];
+            goalPose.pose.position.y = goal[1];
+            goalPose.pose.position.z = goal[2];
+            goalPose.pose.orientation.x = planner.goalViews[goalViewList[4]].pose.q.x;
+            goalPose.pose.orientation.y = planner.goalViews[goalViewList[4]].pose.q.y;
+            goalPose.pose.orientation.z = planner.goalViews[goalViewList[4]].pose.q.z;
+            goalPose.pose.orientation.w = planner.goalViews[goalViewList[4]].pose.q.w;
+            // Find a way to convert from SO(3) to quaternions here
 
             // Find a path to the goal point
             goalFound = planner.updatePath(goal);
           }
         }
 
-        for (int i=0; i<5; i++) ROS_INFO("Frontier Position: [x: %f, y: %f, z: %f, cost: %f]", frontierList[3*i], frontierList[3*i+1], frontierList[3*i+2], frontierCost[i]);
+        for (int i=0; i<5; i++) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, utility: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
+          planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
 
         // Publish path, goal point, and goal point only path
         pub1.publish(frontierGoal);
@@ -1634,6 +1867,13 @@ int main(int argc, char **argv)
         pub2.publish(planner.pathmsg);
         ROS_INFO("Path to goal published!");
         goalFound = 0;
+
+        // Publish view frustum
+        cameraFrustum.action = 2; // DELETE action
+        pub5.publish(cameraFrustum);
+        cameraFrustum.action = 0; // ADD action
+        view2MarkerMsg(planner.goalViews[goalViewList[4]], planner.camera, cameraFrustum);
+        pub5.publish(cameraFrustum);
 
         // Output reach matrix to .csv
         // if (spins < 2) {
