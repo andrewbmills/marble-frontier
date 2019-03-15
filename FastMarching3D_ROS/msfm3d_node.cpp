@@ -1,6 +1,5 @@
 // g++ msfm3d_node.cpp -g -o msfm3d_node.o -I /opt/ros/melodic/include -I /usr/include/c++/7.3.0 -I /home/andrew/catkin_ws/devel/include -I /home/andrew/catkin_ws/src/octomap_msgs/include -I /usr/include/pcl-1.8 -I /usr/include/eigen3 -L /usr/lib/x86_64-linux-gnu -L /home/andrew/catkin_ws/devel/lib -L /opt/ros/melodic/lib -Wl,-rpath,opt/ros/melodic/lib -lroscpp -lrosconsole -lrostime -lroscpp_serialization -loctomap -lboost_system -lpcl_common -lpcl_io -lpcl_filters -lpcl_features -lpcl_kdtree -lpcl_segmentation
 
-
 #include <math.h>
 #include <algorithm>
 #include <random>
@@ -356,7 +355,7 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
 
   // Intialize random seed:
   std::random_device rd;
-  std::mt19937 mt(rd()); // Really random (much better than using rand())
+  std::mt19937 mt(19937.0); // Really random (much better than using rand())
 
   // Initialize counts of the current group and cluster in the algorithm
   int groupCount = 0;
@@ -544,7 +543,7 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, co
   robotPose.R.setZero();
   // Intialize random seed:
   std::random_device rd;
-  std::mt19937 mt(rd());
+  std::mt19937 mt(19937.0);
 
   // Uniform continuous distributions over spherical coordinates
   std::uniform_real_distribution<float> radius_dist(camera.rMin, camera.rMax);
