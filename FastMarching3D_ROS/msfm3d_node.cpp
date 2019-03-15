@@ -787,6 +787,7 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
   float point[3], lower_corner[3];
   int idx, depth, width;
   int lowest_depth = (int)mytree->getTreeDepth();
+  int count = 0;
   ROS_INFO("Starting tree iterator on OcTree with max depth %d", lowest_depth);
   for(octomap::OcTree::leaf_iterator it = mytree->begin_leafs(),
        end=mytree->end_leafs(); it!=end; ++it)
@@ -797,6 +798,10 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
     point[1] = (float)it.getY();
     point[2] = (float)it.getZ();
     size = it.getSize();
+    if !(count % 500) {
+      ROS_INFO("Binary occupancy at [%0.2f, %0.2f, %0.2f] is: %d", point[0], point[1], point[2], (int)it->getValue);
+      cout << it->getValue() << endl;
+    }
     if (it->getValue() > 0.0){
       value = 0.0;
     } else{
@@ -1099,7 +1104,7 @@ bool updateFrontier(Msfm3d& planner){
     _point.z = point[2];
 
     // Check if the voxel has been seen and is unoccupied
-    if (planner.esdf.seen[i] && (planner.esdf.data[i]>0.0) && planner.inBoundary(point) && (dist3(point, planner.position) >= planner.bubble_radius)){
+    if (planner.esdf.seen[i] && (planner.esdf.data[i]>0.0)){
       pass1++;
       // Check if the voxel is a frontier by querying adjacent voxels
       for (int j=0; j<3; j++) query[j] = point[j];
@@ -1182,7 +1187,7 @@ bool updateFrontier(Msfm3d& planner){
       }
     }
   }
-  ROS_INFO("%d points are free.  %d points are free and adjacent to unoccupied voxels.  %d points filtered for being too high/low.  %d points filtered for being adjacent to occupied voxels.  %d points at entrance." pass1, pass2, pass3, pass4, pass5);
+  ROS_INFO("%d points are free.  %d points are free and adjacent to unoccupied voxels.  %d points filtered for being too high/low.  %d points filtered for being adjacent to occupied voxels.  %d points at entrance.", pass1, pass2, pass3, pass4, pass5);
   ROS_INFO("Frontier updated. %d voxels initially labeled as frontier.", frontierCount);
 
   // Cluster the frontier into euclidean distance groups
