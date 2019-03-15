@@ -1765,7 +1765,7 @@ int main(int argc, char **argv)
    */
   int i = 0;
   bool goalFound = 0;
-  ros::Rate r(0.5); // 0.5 hz
+  ros::Rate r(0.2); // 0.2 hz
   clock_t tStart;
   int npixels;
   int spins = 0;
