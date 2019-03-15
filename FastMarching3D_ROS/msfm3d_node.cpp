@@ -797,7 +797,7 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
     point[1] = (float)it.getY();
     point[2] = (float)it.getZ();
     size = it.getSize();
-    if (it->getValue() > 0){
+    if (it->getValue() > 0.0){
       value = 0.0;
     } else{
       value = 1.0;
@@ -1084,6 +1084,11 @@ bool updateFrontier(Msfm3d& planner){
   pcl::PointXYZ _point;
 
   int frontierCount = 0;
+  int pass1 = 0;
+  int pass2 = 0;
+  int pass3 = 0;
+  int pass4 = 0;
+  int pass5 = 0;
 
   // Extra variables for ground vehicle case so that only frontier close to vehicle plane are chosen.
   for (int i=0; i<npixels; i++){
@@ -1095,7 +1100,7 @@ bool updateFrontier(Msfm3d& planner){
 
     // Check if the voxel has been seen and is unoccupied
     if (planner.esdf.seen[i] && (planner.esdf.data[i]>0.0) && planner.inBoundary(point) && (dist3(point, planner.position) >= planner.bubble_radius)){
-
+      pass1++;
       // Check if the voxel is a frontier by querying adjacent voxels
       for (int j=0; j<3; j++) query[j] = point[j];
 
@@ -1118,6 +1123,7 @@ bool updateFrontier(Msfm3d& planner){
         for (int j=0; j<4; j++) {
           if (!planner.esdf.seen[neighbor[j]] && !(i == neighbor[j])) {
             frontier = 1;
+            pass2++;
           }
         }
       }
@@ -1139,12 +1145,14 @@ bool updateFrontier(Msfm3d& planner){
 
         // Only consider frontiers close in z-coordinate (temporary hack)
         if (abs(planner.position[2] - point[2]) >= 7*planner.voxel_size) {
+          pass3++;
           frontier = 0;
         }
 
         // Eliminate frontiers that are adjacent to occupied cells (unless it's the bottom neighbor for the ground case)
         for (int j=0; j<6; j++) {
           if (planner.esdf.data[neighbor[j]] < (0.01) && planner.esdf.seen[neighbor[j]]) {
+            pass4++;
             frontier = 0;
           }
         }
@@ -1160,6 +1168,7 @@ bool updateFrontier(Msfm3d& planner){
 
       // Check if the voxel is at the entrance
       if (frontier && (dist3(point, planner.origin) <= 25.0)) {
+        pass5++;
         planner.entrance[i] = 1;
         frontier = 0;
       }
@@ -1173,6 +1182,7 @@ bool updateFrontier(Msfm3d& planner){
       }
     }
   }
+  ROS_INFO("%d points are free.  %d points are free and adjacent to unoccupied voxels.  %d points filtered for being too high/low.  %d points filtered for being adjacent to occupied voxels.  %d points at entrance." pass1, pass2, pass3, pass4, pass5);
   ROS_INFO("Frontier updated. %d voxels initially labeled as frontier.", frontierCount);
 
   // Cluster the frontier into euclidean distance groups
