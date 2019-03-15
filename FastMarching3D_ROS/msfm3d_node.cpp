@@ -153,7 +153,7 @@ class Msfm3d
     bool receivedPosition = 0;
     bool receivedMap = 0;
     float voxel_size;
-    float bubble_radius = 1.5; // map voxel size, and bubble radius
+    float bubble_radius = 0.0; // map voxel size, and bubble radius
     float origin[3]; // location in xyz coordinates where the robot entered the environment
     
     double * reach; // reachability grid (output from reach())
@@ -1686,7 +1686,7 @@ int main(int argc, char **argv)
   planner.esdf_or_octomap = 1; // Use a TSDF message (0) or Use an octomap message (1)
   planner.origin[0] = 0.0;
   planner.origin[1] = 0.0;
-  planner.origin[2] = 0.0;
+  planner.origin[2] = 10000.0;
   // planner.bubble_radius = 3.0;
   // Set planner bounds so that the robot doesn't exit a defined volume
   // planner.bounds.set = 1;
