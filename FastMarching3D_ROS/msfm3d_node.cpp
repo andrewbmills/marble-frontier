@@ -153,7 +153,7 @@ class Msfm3d
     bool receivedPosition = 0;
     bool receivedMap = 0;
     float voxel_size;
-    float bubble_radius = 0.0; // map voxel size, and bubble radius
+    float bubble_radius = 0.5; // map voxel size, and bubble radius
     float origin[3]; // location in xyz coordinates where the robot entered the environment
     
     double * reach; // reachability grid (output from reach())
@@ -1112,7 +1112,7 @@ bool updateFrontier(Msfm3d& planner){
     _point.z = point[2];
 
     // Check if the voxel has been seen and is unoccupied
-    if (planner.esdf.seen[i] && (planner.esdf.data[i]>0.0)){
+    if (planner.esdf.seen[i] && (planner.esdf.data[i]>0.0) && (dist3(planner.position, point) >= planner.bubble_radius)) {
       pass1++;
       // Check if the voxel is a frontier by querying adjacent voxels
       for (int j=0; j<3; j++) query[j] = point[j];
