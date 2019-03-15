@@ -1842,7 +1842,7 @@ int main(int argc, char **argv)
           // Call msfm3d function
           tStart = clock();
           ROS_INFO("Reachability matrix calculating...");
-          reach(planner, 1, 1, 50);
+          reach(planner, 1, 1, 200);
           ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
 
           // Choose a new goal point if previous point is no longer a frontier
