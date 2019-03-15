@@ -800,10 +800,10 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
     point[1] = (float)it.getY();
     point[2] = (float)it.getZ();
     size = it.getSize();
-    if (!(count % 500)) {
-      ROS_INFO("Binary occupancy at [%0.2f, %0.2f, %0.2f] is: %d", point[0], point[1], point[2], (int)it->getValue());
-      std::cout << it->getValue() << std::endl;
-    }
+    // if (!(count % 500)) {
+    //   ROS_INFO("Binary occupancy at [%0.2f, %0.2f, %0.2f] is: %d", point[0], point[1], point[2], (int)it->getValue());
+    //   std::cout << it->getValue() << std::endl;
+    // }
     if (it->getValue() > 0) {
       value = 0.0;
       occCount++;
@@ -1254,12 +1254,16 @@ void closestGoalView(Msfm3d& planner, int viewIndices[5], double cost[5])
     viewIndices[i] = -1;
   }
 
+  ROS_INFO("Finding the closest viewpoint to see frontiers.");
   // Main  
   for (int i=0; i<planner.goalViews.size(); i++){
     point[0] = planner.goalViews[i].pose.position.x;
     point[1] = planner.goalViews[i].pose.position.y;
     point[2] = planner.goalViews[i].pose.position.z;
     idx = planner.xyz_index3(point);
+    if ((idx < 0) || (idx > planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2])) {
+      continue;
+    }
     if (planner.reach[idx] > (double)0.0) {
       // Put the new point in the correct slot
       for (int j=0; j<5; j++) {
@@ -1843,14 +1847,14 @@ int main(int argc, char **argv)
           if ((dist3(goal, planner.position) < 0.3) || !planner.updatePath(goal)) {
             while (!goalFound){
               // Find frontiers
-              findFrontier(planner, frontierList, frontierCost);
+              // findFrontier(planner, frontierList, frontierCost);
 
               // Find goal views
               closestGoalView(planner, goalViewList, goalViewCost);
               // infoGoalView(planner, goalViewList, goalViewCost);
 
               // If there are no frontiers available, head to the entrance
-              if (frontierCost[4] >= 1e5) findEntrance(planner, frontierList, frontierCost);
+              // if (frontierCost[4] >= 1e5) findEntrance(planner, frontierList, frontierCost);
 
               // Write a new frontier goal location for publishing
               // frontierGoal.point.x = frontierList[12];
