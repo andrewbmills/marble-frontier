@@ -7,7 +7,6 @@
 // ROS libraries
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
-#include <gazebo_msgs/LinkStates.h>
 #include <geometry_msgs/PointStamped.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <visualization_msgs/MarkerArray.h>
@@ -1676,7 +1675,7 @@ int main(int argc, char **argv)
   // Initialize planner object
   ROS_INFO("Initializing msfm3d planner...");
   // Voxel size for Octomap or Voxblox
-  float voxel_size = 0.2;
+  float voxel_size = 0.1;
   Msfm3d planner(voxel_size);
   planner.ground = 1;
   planner.esdf_or_octomap = 1; // Use a TSDF message (0) or Use an octomap message (1)
@@ -1715,21 +1714,21 @@ int main(int argc, char **argv)
    */
   // if (planner.esdf_or_octomap) {
   ROS_INFO("Subscribing to Occupancy Grid...");
-  ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  ros::Subscriber sub1 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
   // }
   // else {
   // ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
   // ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
-  ros::Subscriber sub2 = n.subscribe("/X1/odom_truth", 1, &Msfm3d::callback_position, &planner);
+  ros::Subscriber sub2 = n.subscribe("odometry", 1, &Msfm3d::callback_position, &planner);
 
-  ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("/X1/nearest_frontier", 5);
+  ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("earest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
   frontierGoal.header.frame_id = planner.frame;
 
   // Publish goal point to interface with btraj
-  ros::Publisher pub4 = n.advertise<geometry_msgs::PoseStamped>("/X1/frontier_goal_pose", 5);
+  ros::Publisher pub4 = n.advertise<geometry_msgs::PoseStamped>("frontier_goal_pose", 5);
   geometry_msgs::PoseStamped goalPose;
   goalPose.header.frame_id = planner.frame;
   goalPose.pose.position.x = 0.0;
@@ -1738,10 +1737,10 @@ int main(int argc, char **argv)
   goalPose.pose.orientation.w = 1.0;
   goalPose.header.seq = 1;
 
-  ros::Publisher pub2 = n.advertise<nav_msgs::Path>("/X1/planned_path", 5);
+  ros::Publisher pub2 = n.advertise<nav_msgs::Path>("planned_path", 5);
   // ros::Publisher pub3 = n.advertise<visualization_msgs::MarkerArray>("/X1/frontier", 100);
-  ros::Publisher pub3 = n.advertise<sensor_msgs::PointCloud2>("/X1/frontier", 5);
-  ros::Publisher pub5 = n.advertise<visualization_msgs::Marker>("/X1/goalFrustum", 5);
+  ros::Publisher pub3 = n.advertise<sensor_msgs::PointCloud2>("frontier", 5);
+  ros::Publisher pub5 = n.advertise<visualization_msgs::Marker>("goalFrustum", 5);
   visualization_msgs::Marker cameraFrustum;
   cameraFrustum.header.frame_id = "world";
   cameraFrustum.id = 0;
@@ -1789,7 +1788,7 @@ int main(int argc, char **argv)
     }
     // Heartbeat status update
     if (planner.receivedPosition){
-      ROS_INFO("X1 Position: [x: %f, y: %f, z: %f]", planner.position[0], planner.position[1], planner.position[2]);
+      ROS_INFO("Position: [x: %f, y: %f, z: %f]", planner.position[0], planner.position[1], planner.position[2]);
       i = planner.xyz_index3(planner.position);
       ROS_INFO("Index at Position: %d", i);
       if (planner.receivedMap){

@@ -1,6 +1,6 @@
 <package format="2">
 	<name>msfm3d</name>
-	<version>0.1</version>version
+	<version>0.1.0</version>version
 	<description>
 		This package subscribes to a robot pose and map (Octomap or Voxblox ESDF/TSDF) and outputs a frontie PointCloud, a goal pose, and a path to that pose.
 	</description>
@@ -8,18 +8,23 @@
 
 	<url>https://github.com/andrewbmills/marble-frontier</url>
 	<author>Andrew B Mills</author>
+	  <license>TODO</license>
 
 	<buildtool_depend>catkin</buildtool_depend>
 	<depend>roscpp</depend>
+	<depend>rospy</depend>
 	<depend>rosconsole</depend>
 	<depend>rostime</depend>
 	<depend>roscpp_serialization</depend>
-	<depend>octomap</depend>
+	<depend>octomap_ros</depend>
 	<depend>boost_system</depend>
-	<depend>pcl_common</depend>
-	<depend>pcl_io</depend>
-	<depend>pcl_filters</depend>
-	<depend>pcl_features</depend>
-	<depend>pcl_kdtree</depend>
-	<depend>pcl_segmentation</depend>
+	<depend>pcl</depend>
+	<depend>pcl_conversions</depend>
+	<depend>pcl_ros</depend>
+	<depend>geometry_msgs</depend>
+	<depend>sensor_msgs</depend>
+	<depend>nav_msgs</depend>
+	<depend>std_msgs</depend>
+	<depend>octomap_msgs</depend>
+	<depend>octomap</depend>
 </package>
