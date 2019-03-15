@@ -541,9 +541,9 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, co
 
   // Initialize output pose
   Pose robotPose; // Pose is returned in ENU (East-North-Up) with a 3-2-1 rotation order
-  robotPose.position.x = NAN;
-  robotPose.position.y = NAN;
-  robotPose.position.z = NAN;
+  robotPose.position.x = std::sqrt(-1.0);
+  robotPose.position.y = std::sqrt(-1.0);
+  robotPose.position.z = std::sqrt(-1.0);
   robotPose.R.setZero();
   // Intialize random seed:
   std::random_device rd;
