@@ -1859,7 +1859,7 @@ int main(int argc, char **argv)
             }
           }
 
-          for (int i=0; i<5; i++) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, utility: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
+          for (int i=0; i<5; i++) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, cost: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
             planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
 
           // Publish path, goal point, and goal point only path
