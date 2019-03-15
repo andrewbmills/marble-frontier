@@ -1112,7 +1112,8 @@ bool updateFrontier(Msfm3d& planner){
     _point.z = point[2];
 
     // Check if the voxel has been seen and is unoccupied
-    if (planner.esdf.seen[i] && (planner.esdf.data[i]>0.0) && (dist3(planner.position, point) >= planner.bubble_radius)) {
+    // if (planner.esdf.seen[i] && (planner.esdf.data[i]>0.0) && (dist3(planner.position, point) >= planner.bubble_radius)) {
+    if (planner.esdf.seen[i] && (planner.esdf.data[i]>0.0)) {
       pass1++;
       // Check if the voxel is a frontier by querying adjacent voxels
       for (int j=0; j<3; j++) query[j] = point[j];
