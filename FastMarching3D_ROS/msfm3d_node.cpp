@@ -247,7 +247,7 @@ bool Msfm3d::clusterFrontier(const bool print2File)
   // Initialize euclidean cluster extraction object
   pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
   ec.setClusterTolerance(1.5*voxel_size); // Clusters must be made of contiguous sections of frontier (within sqrt(2)*voxel_size of each other)
-  ec.setMinClusterSize(roundf(12.0/voxel_size)); // Cluster must be at least 15 voxels in size
+  ec.setMinClusterSize(roundf(6.0/voxel_size)); // Cluster must be at least 15 voxels in size
   // ec.setMaxClusterSize (30);
   ec.setSearchMethod(kdtree);
   ec.setInputCloud(frontierCloud);
@@ -626,9 +626,9 @@ void Msfm3d::updateGoalPoses()
     // Sample an admissable pose that sees the centroid
     // ROS_INFO("Sampling an admissable pose that sees the group centroid.");
     Pose goalPose = samplePose(*it, camera, 50);
-    ROS_INFO("Goal pose x coordinate: %f", goalPose.position.x);
+    // ROS_INFO("Goal pose x coordinate: %f", goalPose.position.x);
     if (std::isnan(goalPose.position.x)) {
-      ROS_INFO("Pose is invalid, next loop.");
+      // ROS_INFO("Pose is invalid, next loop.");
       continue;
     }
 
@@ -1157,7 +1157,7 @@ bool updateFrontier(Msfm3d& planner){
         // if (!planner.esdf.seen[neighbor[5]]) frontier = 0;
 
         // Only consider frontiers close in z-coordinate (temporary hack)
-        if (abs(planner.position[2] - point[2]) >= 7*planner.voxel_size) {
+        if (abs(planner.position[2] - point[2]) >= 5*planner.voxel_size) {
           pass3++;
           frontier = 0;
         }
