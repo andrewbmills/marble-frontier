@@ -799,8 +799,8 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
     point[2] = (float)it.getZ();
     size = it.getSize();
     if (!(count % 500)) {
-      ROS_INFO("Binary occupancy at [%0.2f, %0.2f, %0.2f] is: %d", point[0], point[1], point[2], (int)it->getValue);
-      cout << it->getValue() << endl;
+      ROS_INFO("Binary occupancy at [%0.2f, %0.2f, %0.2f] is: %d", point[0], point[1], point[2], (int)it->getValue());
+      std::cout << it->getValue() << std::endl;
     }
     if (it->getValue() > 0.0){
       value = 0.0;
