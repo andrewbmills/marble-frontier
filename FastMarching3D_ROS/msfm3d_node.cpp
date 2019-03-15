@@ -1083,6 +1083,8 @@ bool updateFrontier(Msfm3d& planner){
   bool frontier = 0;
   pcl::PointXYZ _point;
 
+  int frontierCount = 0;
+
   // Extra variables for ground vehicle case so that only frontier close to vehicle plane are chosen.
   for (int i=0; i<npixels; i++){
     // Get the 3D point location
@@ -1166,11 +1168,12 @@ bool updateFrontier(Msfm3d& planner){
       if (frontier) {
         frontier = 0; // reset for next loop
         planner.frontier[i] = 1;
+        frontierCount++;
         planner.frontierCloud->push_back(_point);
       }
     }
   }
-  ROS_INFO("Frontier updated.");
+  ROS_INFO("Frontier updated. %d voxels initially labeled as frontier.", frontierCount);
 
   // Cluster the frontier into euclidean distance groups
   if (planner.clusterFrontier(false)) {
