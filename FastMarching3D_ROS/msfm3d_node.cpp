@@ -1728,7 +1728,7 @@ int main(int argc, char **argv)
   ROS_INFO("Subscribing to robot state...");
   ros::Subscriber sub2 = n.subscribe("odometry", 1, &Msfm3d::callback_position, &planner);
 
-  ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("earest_frontier", 5);
+  ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("nearest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
   frontierGoal.header.frame_id = planner.frame;
 
