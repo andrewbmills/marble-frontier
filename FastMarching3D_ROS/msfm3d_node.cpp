@@ -788,6 +788,8 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
   int idx, depth, width;
   int lowest_depth = (int)mytree->getTreeDepth();
   int count = 0;
+  int freeCount = 0;
+  int occCount = 0;
   ROS_INFO("Starting tree iterator on OcTree with max depth %d", lowest_depth);
   for(octomap::OcTree::leaf_iterator it = mytree->begin_leafs(),
        end=mytree->end_leafs(); it!=end; ++it)
@@ -802,10 +804,12 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
       ROS_INFO("Binary occupancy at [%0.2f, %0.2f, %0.2f] is: %d", point[0], point[1], point[2], (int)it->getValue());
       std::cout << it->getValue() << std::endl;
     }
-    if (it->getValue() > 0.0){
+    if (it->getValue() > 0) {
       value = 0.0;
-    } else{
+      occCount++;
+    } else {
       value = 1.0;
+      freeCount++;
     }
 
     // Put data into esdf
@@ -837,10 +841,12 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
     }
   }
 
+  ROS_INFO("Octomap message received.  %d leaves labeled as occupied.  %d leaves labeled as free.", occCount, freeCount);
+
   // Free memory for AbstractOcTree object pointer
   // ROS_INFO("Freeing OcTree memory.");
   // delete mytree;
-  ROS_INFO("OctoMap message received!");
+  // ROS_INFO("OctoMap message received!");
 }
 
 void Msfm3d::callback(sensor_msgs::PointCloud2 msg)
