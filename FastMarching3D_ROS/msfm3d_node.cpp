@@ -297,7 +297,7 @@ bool Msfm3d::clusterFrontier(const bool print2File)
   extract.filter(*frontierCloud);
   ROS_INFO("Frontier cloud after clustering has %d points.", (int)frontierCloud->points.size());
 
-  if (frontierCloud->points.size() == 0) {
+  if ((int)frontierCloud->points.size() < 1) {
     return 0;
   } else {
     // Get new indices of Frontier Clusters after filtering (extract filter does not preserve indices);
