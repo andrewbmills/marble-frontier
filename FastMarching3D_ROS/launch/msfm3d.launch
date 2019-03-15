@@ -1,0 +1,9 @@
+<launch>
+  <include file="$(find arpg_husky)/launch/hosts.launch"/>
+  <arg name="machine" default="$(env ROS_HOSTNAME)"/>
+
+  <node pkg="msfm3d" type="msfm3d" name="global_planning" output="screen" machine="$(arg machine)"/>
+    <remap from="frontier_goal_pose" to="goal"/>
+  </node>
+
+</launch>
