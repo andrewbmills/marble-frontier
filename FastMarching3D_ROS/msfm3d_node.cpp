@@ -1816,7 +1816,7 @@ int main(int argc, char **argv)
           ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
 
           // Choose a new goal point if previous point is no longer a frontier
-          if ((dist3(goal, planner.position) < 0.3 || !planner.updatePath(goal)) {
+          if ((dist3(goal, planner.position) < 0.3) || !planner.updatePath(goal)) {
             while (!goalFound){
               // Find frontiers
               findFrontier(planner, frontierList, frontierCost);
