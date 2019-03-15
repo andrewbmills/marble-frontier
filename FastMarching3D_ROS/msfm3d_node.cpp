@@ -195,7 +195,7 @@ class Msfm3d
     void getRotationMatrix(); // Updates Rotation Matrix given the current quaternion values
     bool updatePath(const float goal[3]); // Updates the path vector from the goal frontier point to the robot location
     void updateFrontierMsg(); // Updates the frontiermsg MarkerArray with the frontier matrix for publishing
-    void clusterFrontier(const bool print2File); // Clusters the frontier pointCloud with euclidean distance within a radius
+    bool clusterFrontier(const bool print2File); // Clusters the frontier pointCloud with euclidean distance within a radius
     bool inBoundary(const float point[3]); // Checks if a point is inside the planner boundaries
     bool collisionCheck(const float point[3]); // Checks if the robot being at the current point (given vehicleVolume) intersects with the obstacle environment (esdf)
     void greedyGrouping(const float r, const bool print2File);
@@ -218,7 +218,7 @@ bool Msfm3d::inBoundary(const float point[3])
   }
 }
 
-void Msfm3d::clusterFrontier(const bool print2File)
+bool Msfm3d::clusterFrontier(const bool print2File)
 {
   // clusterFrontier takes as input the frontierCloud and the voxel_size and extracts contiguous clusters of minimum size round(12.0/voxel_size) (60 for voxel_size=0.2) voxels.
   // The indices of the cluster members are stored in frontierClusterIndices and the unclustered voxels are filtered from frontierCloud.
@@ -297,13 +297,17 @@ void Msfm3d::clusterFrontier(const bool print2File)
   extract.filter(*frontierCloud);
   ROS_INFO("Frontier cloud after clustering has %d points.", (int)frontierCloud->points.size());
 
-  // Get new indices of Frontier Clusters after filtering (extract filter does not preserve indices);
-  frontierClusterIndices.clear();
-  kdtree->setInputCloud(frontierCloud);
-  ec.setSearchMethod(kdtree);
-  ec.setInputCloud(frontierCloud);
-  ec.extract(frontierClusterIndices);
-
+  if (frontierCloud->points.size() == 0) {
+    return 0;
+  } else {
+    // Get new indices of Frontier Clusters after filtering (extract filter does not preserve indices);
+    frontierClusterIndices.clear();
+    kdtree->setInputCloud(frontierCloud);
+    ec.setSearchMethod(kdtree);
+    ec.setInputCloud(frontierCloud);
+    ec.extract(frontierClusterIndices);
+    return 1;
+  }
 }
 
 bool filterCloudRadius(const float radius, const pcl::PointXYZ point, const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointIndices::Ptr inliers)
@@ -1058,7 +1062,7 @@ void Msfm3d::updateFrontierMsg() {
   frontiermsg = newPointCloud2;
 }
 
-void updateFrontier(Msfm3d& planner){
+bool updateFrontier(Msfm3d& planner){
   ROS_INFO("Beginning Frontier update step...");
   int npixels = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
   delete[] planner.frontier;
@@ -1169,11 +1173,13 @@ void updateFrontier(Msfm3d& planner){
   ROS_INFO("Frontier updated.");
 
   // Cluster the frontier into euclidean distance groups
-  planner.clusterFrontier(false);
-
-  // Group frontier within each cluster with greedy algorithm
-  planner.greedyGrouping(4*planner.voxel_size, false);
-
+  if (planner.clusterFrontier(false)) {
+    // Group frontier within each cluster with greedy algorithm
+    planner.greedyGrouping(4*planner.voxel_size, false);
+    return 1;
+  } else {
+    return 0;
+  }
 }
 
 void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5])
@@ -1795,103 +1801,106 @@ int main(int argc, char **argv)
 
         // Find frontier cells and add them to planner.frontier for output to file.
         // Publish frontiers as MarkerArray
-        updateFrontier(planner);
-        planner.updateFrontierMsg();
-        pub3.publish(planner.frontiermsg);
-        ROS_INFO("Frontier published!");
+        if (updateFrontier(planner)) {
+          planner.updateFrontierMsg();
+          pub3.publish(planner.frontiermsg);
+          ROS_INFO("Frontier published!");
 
-        // Find goal poses from which to view the frontier
-        planner.updateGoalPoses();
+          // Find goal poses from which to view the frontier
+          planner.updateGoalPoses();
 
-        // Call msfm3d function
-        tStart = clock();
-        ROS_INFO("Reachability matrix calculating...");
-        reach(planner, 1, 1, 50);
-        ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+          // Call msfm3d function
+          tStart = clock();
+          ROS_INFO("Reachability matrix calculating...");
+          reach(planner, 1, 1, 50);
+          ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
 
-        // Choose a new goal point if previous point is no longer a frontier
-        if (!planner.frontier[planner.xyz_index3(goal)] || !planner.updatePath(goal)) {
-          while (!goalFound){
-            // Find frontiers
-            findFrontier(planner, frontierList, frontierCost);
+          // Choose a new goal point if previous point is no longer a frontier
+          if (!planner.frontier[planner.xyz_index3(goal)] || !planner.updatePath(goal)) {
+            while (!goalFound){
+              // Find frontiers
+              findFrontier(planner, frontierList, frontierCost);
 
-            // Find goal views
-            closestGoalView(planner, goalViewList, goalViewCost);
-            // infoGoalView(planner, goalViewList, goalViewCost);
+              // Find goal views
+              closestGoalView(planner, goalViewList, goalViewCost);
+              // infoGoalView(planner, goalViewList, goalViewCost);
 
-            // If there are no frontiers available, head to the entrance
-            if (frontierCost[4] >= 1e5) findEntrance(planner, frontierList, frontierCost);
+              // If there are no frontiers available, head to the entrance
+              if (frontierCost[4] >= 1e5) findEntrance(planner, frontierList, frontierCost);
 
-            // Write a new frontier goal location for publishing
-            // frontierGoal.point.x = frontierList[12];
-            // frontierGoal.point.y = frontierList[13];
-            // frontierGoal.point.z = frontierList[14];
-            // for (int i=0; i<3; i++) goal[i] = frontierList[12+i];
-            frontierGoal.point.x = planner.goalViews[goalViewList[4]].pose.position.x;
-            frontierGoal.point.y = planner.goalViews[goalViewList[4]].pose.position.y;
-            frontierGoal.point.z = planner.goalViews[goalViewList[4]].pose.position.z;
-            goal[0] = planner.goalViews[goalViewList[4]].pose.position.x;
-            goal[1] = planner.goalViews[goalViewList[4]].pose.position.y;
-            goal[2] = planner.goalViews[goalViewList[4]].pose.position.z;
+              // Write a new frontier goal location for publishing
+              // frontierGoal.point.x = frontierList[12];
+              // frontierGoal.point.y = frontierList[13];
+              // frontierGoal.point.z = frontierList[14];
+              // for (int i=0; i<3; i++) goal[i] = frontierList[12+i];
+              frontierGoal.point.x = planner.goalViews[goalViewList[4]].pose.position.x;
+              frontierGoal.point.y = planner.goalViews[goalViewList[4]].pose.position.y;
+              frontierGoal.point.z = planner.goalViews[goalViewList[4]].pose.position.z;
+              goal[0] = planner.goalViews[goalViewList[4]].pose.position.x;
+              goal[1] = planner.goalViews[goalViewList[4]].pose.position.y;
+              goal[2] = planner.goalViews[goalViewList[4]].pose.position.z;
 
-            // Write a new frontier goal path for publishing
-            goalPose.header.stamp = ros::Time::now();
-            // goalPose.pose.position.x = frontierList[12];
-            // goalPose.pose.position.y = frontierList[13];
-            // goalPose.pose.position.z = frontierList[14];
-            goalPose.pose.position.x = goal[0];
-            goalPose.pose.position.y = goal[1];
-            goalPose.pose.position.z = goal[2];
-            goalPose.pose.orientation.x = planner.goalViews[goalViewList[4]].pose.q.x;
-            goalPose.pose.orientation.y = planner.goalViews[goalViewList[4]].pose.q.y;
-            goalPose.pose.orientation.z = planner.goalViews[goalViewList[4]].pose.q.z;
-            goalPose.pose.orientation.w = planner.goalViews[goalViewList[4]].pose.q.w;
-            // Find a way to convert from SO(3) to quaternions here
+              // Write a new frontier goal path for publishing
+              goalPose.header.stamp = ros::Time::now();
+              // goalPose.pose.position.x = frontierList[12];
+              // goalPose.pose.position.y = frontierList[13];
+              // goalPose.pose.position.z = frontierList[14];
+              goalPose.pose.position.x = goal[0];
+              goalPose.pose.position.y = goal[1];
+              goalPose.pose.position.z = goal[2];
+              goalPose.pose.orientation.x = planner.goalViews[goalViewList[4]].pose.q.x;
+              goalPose.pose.orientation.y = planner.goalViews[goalViewList[4]].pose.q.y;
+              goalPose.pose.orientation.z = planner.goalViews[goalViewList[4]].pose.q.z;
+              goalPose.pose.orientation.w = planner.goalViews[goalViewList[4]].pose.q.w;
+              // Find a way to convert from SO(3) to quaternions here
 
-            // Find a path to the goal point
-            goalFound = planner.updatePath(goal);
+              // Find a path to the goal point
+              goalFound = planner.updatePath(goal);
+            }
           }
+
+          for (int i=0; i<5; i++) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, utility: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
+            planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
+
+          // Publish path, goal point, and goal point only path
+          pub1.publish(frontierGoal);
+          pub4.publish(goalPose);
+          ROS_INFO("Goal point published!");
+
+          // Output and publish path
+          pub2.publish(planner.pathmsg);
+          ROS_INFO("Path to goal published!");
+          goalFound = 0;
+
+          // Publish view frustum
+          cameraFrustum.action = 2; // DELETE action
+          pub5.publish(cameraFrustum);
+          cameraFrustum.action = 0; // ADD action
+          view2MarkerMsg(planner.goalViews[goalViewList[4]], planner.camera, cameraFrustum);
+          pub5.publish(cameraFrustum);
+
+          // Output reach matrix to .csv
+          // if (spins < 2) {
+          //   // Output the frontier
+          //   FILE * myfile;
+          //   myfile = fopen("frontier.csv", "w");
+          //   npixels = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
+          //   fprintf(myfile, "%d, %d, %d, %f\n", planner.esdf.size[0], planner.esdf.size[1], planner.esdf.size[2], planner.voxel_size);
+          //   for (int i=0; i<npixels-1; i++) fprintf(myfile, "%d, ", planner.frontier[i]);
+          //   fprintf(myfile, "%d", planner.frontier[npixels]);
+          //   fclose(myfile);
+
+          //   // Output the reachability grid
+          //   myfile = fopen("reach.csv", "w");
+          //   fprintf(myfile, "%d, %d, %d, %f\n", planner.esdf.size[0], planner.esdf.size[1], planner.esdf.size[2], planner.voxel_size);
+          //   for (int i=0; i<npixels-1; i++) fprintf(myfile, "%f, ", planner.reach[i]);
+          //   fprintf(myfile, "%f", planner.reach[npixels]);
+          //   fclose(myfile);
+
+          spins++;
+        } else {
+          ROS_INFO("No frontiers after filtering, robot is waiting for a map update...");
         }
-
-        for (int i=0; i<5; i++) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, utility: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
-          planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
-
-        // Publish path, goal point, and goal point only path
-        pub1.publish(frontierGoal);
-        pub4.publish(goalPose);
-        ROS_INFO("Goal point published!");
-
-        // Output and publish path
-        pub2.publish(planner.pathmsg);
-        ROS_INFO("Path to goal published!");
-        goalFound = 0;
-
-        // Publish view frustum
-        cameraFrustum.action = 2; // DELETE action
-        pub5.publish(cameraFrustum);
-        cameraFrustum.action = 0; // ADD action
-        view2MarkerMsg(planner.goalViews[goalViewList[4]], planner.camera, cameraFrustum);
-        pub5.publish(cameraFrustum);
-
-        // Output reach matrix to .csv
-        // if (spins < 2) {
-        //   // Output the frontier
-        //   FILE * myfile;
-        //   myfile = fopen("frontier.csv", "w");
-        //   npixels = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
-        //   fprintf(myfile, "%d, %d, %d, %f\n", planner.esdf.size[0], planner.esdf.size[1], planner.esdf.size[2], planner.voxel_size);
-        //   for (int i=0; i<npixels-1; i++) fprintf(myfile, "%d, ", planner.frontier[i]);
-        //   fprintf(myfile, "%d", planner.frontier[npixels]);
-        //   fclose(myfile);
-
-        //   // Output the reachability grid
-        //   myfile = fopen("reach.csv", "w");
-        //   fprintf(myfile, "%d, %d, %d, %f\n", planner.esdf.size[0], planner.esdf.size[1], planner.esdf.size[2], planner.voxel_size);
-        //   for (int i=0; i<npixels-1; i++) fprintf(myfile, "%f, ", planner.reach[i]);
-        //   fprintf(myfile, "%f", planner.reach[npixels]);
-        //   fclose(myfile);
-
-        spins++;
         // }
       }
     }
