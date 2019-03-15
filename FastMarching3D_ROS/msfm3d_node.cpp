@@ -359,7 +359,7 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
 
   // Intialize random seed:
   std::random_device rd;
-  std::mt19937 mt(19937.0); // Really random (much better than using rand())
+  std::mt19937 mt(rd()); // Really random (much better than using rand())
 
   // Initialize counts of the current group and cluster in the algorithm
   int groupCount = 0;
@@ -547,7 +547,7 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, co
   robotPose.R.setZero();
   // Intialize random seed:
   std::random_device rd;
-  std::mt19937 mt(19937.0);
+  std::mt19937 mt(rd());
 
   // Uniform continuous distributions over spherical coordinates
   std::uniform_real_distribution<float> radius_dist(camera.rMin, camera.rMax);
@@ -626,7 +626,9 @@ void Msfm3d::updateGoalPoses()
     // Sample an admissable pose that sees the centroid
     // ROS_INFO("Sampling an admissable pose that sees the group centroid.");
     Pose goalPose = samplePose(*it, camera, 50);
+    ROS_INFO("Goal pose x coordinate: %f", goalPose.position.x);
     if (std::isnan(goalPose.position.x)) {
+      ROS_INFO("Pose is invalid, next loop.");
       continue;
     }
 
@@ -1803,7 +1805,7 @@ int main(int argc, char **argv)
   clock_t tStart;
   int npixels;
   int spins = 0;
-  int goalViewList[5];
+  int goalViewList[5] = {0, 0, 0, 0, 0};
   double goalViewCost[5];
   float frontierList[15];
   double frontierCost[5];
