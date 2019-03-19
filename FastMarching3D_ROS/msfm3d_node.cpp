@@ -49,13 +49,13 @@ float byte2Float(const int a[4])
 }
 
 float dist2(const float a[2], const float b[2]){
-  float sum;
+  float sum = 0.0;
   for (int i=0; i < 2; i++) sum += (b[i] - a[i])*(b[i] - a[i]);
   return std::sqrt(sum);
 }
 
 float dist3(const float a[3], const float b[3]){
-  float sum;
+  float sum = 0.0;
   for (int i=0; i < 3; i++) sum += (b[i] - a[i])*(b[i] - a[i]);
   return std::sqrt(sum);
 }
@@ -125,7 +125,16 @@ class Msfm3d
       camera.rMax = 2.5;
       voxel_size = map_resolution;
       mytree = new octomap::OcTree(voxel_size);
+      robot2camera.position.x = 0.0;
+      robot2camera.position.y = 0.0;
+      robot2camera.position.z = 0.0;
+      robot2camera.q.x = 0.0;
+      robot2camera.q.y = 0.0;
+      robot2camera.q.z = 0.0;
+      robot2camera.q.w = 1.0;
+      robot2camera.R.setIdentity();
     }
+
     // Structure definitions
     struct ESDF {
       double * data; // esdf matrix pointer
@@ -180,6 +189,7 @@ class Msfm3d
 
     // Sensor parameters
     SensorFoV camera;
+    Pose robot2camera;
 
     Quaternion q; // robot orientation in quaternions
     ESDF esdf; // ESDF struct object
@@ -202,6 +212,7 @@ class Msfm3d
     bool raycast(const pcl::PointXYZ start, const pcl::PointXYZ end);
     Pose samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, const int sampleLimit);
     void updateGoalPoses();
+    void inflateObstacles(const float radius, sensor_msgs::PointCloud2& inflatedOccupiedMsg);
 };
 
 bool Msfm3d::inBoundary(const float point[3])
@@ -247,7 +258,7 @@ bool Msfm3d::clusterFrontier(const bool print2File)
   // Initialize euclidean cluster extraction object
   pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
   ec.setClusterTolerance(1.5*voxel_size); // Clusters must be made of contiguous sections of frontier (within sqrt(2)*voxel_size of each other)
-  ec.setMinClusterSize(roundf(6.0/voxel_size)); // Cluster must be at least 15 voxels in size
+  ec.setMinClusterSize(roundf(3.0/voxel_size)); // Cluster must be at least 15 voxels in size
   // ec.setMaxClusterSize (30);
   ec.setSearchMethod(kdtree);
   ec.setInputCloud(frontierCloud);
@@ -359,7 +370,8 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
 
   // Intialize random seed:
   std::random_device rd;
-  std::mt19937 mt(rd()); // Really random (much better than using rand())
+  std::mt19937 mt(19937); // Really random (much better than using rand())
+  // std::mt19937 mt(rd());
 
   // Initialize counts of the current group and cluster in the algorithm
   int groupCount = 0;
@@ -547,7 +559,8 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, co
   robotPose.R.setZero();
   // Intialize random seed:
   std::random_device rd;
-  std::mt19937 mt(rd());
+  // std::mt19937 mt(rd());
+  std::mt19937 mt(19937);
 
   // Uniform continuous distributions over spherical coordinates
   std::uniform_real_distribution<float> radius_dist(camera.rMin, camera.rMax);
@@ -753,9 +766,10 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
   ROS_INFO("Parsing Octomap...");
   // Make sure the tree is at the same resolution as the esdf we're creating.  If it's not, change the resolution.
   ROS_INFO("Tree resolution is %f meters.", mytree->getResolution());
-  if (mytree->getResolution() != (double)voxel_size) {
-    mytree->setResolution((double)voxel_size);
-    mytree->prune();
+  if ((mytree->getResolution() - (double)voxel_size) > (double)0.01) {
+    ROS_INFO("Planner voxel_size is %0.2f and Octomap resolution is %0.2f.  They must be equivalent.", voxel_size, mytree->getResolution());
+    receivedMap = 0;
+    return;
   }
 
   // Parse out ESDF struct dimensions from the the AbstractOcTree object
@@ -783,6 +797,28 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
   delete[] esdf.seen;
   esdf.seen = NULL;
   esdf.seen = new bool [esdf.size[0]*esdf.size[1]*esdf.size[2]] { }; // Initialize all values to zero.
+
+  // Initialize the voxels within a vehicle volume around the robot the free.  They may become overwritten by occupied, but that's okay.
+  if (receivedPosition) {
+    float query_point[3];
+    int query_idx;
+    if (vehicleVolume.set) {
+      for(float dx = vehicleVolume.xmin; dx <= vehicleVolume.xmax; dx = dx + voxel_size) {
+        query_point[0] = position[0] + dx;
+        for(float dy = vehicleVolume.ymin; dx <= vehicleVolume.ymax; dy = dy + voxel_size) {
+          query_point[1] = position[1] + dy;
+          for(float dz = vehicleVolume.zmin; dz <= vehicleVolume.zmax; dz = dz + voxel_size) {
+            query_point[2] = position[2] + dz;
+            query_idx = xyz_index3(query_point);
+            if ((query_idx >= 0) && (query_idx < esdf.size[0]*esdf.size[1]*esdf.size[2])) { // Check for valid array indices
+              esdf.data[query_idx] = 1.0;
+              esdf.seen[query_idx] = true;
+            }
+          }
+        }
+      }
+    }
+  }
 
   // Loop through tree and extract occupancy info into esdf.data and seen/not into esdf.seen
   double size, value;
@@ -844,11 +880,6 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
   }
 
   ROS_INFO("Octomap message received.  %d leaves labeled as occupied.  %d leaves labeled as free.", occCount, freeCount);
-
-  // Free memory for AbstractOcTree object pointer
-  // ROS_INFO("Freeing OcTree memory.");
-  // delete mytree;
-  // ROS_INFO("OctoMap message received!");
 }
 
 void Msfm3d::callback(sensor_msgs::PointCloud2 msg)
@@ -928,6 +959,81 @@ void Msfm3d::parsePointCloud()
     }
     esdf.seen[index] = (xyzis[i+4]>0.0);
   }
+}
+
+void Msfm3d::inflateObstacles(const float radius, sensor_msgs::PointCloud2& inflatedOccupiedMsg) {
+  int npixels = esdf.size[0]*esdf.size[1]*esdf.size[2];
+  ROS_INFO("Allocating boolean of size %d.", npixels);
+  std::vector<bool> changed_value(npixels, 0);
+  ROS_INFO("Success!");
+  float current_point[3];
+  float query_point[3];
+  int pointsInflated = 0;
+  int query_idx;
+  pcl::PointXYZ changed_point;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr inflatedOccupied(new pcl::PointCloud<pcl::PointXYZ>);
+  for (int i = 0; i < npixels; i++) {
+    // if ((i % (npixels/10)) == 0) {
+    //   ROS_INFO("Checking if pixel %d needs to be inflated.", i);
+    // }
+    if (esdf_or_octomap) {
+      if ((esdf.data[i] <= 0.05) && !changed_value[i] && esdf.seen[i]) { // Check if the entry is occupied and has not been modified by this function.
+        // Get the xyz coords of the current voxels index
+        index3_xyz(i, current_point);
+        query_point[2] = current_point[2];
+        // Loop through all voxels within a side length of 2*radius box of the current index.  Only do x-y directions for ground vehicle.
+        if (ground) {
+          for(float dx = -radius; dx <= radius; dx = dx + voxel_size) {
+            query_point[0] = current_point[0] + dx;
+            for(float dy = -radius; dy <= radius; dy = dy + voxel_size) {
+              query_point[1] = current_point[1] + dy;
+              query_idx = xyz_index3(query_point);
+              if ((query_idx >= 0) && (query_idx < npixels)) { // Check for valid array indices
+                if ((esdf.data[query_idx] > 0.05) && esdf.seen[query_idx]) { // Check if the voxel has been labeled as free/seen so it may be changed
+                  esdf.data[query_idx] = 0.0;
+                  changed_value[query_idx] = true;
+                  changed_point.x = query_point[0];
+                  changed_point.y = query_point[1];
+                  changed_point.z = query_point[2];
+                  inflatedOccupied->points.push_back(changed_point);
+                  pointsInflated++;
+                }
+              }
+            }
+          }
+        } else {
+          for(float dx = -radius; dx <= radius; dx = dx + voxel_size) {
+            query_point[0] = current_point[0] + dx;
+            for(float dy = -radius; dy <= radius; dy = dy + voxel_size) {
+              query_point[1] = current_point[1] + dy;
+              for(float dz = -radius; dz <= radius; dz = dz + voxel_size) {
+                query_point[2] = current_point[2] + dz;
+                query_idx = xyz_index3(query_point);
+                if ((query_idx >= 0) && (query_idx < npixels)) { // Check for valid array indices
+                  if ((esdf.data[query_idx] > 0.05) && esdf.seen[query_idx]) { // Check if the voxel has been labeled as free/seen so it may be changed
+                    esdf.data[query_idx] = 0.0;
+                    changed_value[query_idx] = true;
+                    changed_point.x = query_point[0];
+                    changed_point.y = query_point[1];
+                    changed_point.z = query_point[2];
+                    inflatedOccupied->points.push_back(changed_point);
+                    pointsInflated++;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    } else if (esdf.seen[i]) {
+      esdf.data[i] = esdf.data[i] - (double)radius; // Just subtract the value for an esdf since the distance is included.
+      pointsInflated++;
+    }
+  }
+  // Convert PointCloud to ROS msg
+  pcl::toROSMsg(*inflatedOccupied, inflatedOccupiedMsg);
+
+  ROS_INFO("%d points were made occupied by inflating the map by %0.2f meters.", pointsInflated, radius);
 }
 
 void Msfm3d::index3_xyz(const int index, float point[3])
@@ -1105,16 +1211,17 @@ bool updateFrontier(Msfm3d& planner){
 
   // Extra variables for ground vehicle case so that only frontier close to vehicle plane are chosen.
   for (int i=0; i<npixels; i++){
-    // Get the 3D point location
-    planner.index3_xyz(i, point);
-    _point.x = point[0];
-    _point.y = point[1];
-    _point.z = point[2];
 
     // Check if the voxel has been seen and is unoccupied
     // if (planner.esdf.seen[i] && (planner.esdf.data[i]>0.0) && (dist3(planner.position, point) >= planner.bubble_radius)) {
     if (planner.esdf.seen[i] && (planner.esdf.data[i]>0.0)) {
       pass1++;
+      // Get the 3D point location
+      planner.index3_xyz(i, point);
+      _point.x = point[0];
+      _point.y = point[1];
+      _point.z = point[2];
+
       // Check if the voxel is a frontier by querying adjacent voxels
       for (int j=0; j<3; j++) query[j] = point[j];
 
@@ -1130,15 +1237,19 @@ bool updateFrontier(Msfm3d& planner){
         neighbor[2*j+1] = planner.xyz_index3(query);
         query[j] = point[j];
       }
-      // ROS_INFO("There are %d voxels in the current ESDF.", npixels);
-      // ROS_INFO("Neighbor indices for cell %d are %d, %d, %d, %d, %d, and %d.", i, neighbor[0], neighbor[1], neighbor[2], neighbor[3], neighbor[4], neighbor[5]);
+
       // Check if the neighbor indices are unseen voxels
       if (planner.ground) {
         for (int j=0; j<4; j++) {
-          if (!planner.esdf.seen[neighbor[j]] && !(i == neighbor[j])) {
+          if (!planner.esdf.seen[neighbor[j]] && !(i == neighbor[j]) && !frontier) {
             frontier = 1;
             pass2++;
           }
+        }
+        // // Eliminate frontiers with unseen top/bottom neighbors
+        if ((!planner.esdf.seen[neighbor[4]] && i != neighbor[4]) || (!planner.esdf.seen[neighbor[5]] && i != neighbor[5])) {
+          frontier = 0;
+          pass3++;
         }
       }
       else {
@@ -1158,14 +1269,14 @@ bool updateFrontier(Msfm3d& planner){
         // if (!planner.esdf.seen[neighbor[5]]) frontier = 0;
 
         // Only consider frontiers close in z-coordinate (temporary hack)
-        if (abs(planner.position[2] - point[2]) >= 5*planner.voxel_size) {
-          pass3++;
-          frontier = 0;
-        }
+        // if (abs(planner.position[2] - point[2]) >= 5*planner.voxel_size) {
+        //   pass3++;
+        //   frontier = 0;
+        // }
 
-        // Eliminate frontiers that are adjacent to occupied cells (unless it's the bottom neighbor for the ground case)
+        // Eliminate frontiers that are adjacent to occupied cells
         for (int j=0; j<6; j++) {
-          if (planner.esdf.data[neighbor[j]] < (0.01) && planner.esdf.seen[neighbor[j]]) {
+          if (planner.esdf.data[neighbor[j]] < (0.01) && planner.esdf.seen[neighbor[j]] && frontier) {
             pass4++;
             frontier = 0;
           }
@@ -1181,6 +1292,7 @@ bool updateFrontier(Msfm3d& planner){
       }
 
       // Check if the voxel is at the entrance
+
       if (frontier && (dist3(point, planner.origin) <= 25.0)) {
         pass5++;
         planner.entrance[i] = 1;
@@ -1711,13 +1823,13 @@ int main(int argc, char **argv)
   // Initialize planner object
   ROS_INFO("Initializing msfm3d planner...");
   // Voxel size for Octomap or Voxblox
-  float voxel_size = 0.1;
+  float voxel_size = 0.2;
   Msfm3d planner(voxel_size);
   planner.ground = 1;
   planner.esdf_or_octomap = 1; // Use a TSDF message (0) or Use an octomap message (1)
   planner.origin[0] = 0.0;
   planner.origin[1] = 0.0;
-  planner.origin[2] = 10000.0;
+  planner.origin[2] = 0.0;
   // planner.bubble_radius = 3.0;
   // Set planner bounds so that the robot doesn't exit a defined volume
   // planner.bounds.set = 1;
@@ -1750,7 +1862,7 @@ int main(int argc, char **argv)
    */
   // if (planner.esdf_or_octomap) {
   ROS_INFO("Subscribing to Occupancy Grid...");
-  ros::Subscriber sub1 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
   // }
   // else {
   // ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
@@ -1795,6 +1907,9 @@ int main(int argc, char **argv)
   cameraFrustum.color.g = 191.0/255.0;
   cameraFrustum.color.b = 1.0;
 
+  ros::Publisher pub6 = n.advertise<sensor_msgs::PointCloud2>("inflatedOctomap", 5);
+  sensor_msgs::PointCloud2 inflatedOccupiedMsg;
+
   /**
    * ros::spin() will enter a loop, pumping callbacks.  With this version, all
    * callbacks will be called from within this thread (the main one).  ros::spin()
@@ -1802,7 +1917,7 @@ int main(int argc, char **argv)
    */
   int i = 0;
   bool goalFound = 0;
-  ros::Rate r(0.2); // 0.2 hz
+  ros::Rate r(1.0); // 1 hz
   clock_t tStart;
   int npixels;
   int spins = 0;
@@ -1830,6 +1945,16 @@ int main(int argc, char **argv)
       if (planner.receivedMap){
         ROS_INFO("ESDF or Occupancy at Position: %f", planner.esdf.data[i]);
 
+        // Inflate the obstacle map to avoid collisions
+        planner.inflateObstacles(0.6, inflatedOccupiedMsg);
+        if (planner.esdf_or_octomap) {
+          inflatedOccupiedMsg.header.seq = 1;
+          inflatedOccupiedMsg.header.frame_id = "world";
+          inflatedOccupiedMsg.header.stamp = ros::Time();
+          pub6.publish(inflatedOccupiedMsg);
+          ROS_INFO("Inflated occupancy grid published!");
+        }
+
         // Find frontier cells and add them to planner.frontier for output to file.
         // Publish frontiers as MarkerArray
         if (updateFrontier(planner)) {
@@ -1843,52 +1968,59 @@ int main(int argc, char **argv)
           // Call msfm3d function
           tStart = clock();
           ROS_INFO("Reachability matrix calculating...");
-          reach(planner, 1, 1, 500);
+          // Use the size of the smallest frontier cluster as the stopping criterion
+          int reachFrontierLimit = 500;
+          for (int i = 0; i < planner.frontierClusterIndices.size(); i++) {
+            if ((int)planner.frontierClusterIndices[i].indices.size() < reachFrontierLimit) {
+              reachFrontierLimit = (int)planner.frontierClusterIndices[i].indices.size();
+            }
+          }
+          reach(planner, 1, 1, reachFrontierLimit);
           ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
 
           // Choose a new goal point if previous point is no longer a frontier
-          if ((dist3(goal, planner.position) < 0.3) || !planner.updatePath(goal)) {
-            while (!goalFound){
-              // Find frontiers
-              // findFrontier(planner, frontierList, frontierCost);
+          // if ((dist3(goal, planner.position) < 0.3) || !planner.updatePath(goal)) {
+            // while (!goalFound){
+          // Find frontiers
+          // findFrontier(planner, frontierList, frontierCost);
 
-              // Find goal views
-              closestGoalView(planner, goalViewList, goalViewCost);
-              // infoGoalView(planner, goalViewList, goalViewCost);
+          // Find goal views
+          closestGoalView(planner, goalViewList, goalViewCost);
+          // infoGoalView(planner, goalViewList, goalViewCost);
 
-              // If there are no frontiers available, head to the entrance
-              // if (frontierCost[4] >= 1e5) findEntrance(planner, frontierList, frontierCost);
+          // If there are no frontiers available, head to the entrance
+          // if (frontierCost[4] >= 1e5) findEntrance(planner, frontierList, frontierCost);
 
-              // Write a new frontier goal location for publishing
-              // frontierGoal.point.x = frontierList[12];
-              // frontierGoal.point.y = frontierList[13];
-              // frontierGoal.point.z = frontierList[14];
-              // for (int i=0; i<3; i++) goal[i] = frontierList[12+i];
-              frontierGoal.point.x = planner.goalViews[goalViewList[4]].pose.position.x;
-              frontierGoal.point.y = planner.goalViews[goalViewList[4]].pose.position.y;
-              frontierGoal.point.z = planner.goalViews[goalViewList[4]].pose.position.z;
-              goal[0] = planner.goalViews[goalViewList[4]].pose.position.x;
-              goal[1] = planner.goalViews[goalViewList[4]].pose.position.y;
-              goal[2] = planner.goalViews[goalViewList[4]].pose.position.z;
+          // Write a new frontier goal location for publishing
+          // frontierGoal.point.x = frontierList[12];
+          // frontierGoal.point.y = frontierList[13];
+          // frontierGoal.point.z = frontierList[14];
+          // for (int i=0; i<3; i++) goal[i] = frontierList[12+i];
+          frontierGoal.point.x = planner.goalViews[goalViewList[4]].pose.position.x;
+          frontierGoal.point.y = planner.goalViews[goalViewList[4]].pose.position.y;
+          frontierGoal.point.z = planner.goalViews[goalViewList[4]].pose.position.z;
+          goal[0] = planner.goalViews[goalViewList[4]].pose.position.x;
+          goal[1] = planner.goalViews[goalViewList[4]].pose.position.y;
+          goal[2] = planner.goalViews[goalViewList[4]].pose.position.z;
 
-              // Write a new frontier goal path for publishing
-              goalPose.header.stamp = ros::Time::now();
-              // goalPose.pose.position.x = frontierList[12];
-              // goalPose.pose.position.y = frontierList[13];
-              // goalPose.pose.position.z = frontierList[14];
-              goalPose.pose.position.x = goal[0];
-              goalPose.pose.position.y = goal[1];
-              goalPose.pose.position.z = goal[2];
-              goalPose.pose.orientation.x = planner.goalViews[goalViewList[4]].pose.q.x;
-              goalPose.pose.orientation.y = planner.goalViews[goalViewList[4]].pose.q.y;
-              goalPose.pose.orientation.z = planner.goalViews[goalViewList[4]].pose.q.z;
-              goalPose.pose.orientation.w = planner.goalViews[goalViewList[4]].pose.q.w;
-              // Find a way to convert from SO(3) to quaternions here
+          // Write a new frontier goal path for publishing
+          goalPose.header.stamp = ros::Time::now();
+          // goalPose.pose.position.x = frontierList[12];
+          // goalPose.pose.position.y = frontierList[13];
+          // goalPose.pose.position.z = frontierList[14];
+          goalPose.pose.position.x = goal[0];
+          goalPose.pose.position.y = goal[1];
+          goalPose.pose.position.z = goal[2];
+          goalPose.pose.orientation.x = planner.goalViews[goalViewList[4]].pose.q.x;
+          goalPose.pose.orientation.y = planner.goalViews[goalViewList[4]].pose.q.y;
+          goalPose.pose.orientation.z = planner.goalViews[goalViewList[4]].pose.q.z;
+          goalPose.pose.orientation.w = planner.goalViews[goalViewList[4]].pose.q.w;
+          // Find a way to convert from SO(3) to quaternions here
 
-              // Find a path to the goal point
-              goalFound = planner.updatePath(goal);
-            }
-          }
+          // Find a path to the goal point
+          goalFound = planner.updatePath(goal);
+            // }
+          // }
 
           for (int i=0; i<5; i++) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, cost: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
             planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
