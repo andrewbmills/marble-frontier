@@ -150,7 +150,7 @@ class Msfm3d
 
     // Vehicle parameters
     bool ground = 0; // whether the vehicle is a ground vehicle
-    float wheel_bottom_dist = 0.0;
+    float wheel_bottom_dist = 0.64;
     float position[3] = {69.0, 420.0, 1337.0}; // robot position
     float euler[3]; // robot orientation in euler angles
     float R[9]; // Rotation matrix
@@ -213,7 +213,58 @@ class Msfm3d
     Pose samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, const int sampleLimit);
     void updateGoalPoses();
     void inflateObstacles(const float radius, sensor_msgs::PointCloud2& inflatedOccupiedMsg);
+    float heightAGL(const float point[3]);
 };
+
+float Msfm3d::heightAGL(const float point[3])
+{
+  // heightAGL finds the distance that the query point is above/below the "ground" of the obstacle map.
+  // Function returns NaN if the point is unseen or outside of the current esdf.
+  // Input - 
+  //    - point: a 3 element float of the (x,y,z) position of the point that you want the AGL height of.
+  // Output -
+  //    - dz: The query point's height above the obstacle map.
+
+  int query_idx;
+  int npixels = esdf.size[0]*esdf.size[1]*esdf.size[2];
+  float query[3];
+  float height;
+
+  // If the query point is out of bounds, return NaN
+  for (int i = 0; i < 3; i++) {
+    if (point[i] < esdf.min[i] || point[i] > esdf.max[i]) {
+      return std::sqrt(-1.0);
+    }
+  }
+
+  // If the query point is unseen, return NaN
+  query_idx = xyz_index3(point);
+  if (query_idx < 0 || query_idx >= npixels) {
+    return std::sqrt(-1.0);
+  } else if (!esdf.seen[query_idx]) {
+    return std::sqrt(-1.0);
+  }
+
+  // Copy point entries into query
+  for (int i = 0; i < 3; i++) {
+    query[i] = point[i];
+  }
+
+  // Find the height above the ground by return the dz vertical distance downward (minus half a voxel_size) until an unseen or out of bounds voxel is queried.
+  for (float dz = 0.0; dz < 100.0*voxel_size; dz = dz + 0.01) {
+    query[2] = point[2] - dz;
+    query_idx = xyz_index3(query);
+    if (query_idx < 0 || query_idx >= npixels) { // If the query location is at the z limit of the map, then it is the bottom of the map.
+      return dz;
+    } else {
+      if (!esdf.seen[query_idx]) { // If the query location is unseen, then it is the bottom of the local map
+        return dz;
+      }
+    }
+  }
+
+  return 100.0*voxel_size;
+}
 
 bool Msfm3d::inBoundary(const float point[3])
 {
@@ -370,8 +421,8 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
 
   // Intialize random seed:
   std::random_device rd;
-  std::mt19937 mt(19937); // Really random (much better than using rand())
-  // std::mt19937 mt(rd());
+  // std::mt19937 mt(19937); 
+  std::mt19937 mt(rd()); // Really random (much better than using rand())
 
   // Initialize counts of the current group and cluster in the algorithm
   int groupCount = 0;
@@ -559,8 +610,8 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, co
   robotPose.R.setZero();
   // Intialize random seed:
   std::random_device rd;
-  // std::mt19937 mt(rd());
-  std::mt19937 mt(19937);
+  std::mt19937 mt(rd());
+  // std::mt19937 mt(19937);
 
   // Uniform continuous distributions over spherical coordinates
   std::uniform_real_distribution<float> radius_dist(camera.rMin, camera.rMax);
@@ -596,6 +647,30 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, co
     // See if sample is at an unreachable point (occupied or unseen)
     if (esdf.data[sample_idx] <= 0.0) {
       continue;
+    }
+
+    // If the vehicle is a ground vehicle, move the sampled point vertically until it's wheel_bottom_dist off the ground
+    if (ground) {
+      // ROS_INFO("Sample point is at height %0.2f.", sample.z);
+      float height = heightAGL(sample_query);
+      if (!std::isnan(height)) {
+        sample.z = sample.z - (height - wheel_bottom_dist);
+      } else {
+        continue;
+      }
+
+      // Check to make sure the centroid is within r_min to r_max
+      float r_new = std::sqrt((sample.x - centroid.x)*(sample.x - centroid.x) + (sample.y - centroid.y)*(sample.y - centroid.y) + (sample.z - centroid.z)*(sample.z - centroid.z));
+      // ROS_INFO("Sample point is now at height %0.2f.  This point is %0.2f meters from the sample source.", sample.z, r_new);
+      if (r_new < camera.rMin || r_new > camera.rMax) {
+        continue;
+      }
+
+      // Check to make sure the centroid is still within the verticalFoV
+      if ((std::abs(sample.z - centroid.z)/r_new) > std::sin((M_PI/180.0)*camera.verticalFoV/2.0)) {
+        continue;
+      }
+      // ROS_INFO("Sample point is still within the verticalFoV.");
     }
 
     // ROS_INFO("Checking if the point is occluded from viewing the centroid...");
@@ -638,7 +713,7 @@ void Msfm3d::updateGoalPoses()
   for (pcl::PointCloud<pcl::PointXYZ>::iterator it = greedyCenters.begin(); it != greedyCenters.end(); ++it) {
     // Sample an admissable pose that sees the centroid
     // ROS_INFO("Sampling an admissable pose that sees the group centroid.");
-    Pose goalPose = samplePose(*it, camera, 50);
+    Pose goalPose = samplePose(*it, camera, 500);
     // ROS_INFO("Goal pose x coordinate: %f", goalPose.position.x);
     if (std::isnan(goalPose.position.x)) {
       // ROS_INFO("Pose is invalid, next loop.");
@@ -2041,6 +2116,8 @@ int main(int argc, char **argv)
           cameraFrustum.action = 0; // ADD action
           view2MarkerMsg(planner.goalViews[goalViewList[4]], planner.camera, cameraFrustum);
           pub5.publish(cameraFrustum);
+
+          ROS_INFO("The robot is %0.2f meters off of the ground.  The goal point is %0.2f meters off of the ground.", planner.heightAGL(planner.position), planner.heightAGL(goal));
 
           // Output reach matrix to .csv
           // if (spins < 2) {
