@@ -17,7 +17,7 @@ function [path, cost] = frontierPlan(occGrid, position, hblob, minObsDist, neigh
     frontGrid = double(labels >= 1);
     if sum(frontGrid(:)) <= 10
         path = [];
-        cost = [];
+        cost = 0;
         return
     end
   

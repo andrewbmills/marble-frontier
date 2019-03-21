@@ -1,5 +1,6 @@
 function [goal, cost] = deconflictGoal(occGrid, frontCost, idNext, neighbors)
     %% Deconflict the goal point with all of the neighbor agents
+    global deconfliction;
     i = 1;
     % If there are no neighbors, we can just go to the lowest cost frontier
     if isempty(neighbors)
@@ -25,13 +26,10 @@ function [goal, cost] = deconflictGoal(occGrid, frontCost, idNext, neighbors)
                     % TODO, check who has the lower cost to do this goal
                     % TODO, figure out best distance, maybe sensor width?
                     if dist < 50
-                        if neighbor.id == 1
-                            test = 1;
-                        end
                         % See who has the lower cost.  If it's self, take the path and flag the neighbor to change his
                         % Otherwise, skip the other neighbors (since they can't have the same goal point due to previous
                         % iterations) and look at the next goal point
-                        if cost < neighbor.cost
+                        if deconfliction > 1 && cost < neighbor.cost
                             conflict = false;
                             neighbor.replan = true;
                         else
@@ -57,7 +55,7 @@ function [goal, cost] = deconflictGoal(occGrid, frontCost, idNext, neighbors)
     % comm relay
     if i - 1 == 500 || frontCost(idNext(i)) == 1000000
         goal = [];
-        cost = [];
+        cost = 0;
     end
 
 end

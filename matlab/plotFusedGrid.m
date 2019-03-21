@@ -1,4 +1,4 @@
-function plotFusedGrid(agents, k)
+function plotFusedGrid(agents, anchor, k)
     if length(agents) == 1
         % For one agent, just use that agents occgrid
         fusedGrid = agents(1).occGrid;
@@ -15,6 +15,10 @@ function plotFusedGrid(agents, k)
     h = pcolor(fusedGrid);
     hold on
     
+    % Plot the anchor node
+    plot(anchor.state(1)+0.5, anchor.state(2)+0.5, strcat('g*'));
+    text(anchor.state(1)+1.5, anchor.state(2)+1.5, 'A', 'Color', 'green', 'FontSize', 12)
+
     for agent = agents
         plot(agent.state(1)+0.5, agent.state(2)+0.5, 'r*');
         text(agent.state(1)+1.5, agent.state(2)+1.5, num2str(agent.id), 'Color', 'red', 'FontSize', 12)

@@ -15,11 +15,14 @@ occGrid = (grayimage/255)<=0.8;
 [m, n] = size(occGrid);
 
 %% Some global variables to define behavior
+global deconfliction;
+deconfliction = 2; % Deconfliction level: 0-None, 1-Finders Keepers, 2-Lowest Cost
 global gridPlots;
 gridPlots = 0; % Plot the frontier plots or not
 % These used to be globals, don't need to be
 plotFused = 1; % Plot all robots on one graph
 plotAgents = 0; % Plot individual robot views on single graph, automatically sized
+plotAnchor = 1; % Plot what the anchor node can see
 plotRealtime = 0; % Plot the agent paths as they are calculated instead of all at once
 plotOccGrid = 0; % Plot the actual occgrid for reference
 
@@ -28,8 +31,16 @@ if plotOccGrid
     set(h1, 'EdgeColor', 'none');
 end
 
-%% Use this to decide how many agents to run
+% Placement of anchor plot depends on whether we're showing the full fused map as well
+if plotFused
+    anchorPlotNum = 3;
+else
+    anchorPlotNum = 2;
+end
+
+%% Use this to decide how many agents to run, and whether they all start from the same location
 numAgents = 9;
+agentSpread = 0;
 
 %% Generate robot(s)
 x_agent = [144; 30; 0; 5]; % x (m), y (m), heading (rad from north), speed (m/s)
@@ -39,65 +50,73 @@ agentGrid = 0.5*ones(m,n); % completely unknown
 agents(1,1) = Agent(1, x_agent, agentGrid, [width, height], sensor);
 agents(1,1).sense(occGrid);
 
-x_agent = [172; 240; pi; 5];
+if agentSpread; x_agent = [172; 240; pi; 5]; end
 sensor = [50, 2*pi];
 agents(1,2) = Agent(2, x_agent, agentGrid, [width, height], sensor);
 agents(1,2).sense(occGrid);
 
 if numAgents > 2
-    x_agent = [100; 200; pi; 5];
+    if agentSpread; x_agent = [100; 200; pi; 5]; end
     sensor = [50, 2*pi];
     agents(1,3) = Agent(3, x_agent, agentGrid, [width, height], sensor);
     agents(1,3).sense(occGrid);
 end
 
 if numAgents > 3
-    x_agent = [120; 50; 270*pi/180; 5];
+    if agentSpread; x_agent = [120; 50; 270*pi/180; 5]; end
     sensor = [50, 2*pi];
     agents(1,4) = Agent(4, x_agent, agentGrid, [width, height], sensor);
     agents(1,4).sense(occGrid);
 end
 
 if numAgents > 4
-    x_agent = [140; 20; 0; 5];
+    if agentSpread; x_agent = [140; 20; 0; 5]; end
     sensor = [50, 2*pi];
     agents(1,5) = Agent(5, x_agent, agentGrid, [width, height], sensor);
     agents(1,5).sense(occGrid);
 end
 
 if numAgents > 5
-    x_agent = [160; 230; pi; 5];
+    if agentSpread; x_agent = [160; 230; pi; 5]; end
     sensor = [50, 2*pi];
     agents(1,6) = Agent(6, x_agent, agentGrid, [width, height], sensor);
     agents(1,6).sense(occGrid);
 end
 
 if numAgents > 6
-    x_agent = [110; 210; pi; 5];
+    if agentSpread; x_agent = [110; 210; pi; 5]; end
     sensor = [50, 2*pi];
     agents(1,7) = Agent(7, x_agent, agentGrid, [width, height], sensor);
     agents(1,7).sense(occGrid);
 end
 
 if numAgents > 7
-    x_agent = [110; 70; 270*pi/180; 5];
+    if agentSpread; x_agent = [110; 70; 270*pi/180; 5]; end
     sensor = [50, 2*pi];
     agents(1,8) = Agent(8, x_agent, agentGrid, [width, height], sensor);
     agents(1,8).sense(occGrid);
 end
 
 if numAgents > 8
-    x_agent = [144; 30; 0; 5];
+    if agentSpread; x_agent = [144; 30; 0; 5]; end
     sensor = [50, 2*pi];
     agents(1,9) = Agent(9, x_agent, agentGrid, [width, height], sensor);
     agents(1,9).sense(occGrid);
 end
 
+anchor = Agent(1, [160; 20; 330*pi/180; 5], agentGrid, [width, height], sensor);
+for agent = agents
+    anchor.neighbors(end+1) = Neighbor(agent.id, agent.state(1:2), [], 0);
+end
+
 if plotFused
-    plotFusedGrid(agents, 2);
+    plotFusedGrid(agents, anchor, 2);
 end
 if plotAgents
     plotAgentGrid(agents, 3);
+end
+if plotAnchor
+    plotAnchorGrid(anchor, anchorPlotNum);
 end
     
 %% Blob detector
@@ -119,6 +138,7 @@ while any([agents.run])
     for agent = agents
         % Start with the assumption we can't communicate with anyone
         agent.neighbors = Neighbor.empty;
+        anchor.neighbors(agent.id).incomm = false;
 
         % Check comm, fuse maps, and get goals from other nearby agents
         for i=1 : length(agents)
@@ -126,7 +146,8 @@ while any([agents.run])
                 fusedGrid = fuseOccGrids(agent.occGrid, agents(i).occGrid);
                 agent.occGrid = fusedGrid;
                 agents(i).occGrid = fusedGrid;
-                % Keep track of who we can talk to, and what their goal point is
+
+                % Get the goal point of the agent
                 if ~isempty(agents(i).path)
                     npath = agents(i).path(end, :);
                 else
@@ -153,8 +174,9 @@ while any([agents.run])
                     end
                 end
 
-                if store
-                    agent.neighbors(end+1) = Neighbor(agents(i).id, npath, agents(i).cost);
+                % Save our direct neighbor, unless deconfliction level 0
+                if deconfliction > 0 && store
+                    agent.neighbors(end+1) = Neighbor(agents(i).id, agents(i).state(1:2), npath, agents(i).cost);
                 end
 
                 for j=1 : length(agents(i).neighbors)
@@ -171,16 +193,32 @@ while any([agents.run])
                             agent.neighbors(end+1) = agents(i).neighbors(j);
                             % Clear the replan flag for neighbors that haven't reset yet
                             agent.neighbors(end).replan = false;
-                            % Need to check the current goal point for the neighbors because it may have changed since
+                            % Need to check the current information for the neighbors because it may have changed since
                             % our neighbor received it, depending on the order of the neighbors
                             if ~isempty(agents(agents(i).neighbors(j).id).path)
-                                agent.neighbors(end).goal = agents(agents(i).neighbors(j).id).path(end, :);
+                                agent.neighbors(end).update(agents(agents(i).neighbors(j).id).state(1:2), agents(agents(i).neighbors(j).id).path(end, :), agents(agents(i).neighbors(j).id).cost);
                             else
                                 agent.neighbors(end).goal = [];
                             end
                         end
                     end
                 end
+            end
+        end
+
+        % Check comm with anchor node and fuse maps
+        if checkLoS(agent.state(1:2), anchor.state(1:2), occGrid)
+            anchor.occGrid = fuseOccGrids(anchor.occGrid, agent.occGrid);
+            if ~isempty(agent.path)
+                npath = agent.path(end, :);
+            else
+                npath = [];
+            end
+            anchor.neighbors(agent.id).update(agent.state(1:2), npath, agent.cost);
+            anchor.neighbors(agent.id).history(agent.stateHistory, agent.path);
+            for neighbor = agent.neighbors
+                anchor.neighbors(neighbor.id).update(neighbor.pos, neighbor.goal, neighbor.cost);
+                anchor.neighbors(neighbor.id).history(agents(neighbor.id).stateHistory, agents(neighbor.id).path);
             end
         end
 
@@ -199,9 +237,8 @@ while any([agents.run])
                         % if neighbor.replan && neighbor.id < agent.id
                         if neighbor.replan
                             id = neighbor.id;
-                            % [agents(id).path, agents(id).cost] = frontierPlan(agents(id).occGrid, agents(id).state(1:2), hblob, minObsDist, agents(id).neighbors, 5);
                             agents(id).path = [round(agents(id).state(1)), round(agents(id).state(2))];
-                            agents(id).cost = [];
+                            agents(id).cost = 0;
                         end
                     end
                 end
@@ -232,17 +269,20 @@ while any([agents.run])
         end
         
         if plotRealtime && plotFused && (mod(t, dt_plot) == 0)
-            plotFusedGrid(agents, 2);
+            plotFusedGrid(agents, anchor, 2);
         end
     end
 
     % Plot vehicle positions and belief grid
     if (mod(t, dt_plot) == 0)
         if ~plotRealtime && plotFused
-            plotFusedGrid(agents, 2);
+            plotFusedGrid(agents, anchor, 2);
         end
         if plotAgents
             plotAgentGrid(agents, 3);
+        end
+        if plotAnchor
+            plotAnchorGrid(anchor, anchorPlotNum);
         end
     end
     
@@ -266,15 +306,21 @@ while any([agents.run])
     
     t = t + dt;
 %     pause(dt);
+    if sum([agents.run]) == 1
+        disp(t)
+    end
 end
 
 disp(t)
 
 if plotFused
-    plotFusedGrid(agents, 2);
+    plotFusedGrid(agents, anchor, 2);
 end
 if plotAgents
     plotAgentGrid(agents, 3);
+end
+if plotAnchor
+    plotAnchorGrid(anchor, anchorPlotNum);
 end
 drawnow
 
