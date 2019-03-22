@@ -82,6 +82,7 @@ class guidance_controller:
 		q = Quaternion()
 		q = data.pose.orientation
 		self.goal_yaw = np.arctan2(2.0*(q.w*q.z + q.x*q.y), 1.0 - 2.0*(q.y*q.y + q.z*q.z))
+		print("Goal pose yaw is %0.2f" % ((180.0/np.pi)*self.goal_yaw))
 		return
 
 	def publishLookahead(self):
@@ -179,10 +180,10 @@ class guidance_controller:
 				self.command.linear.x = self.gain_z*error
 				error = L2_vec[1]
 				self.command.linear.y = self.gain_z*error
-				error = self.yaw - self.goal_yaw
+				error = (np.pi/180.0)*guidance.angle_Diff((180.0/np.pi)*self.yaw, (180.0/np.pi)*self.goal_yaw)
 				self.command.angular.z = -self.gain_yaw*error
-			elif (np.linalg.norm(p_robot - goal) <= 0.3*self.speed*self.Tstar):
-				error = self.yaw - self.goal_yaw
+			elif (np.linalg.norm(L2_vec[0:2]) <= 0.3*self.Tstar*self.speed):
+				error = (np.pi/180.0)*guidance.angle_Diff((180.0/np.pi)*self.goal_yaw, (180.0/np.pi)*self.yaw)
 				self.command.angular.z = -self.gain_yaw*error
 				self.command.linear.x = 0.0;
 
