@@ -8,41 +8,63 @@ from geometry_msgs.msg import Point
 from geometry_msgs.msg import Quaternion
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
+from nav_msgs.msg import Odometry
 from gazebo_msgs.msg import LinkStates
 from visualization_msgs.msg import Marker
 
 class guidance_controller:
-	def getPosition(self, data): # Position subscriber callback function
-		# Find the index of the link_state
-		if (self.link_id == -1):
-			i = 0
-			for name in data.name[:]:
-				if name == self.name + "::" + self.name + "/base_link":
-					self.link_id = i
-					print("link_id = %d" % self.link_id)
-				i = i+1
-		# Get the link state data		
-		if (self.link_id == -1):
-			print('Could not find robot state information in /gazebo/link_states/')
-		else:
-			self.position = data.pose[self.link_id].position
-			q = Quaternion()
-			q = data.pose[self.link_id].orientation
-			self.yaw = np.arctan2(2.0*(q.w*q.z + q.x*q.y), 1.0 - 2.0*(q.y*q.y + q.z*q.z))
-			self.R = np.zeros((3,3))
-			self.R[0,0] = q.w*q.w + q.x*q.x - q.y*q.y - q.z*q.z
-			self.R[0,1] = 2.0*(q.x*q.y - q.w*q.z)
-			self.R[0,2] = 2.0*(q.w*q.y + q.x*q.z)
+	# def getPosition(self, data): # Position subscriber callback function
+	# 	# Find the index of the link_state
+	# 	if (self.link_id == -1):
+	# 		i = 0
+	# 		for name in data.name[:]:
+	# 			if name == self.name + "::" + self.name + "/base_link":
+	# 				self.link_id = i
+	# 				print("link_id = %d" % self.link_id)
+	# 			i = i+1
+	# 	# Get the link state data		
+	# 	if (self.link_id == -1):
+	# 		print('Could not find robot state information in /gazebo/link_states/')
+	# 	else:
+	# 		self.position = data.pose[self.link_id].position
+	# 		q = Quaternion()
+	# 		q = data.pose[self.link_id].orientation
+	# 		self.yaw = np.arctan2(2.0*(q.w*q.z + q.x*q.y), 1.0 - 2.0*(q.y*q.y + q.z*q.z))
+	# 		self.R = np.zeros((3,3))
+	# 		self.R[0,0] = q.w*q.w + q.x*q.x - q.y*q.y - q.z*q.z
+	# 		self.R[0,1] = 2.0*(q.x*q.y - q.w*q.z)
+	# 		self.R[0,2] = 2.0*(q.w*q.y + q.x*q.z)
 
-			self.R[1,0] = 2.0*(q.x*q.y + q.w*q.z)
-			self.R[1,1] = q.w*q.w - q.x*q.x + q.y*q.y - q.z*q.z
-			self.R[1,2] = 2.0*(q.y*q.z - q.w*q.x)
+	# 		self.R[1,0] = 2.0*(q.x*q.y + q.w*q.z)
+	# 		self.R[1,1] = q.w*q.w - q.x*q.x + q.y*q.y - q.z*q.z
+	# 		self.R[1,2] = 2.0*(q.y*q.z - q.w*q.x)
 
-			self.R[2,0] = 2.0*(q.x*q.z - q.w*q.y)
-			self.R[2,1] = 2.0*(q.w*q.x + q.y*q.z)
-			self.R[2,2] = q.w*q.w - q.x*q.x - q.y*q.y + q.z*q.z
+	# 		self.R[2,0] = 2.0*(q.x*q.z - q.w*q.y)
+	# 		self.R[2,1] = 2.0*(q.w*q.x + q.y*q.z)
+	# 		self.R[2,2] = q.w*q.w - q.x*q.x - q.y*q.y + q.z*q.z
 
-			self.positionUpdated = 1
+	# 		self.positionUpdated = 1
+	# 	return
+
+	def getPosition(self, data):
+		self.position = data.pose.pose.position
+		q = Quaternion()
+		q = data.pose.pose.orientation
+		self.yaw = np.arctan2(2.0*(q.w*q.z + q.x*q.y), 1.0 - 2.0*(q.y*q.y + q.z*q.z))
+		self.R = np.zeros((3,3))
+		self.R[0,0] = q.w*q.w + q.x*q.x - q.y*q.y - q.z*q.z
+		self.R[0,1] = 2.0*(q.x*q.y - q.w*q.z)
+		self.R[0,2] = 2.0*(q.w*q.y + q.x*q.z)
+
+		self.R[1,0] = 2.0*(q.x*q.y + q.w*q.z)
+		self.R[1,1] = q.w*q.w - q.x*q.x + q.y*q.y - q.z*q.z
+		self.R[1,2] = 2.0*(q.y*q.z - q.w*q.x)
+
+		self.R[2,0] = 2.0*(q.x*q.z - q.w*q.y)
+		self.R[2,1] = 2.0*(q.w*q.x + q.y*q.z)
+		self.R[2,2] = q.w*q.w - q.x*q.x - q.y*q.y + q.z*q.z
+
+		self.positionUpdated = 1
 		return
 
 	def getPath(self, data): # Path subscriber callback function
@@ -181,7 +203,7 @@ class guidance_controller:
 		# Initialize ROS node and Subscribers
 		node_name = self.name + '_guidance_controller'
 		rospy.init_node(node_name)
-		rospy.Subscriber('/gazebo/link_states', LinkStates, self.getPosition)
+		rospy.Subscriber('/' + name + '/odometry', Odometry, self.getPosition)
 		self.link_id = -1
 		self.path = np.empty((3,0))
 		rospy.Subscriber('/' + name + '/planned_path', Path, self.getPath)
