@@ -205,17 +205,17 @@ class guidance_controller:
 		# Initialize ROS node and Subscribers
 		node_name = self.name + '_guidance_controller'
 		rospy.init_node(node_name)
-		rospy.Subscriber('/' + name + '/odometry', Odometry, self.getPosition)
+		rospy.Subscriber(name + '/odometry', Odometry, self.getPosition)
 		self.link_id = -1
 		self.path = np.empty((3,0))
-		rospy.Subscriber('/' + name + '/planned_path', Path, self.getPath)
-		rospy.Subscriber('/' + name + '/frontier_goal_pose', PoseStamped, self.getGoalPose)
+		rospy.Subscriber(name + '/planned_path', Path, self.getPath)
+		rospy.Subscriber(name + '/frontier_goal_pose', PoseStamped, self.getGoalPose)
 		self.goal_yaw = 0.0;
 
 		# Initialize Publisher topics
-		self.pubTopic1 = '/' + name + '/cmd_vel'
+		self.pubTopic1 = name + '/cmd_vel'
 		self.pub1 = rospy.Publisher(self.pubTopic1, Twist, queue_size=10)
-		self.pubTopic2 = '/' + name + '/lookahead_vec'
+		self.pubTopic2 = name + '/lookahead_vec'
 		self.pub2 = rospy.Publisher(self.pubTopic2, Marker, queue_size=10)
 
 		# Initialize twist object for publishing
