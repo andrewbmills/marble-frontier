@@ -80,7 +80,7 @@ class guidance_controller:
 
 	def getGoalPose(self, data): # Goal Pose subscriber callback function
 		q = Quaternion()
-		q = data.pose.orientation
+		q = data.pose.pose.orientation
 		self.goal_yaw = np.arctan2(2.0*(q.w*q.z + q.x*q.y), 1.0 - 2.0*(q.y*q.y + q.z*q.z))
 		print("Goal pose yaw is %0.2f" % ((180.0/np.pi)*self.goal_yaw))
 		return
@@ -157,6 +157,7 @@ class guidance_controller:
 		print("The L2 point is: [%0.2f, %0.2f]" % (p_L2[0], p_L2[1]))
 		print("The robot position is : [%0.2f, %0.2f]" % (p_robot[0], p_robot[1]))
 		print("The L2 vector in 2D is: [%0.2f, %0.2f]" % (L2_vec[0], L2_vec[1]))
+		print("The goal pose heading vector in 2D is: [%0.2f, %0.2f]" % (cos(self.goal_yaw), sin(self.goal_yaw)))
 		print("cos(eta) = %0.2f" % dot_prod)
 		if (dot_prod > (.5)):
 			self.command.linear.x = self.speed
