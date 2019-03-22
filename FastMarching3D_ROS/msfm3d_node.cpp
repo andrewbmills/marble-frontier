@@ -122,7 +122,7 @@ class Msfm3d
       camera.verticalFoV = 30.0;
       camera.horizontalFoV = 60.0;
       camera.rMin = 0.5;
-      camera.rMax = 2.5;
+      camera.rMax = 1.8;
       voxel_size = map_resolution;
       mytree = new octomap::OcTree(voxel_size);
       robot2camera.position.x = 0.0;
@@ -197,6 +197,7 @@ class Msfm3d
 
     void callback(sensor_msgs::PointCloud2 msg); // Subscriber callback function for PC2 msg (ESDF)
     void callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg); // Subscriber callback function for Octomap msg
+    void callback_Octomap_freePCL(const sensor_msgs::PointCloud2 msg);
     void callback_position(const nav_msgs::Odometry msg); // Subscriber callback for robot position
     void parsePointCloud(); // Function to parse pointCloud2 into an esdf format that msfm3d can use
     int xyz_index3(const float point[3]);
@@ -308,7 +309,7 @@ bool Msfm3d::clusterFrontier(const bool print2File)
   // Initialize euclidean cluster extraction object
   pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
   ec.setClusterTolerance(1.5*voxel_size); // Clusters must be made of contiguous sections of frontier (within sqrt(2)*voxel_size of each other)
-  ec.setMinClusterSize(roundf(3.0/voxel_size)); // Cluster must be at least 15 voxels in size
+  ec.setMinClusterSize(roundf(5.0/voxel_size)); // Cluster must be at least 15 voxels in size
   // ec.setMaxClusterSize (30);
   ec.setSearchMethod(kdtree);
   ec.setInputCloud(frontierCloud);
@@ -961,6 +962,12 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
   ROS_INFO("Octomap message received.  %d leaves labeled as occupied.  %d leaves labeled as free.", occCount, freeCount);
 }
 
+void Msfm3d::callback_Octomap_freePCL(const sensor_msgs::PointCloud2 msg)
+{
+  pcl::PointCloud<pcl::PointXYZ> freeCloud;
+
+}
+
 void Msfm3d::callback(sensor_msgs::PointCloud2 msg)
 {
   ROS_INFO("Getting ESDF PointCloud2...");
@@ -1326,10 +1333,10 @@ bool updateFrontier(Msfm3d& planner){
           }
         }
         // // Eliminate frontiers with unseen top/bottom neighbors
-        if ((!planner.esdf.seen[neighbor[4]] && i != neighbor[4]) || (!planner.esdf.seen[neighbor[5]] && i != neighbor[5])) {
-          frontier = 0;
-          pass3++;
-        }
+        // if ((!planner.esdf.seen[neighbor[4]] && i != neighbor[4]) || (!planner.esdf.seen[neighbor[5]] && i != neighbor[5])) {
+        //   frontier = 0;
+        //   pass3++;
+        // }
       }
       else {
         // For the time being, exclude the top/bottom neighbor (last two neighbors)
@@ -1903,7 +1910,7 @@ int main(int argc, char **argv)
   // Voxel size for Octomap or Voxblox
   float voxel_size = 0.2;
   Msfm3d planner(voxel_size);
-  planner.ground = 0;
+  planner.ground = true;
   planner.esdf_or_octomap = 1; // Use a TSDF message (0) or Use an octomap message (1)
 
   // Origin/Tunnel Entrance
@@ -1912,9 +1919,9 @@ int main(int argc, char **argv)
   planner.origin[2] = 0.0;
 
   // Quad SubT stats
-  planner.camera.verticalFoV = 10.0;
-  planner.camera.horizontalFoV = 45.0;
-  planner.camera.rMax = 3.0;
+  // planner.camera.verticalFoV = 10.0;
+  // planner.camera.horizontalFoV = 45.0;
+  // planner.camera.rMax = 3.0;
 
   // robot2camera quaternion
   // planner.robot2camera.q = euler2Quaternion(0.0, (M_PI/180.0)*15.0, 0.0); // transform is just pitched down 15 degrees.
