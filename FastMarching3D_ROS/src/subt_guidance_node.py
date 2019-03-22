@@ -5,6 +5,8 @@ import guidance
 import rospy
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import Point
+from geometry_msgs.msg import Quaternion
+from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 from gazebo_msgs.msg import LinkStates
 from visualization_msgs.msg import Marker
@@ -24,21 +26,21 @@ class guidance_controller:
 			print('Could not find robot state information in /gazebo/link_states/')
 		else:
 			self.position = data.pose[self.link_id].position
-			q = np.array([data.pose[self.link_id].orientation.x, \
-				data.pose[self.link_id].orientation.y, data.pose[self.link_id].orientation.z, \
-				data.pose[self.link_id].orientation.w])
+			q = Quaternion()
+			q = data.pose[self.link_id].orientation
+			self.yaw = np.arctan2(2.0*(q.w*q.z + q.x*q.y), 1.0 - 2.0*(q.y*q.y + q.z*q.z))
 			self.R = np.zeros((3,3))
-			self.R[0,0] = q[3]*q[3] + q[0]*q[0] - q[1]*q[1] - q[2]*q[2]
-			self.R[0,1] = 2.0*(q[0]*q[1] - q[3]*q[2])
-			self.R[0,2] = 2.0*(q[3]*q[1] + q[0]*q[2])
+			self.R[0,0] = q.w*q.w + q.x*q.x - q.y*q.y - q.z*q.z
+			self.R[0,1] = 2.0*(q.x*q.y - q.w*q.z)
+			self.R[0,2] = 2.0*(q.w*q.y + q.x*q.z)
 
-			self.R[1,0] = 2.0*(q[0]*q[1] + q[3]*q[2])
-			self.R[1,1] = q[3]*q[3] - q[0]*q[0] + q[1]*q[1] - q[2]*q[2]
-			self.R[1,2] = 2.0*(q[1]*q[2] - q[3]*q[0])
+			self.R[1,0] = 2.0*(q.x*q.y + q.w*q.z)
+			self.R[1,1] = q.w*q.w - q.x*q.x + q.y*q.y - q.z*q.z
+			self.R[1,2] = 2.0*(q.y*q.z - q.w*q.x)
 
-			self.R[2,0] = 2.0*(q[0]*q[2] - q[3]*q[1])
-			self.R[2,1] = 2.0*(q[3]*q[0] + q[1]*q[2])
-			self.R[2,2] = q[3]*q[3] - q[0]*q[0] - q[1]*q[1] + q[2]*q[2]
+			self.R[2,0] = 2.0*(q.x*q.z - q.w*q.y)
+			self.R[2,1] = 2.0*(q.w*q.x + q.y*q.z)
+			self.R[2,2] = q.w*q.w - q.x*q.x - q.y*q.y + q.z*q.z
 
 			self.positionUpdated = 1
 		return
@@ -52,6 +54,12 @@ class guidance_controller:
 		self.path = newpath
 		print('path received of size: %d' % self.path.shape[1])
 		self.pathUpdated = 1
+		return
+
+	def getGoalPose(self, data): # Goal Pose subscriber callback function
+		q = Quaternion()
+		q = data.pose.orientation
+		self.goal_yaw = np.arctan2(2.0*(q.w*q.z + q.x*q.y), 1.0 - 2.0*(q.y*q.y + q.z*q.z))
 		return
 
 	def publishLookahead(self):
@@ -93,9 +101,10 @@ class guidance_controller:
 		# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
 		if (np.linalg.norm(p_L2 - start) <= 0.05 and np.linalg.norm(p_robot - goal) <= 0.9*self.speed*self.Tstar):
 			p_L2 = goal
+			# Edit later to use proportional control to just command to the goal point and the goal pose!
 
 		# Generate a lateral acceleration command from the lookahead point
-		if self.controller_type == 'trajectory_shaping':
+		if (self.controller_type == 'trajectory_shaping'):
 			a_cmd = guidance.trajectory_Shaping_Guidance(np.array([p_L2[0], p_L2[1]]), p_robot[0:2], \
 													 np.array([velocity_inertial[0], velocity_inertial[1]]), np.array([v_L2[0], v_L2[1]]))
 			chi_dot = -a_cmd/self.speed
@@ -140,6 +149,21 @@ class guidance_controller:
 		if self.vehicle_type == 'air':
 			error = L2_vec[2]
 			self.command.linear.z = self.gain_z*error
+
+		if (p_L2[0] == goal[0] and p_L2[1] == goal[1] and p_L2[2] == goal[2]):
+			if (self.vehicle_type == 'air'):
+				# Use proportional control to control to goal point
+				error = L2_vec[0]
+				self.command.linear.x = self.gain_z*error
+				error = L2_vec[1]
+				self.command.linear.y = self.gain_z*error
+				error = self.yaw - self.goal_yaw
+				self.command.angular.z = -self.gain_yaw*error
+			elif (np.linalg.norm(p_robot - goal) <= 0.3*self.speed*self.Tstar):
+				error = self.yaw - self.goal_yaw
+				self.command.angular.z = -self.gain_yaw*error
+				self.command.linear.x = 0.0;
+
 		return
 
 	def __init__(self, name='X1', vehicle_type='ground', controller_type='L2', speed=1.0):
@@ -161,6 +185,8 @@ class guidance_controller:
 		self.link_id = -1
 		self.path = np.empty((3,0))
 		rospy.Subscriber('/' + name + '/planned_path', Path, self.getPath)
+		rospy.Subscriber('/' + name + '/frontier_goal_pose', PoseStamped, self.getGoalPose)
+		self.goal_yaw = 0.0;
 
 		# Initialize Publisher topics
 		self.pubTopic1 = '/' + name + '/cmd_vel'
@@ -199,8 +225,13 @@ class guidance_controller:
 		self.L2_marker.points.append(self.position)
 		self.L2_marker.points.append(self.L2)
 
+		# Proportional Controller
+		self.gain_x = 0.3
+		self.gain_y = 0.3
+		self.gain_yaw = 0.5
+
 		# Altitude controller
-		self.gain_z = 0.2
+		self.gain_z = 0.3
 		# # Initialize velocity vector for publishing
 		# self.vel_marker = Marker()
 		# self.vel_marker.type = 0
