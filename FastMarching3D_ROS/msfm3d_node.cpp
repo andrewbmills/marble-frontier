@@ -122,7 +122,7 @@ class Msfm3d
       camera.verticalFoV = 30.0;
       camera.horizontalFoV = 60.0;
       camera.rMin = 0.5;
-      camera.rMax = 1.8;
+      camera.rMax = 1.5;
       voxel_size = map_resolution;
       mytree = new octomap::OcTree(voxel_size);
       robot2camera.position.x = 0.0;
@@ -2074,7 +2074,8 @@ int main(int argc, char **argv)
           // Call msfm3d function
           tStart = clock();
           ROS_INFO("Reachability matrix calculating...");
-          reach(planner, 0, 0, (int)planner.frontierCloud->points.size());
+          // reach(planner, 0, 0, (int)planner.frontierCloud->points.size());
+          reach(planner, 0, 0, 500);
           ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
 
           // Choose a new goal point if previous point is no longer a frontier
