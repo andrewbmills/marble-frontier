@@ -165,7 +165,7 @@ class guidance_controller:
 		if (dot_prod > (.5)):
 			self.command.linear.x = self.speed
 			self.command.angular.z = chi_dot
-		elif (dot_prod < 0.0):
+		elif (dot_prod < -0.5):
 			self.command.linear.x = -self.speed
 			self.command.angular.z = chi_dot
 		else:
@@ -207,20 +207,20 @@ class guidance_controller:
 		self.pathUpdated = 0
 
 		# Initialize ROS node and Subscribers
-		node_name = self.name + '_guidance_controller'
+		node_name = self.name + 'guidance_controller'
 		rospy.init_node(node_name)
-		rospy.Subscriber(name + '/odometry', Odometry, self.getPosition)
+		rospy.Subscriber(name + 'X1/odometry', Odometry, self.getPosition)
 		self.link_id = -1
 		self.path = np.empty((3,0))
-		rospy.Subscriber(name + '/planned_path', Path, self.getPath)
-		rospy.Subscriber(name + '/frontier_goal_pose', PoseStamped, self.getGoalPose)
+		rospy.Subscriber(name + 'planned_path', Path, self.getPath)
+		rospy.Subscriber(name + 'frontier_goal_pose', PoseStamped, self.getGoalPose)
 		self.goal_yaw = 0.0
 		self.R = np.zeros((3,3))
 
 		# Initialize Publisher topics
-		self.pubTopic1 = name + '/cmd_vel'
+		self.pubTopic1 = name + 'cmd_vel'
 		self.pub1 = rospy.Publisher(self.pubTopic1, Twist, queue_size=10)
-		self.pubTopic2 = name + '/lookahead_vec'
+		self.pubTopic2 = name + 'lookahead_vec'
 		self.pub2 = rospy.Publisher(self.pubTopic2, Marker, queue_size=10)
 
 		# Initialize twist object for publishing

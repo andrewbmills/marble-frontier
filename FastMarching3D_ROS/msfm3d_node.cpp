@@ -1912,34 +1912,36 @@ int main(int argc, char **argv)
   ROS_INFO("Initializing msfm3d planner...");
   // Voxel size for Octomap or Voxblox
   float voxel_size;
-  n.param("resolution", voxel_size, (float)0.2);
+  n.param("msfm3d/resolution", voxel_size, (float)0.2);
   Msfm3d planner(voxel_size);
 
   // Set vehicle type, map type, and global frame name
   bool ground, esdf_or_octomap;
   std::string global_frame;
-  n.param("isGroundVehicle", ground, false);
-  n.param("useOctomap", esdf_or_octomap, true); // Use a TSDF/ESDF message PointCloud2 (0) or Use an octomap message (1)
-  n.param<std::string>("frame_id", global_frame, "world");
+  n.param("msfm3d/isGroundVehicle", ground, false);
+  n.param("msfm3d/useOctomap", esdf_or_octomap, true); // Use a TSDF/ESDF message PointCloud2 (0) or Use an octomap message (1)
+  n.param<std::string>("msfm3d/frame_id", global_frame, "world");
   planner.ground = ground;
+  if (planner.ground) ROS_INFO("Vehicle type set to ground vehicle.");
+  else ROS_INFO("Vehicle type set to air vehicle");
   planner.esdf_or_octomap = esdf_or_octomap;
   planner.frame = global_frame;
 
   // Origin/Tunnel Entrance
   float origin_x, origin_y, origin_z;
-  n.param("entrance_x", origin_x, (float)0.0);
-  n.param("entrance_y", origin_y, (float)0.0);
-  n.param("entrance_z", origin_z, (float)0.0);
+  n.param("msfm3d/entrance_x", origin_x, (float)0.0);
+  n.param("msfm3d/entrance_y", origin_y, (float)0.0);
+  n.param("msfm3d/entrance_z", origin_z, (float)0.0);
   planner.origin[0] = origin_x;
   planner.origin[1] = origin_y;
   planner.origin[2] = origin_z;
 
   // Vehicle camera field of View and max range
   float verticalFoV, horizontalFoV, rMax, rMin;
-  n.param("cameraVerticalFoV", verticalFoV, (float)30.0);
-  n.param("cameraHorizontalFoV", horizontalFoV, (float)45.0);
-  n.param("cameraMaxRange", rMax, (float)3.0);
-  n.param("cameraMinRange", rMin, (float)0.2);
+  n.param("msfm3d/cameraVerticalFoV", verticalFoV, (float)30.0);
+  n.param("msfm3d/cameraHorizontalFoV", horizontalFoV, (float)45.0);
+  n.param("msfm3d/cameraMaxRange", rMax, (float)3.0);
+  n.param("msfm3d/cameraMinRange", rMin, (float)0.2);
   planner.camera.verticalFoV = verticalFoV;
   planner.camera.horizontalFoV = horizontalFoV;
   planner.camera.rMax = rMax;
@@ -1947,10 +1949,10 @@ int main(int argc, char **argv)
 
   // robot2camera quaternion
   float q_w, q_x, q_y, q_z;
-  n.param("robot2camera_q_w", q_w, (float)1.0);
-  n.param("robot2camera_q_x", q_x, (float)0.0);
-  n.param("robot2camera_q_y", q_y, (float)0.0);
-  n.param("robot2camera_q_z", q_z, (float)0.0);
+  n.param("msfm3d/robot2camera_q_w", q_w, (float)1.0);
+  n.param("msfm3d/robot2camera_q_x", q_x, (float)0.0);
+  n.param("msfm3d/robot2camera_q_y", q_y, (float)0.0);
+  n.param("msfm3d/robot2camera_q_z", q_z, (float)0.0);
   planner.robot2camera.q.w = q_w;
   planner.robot2camera.q.x = q_x;
   planner.robot2camera.q.y = q_y;
@@ -1969,13 +1971,13 @@ int main(int argc, char **argv)
   // Set planner bounds so that the robot doesn't exit a defined volume
   bool fenceOn;
   float fence_x_min, fence_x_max, fence_y_min, fence_y_max, fence_z_min, fence_z_max;
-  n.param("fenceOn", fenceOn, false);
-  n.param("fence_xmin", fence_x_min, (float)-50.0);
-  n.param("fence_xmax", fence_x_max, (float)50.0);
-  n.param("fence_ymin", fence_y_min, (float)-50.0);
-  n.param("fence_ymax", fence_y_max, (float)50.0);
-  n.param("fence_zmin", fence_z_min, (float)-50.0);
-  n.param("fence_zmax", fence_z_max, (float)50.0);
+  n.param("msfm3d/fenceOn", fenceOn, false);
+  n.param("msfm3d/fence_xmin", fence_x_min, (float)-50.0);
+  n.param("msfm3d/fence_xmax", fence_x_max, (float)50.0);
+  n.param("msfm3d/fence_ymin", fence_y_min, (float)-50.0);
+  n.param("msfm3d/fence_ymax", fence_y_max, (float)50.0);
+  n.param("msfm3d/fence_zmin", fence_z_min, (float)-50.0);
+  n.param("msfm3d/fence_zmax", fence_z_max, (float)50.0);
   planner.bounds.set = fenceOn;
   planner.bounds.xmin = fence_x_min;
   planner.bounds.xmax = fence_x_max;
@@ -1986,11 +1988,11 @@ int main(int argc, char **argv)
 
   // Get planner operating rate in Hz
   float updateRate;
-  n.param("updateRate", updateRate, (float)1.0); // Hz
+  n.param("msfm3d/updateRate", updateRate, (float)1.0); // Hz
 
   // Width to inflate obstacles for path planning
   float inflateWidth;
-  n.param("inflateWidth", inflateWidth, (float)0.5); // meters
+  n.param("msfm3d/inflateWidth", inflateWidth, (float)0.5); // meters
 
   // if (planner.esdf_or_octomap) {
   ROS_INFO("Subscribing to Occupancy Grid...");
@@ -2188,7 +2190,7 @@ int main(int argc, char **argv)
           pub5.publish(cameraFrustum);
 
           // Height debugging
-          // ROS_INFO("The robot is %0.2f meters off of the ground.  The goal point is %0.2f meters off of the ground.", planner.heightAGL(planner.position), planner.heightAGL(goal));
+          ROS_INFO("The robot is %0.2f meters off of the ground.  The goal point is %0.2f meters off of the ground.", planner.heightAGL(planner.position), planner.heightAGL(goal));
 
         } else {
           ROS_INFO("No frontiers after filtering, robot is waiting for a map update...");

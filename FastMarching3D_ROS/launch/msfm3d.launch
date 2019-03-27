@@ -4,11 +4,11 @@
   <!-- Robot namespace -->
   <!-- <arg name="machine" default="$(env ROS_HOSTNAME)"/> -->
 
-  <node pkg="msfm3d" type="msfm3d" name="global_planning" output="screen">
+  <node pkg="msfm3d" type="msfm3d" name="msfm3d" output="screen">
     <!-- Inputs (Subscribed Topic Names) -->
 
-    <!-- <remap from="octomap_binary" to="octomap_full"/>
-    <remap from="odometry" to="true_odom"/> -->
+    <!-- <remap from="octomap_binary" to="octomap_full"/> -->
+    <remap from="odometry" to="X1/odometry"/>
 
     <!-- Outputs (Published Topic Names) -->
 
@@ -39,9 +39,9 @@
     <param name="entrance_z" value="0.0" />
 
     <!-- Camera viewing parameters -->
-    <param name="cameraVerticalFoV" value="30.0"/> <!-- degrees -->
+    <param name="cameraVerticalFoV" value="20.0"/> <!-- degrees -->
     <param name="cameraHorizontalFoV" value="60.0"/> <!-- degrees -->
-    <param name="cameraMaxRange" value="3.0"/> <!-- meters -->
+    <param name="cameraMaxRange" value="4.5"/> <!-- meters -->
     <param name="cameraMinRange" value="0.2"/> <!-- meters -->
 
     <!-- Quaternion for rotation from robot orientation to camera orientation (Default is identity rotation matrix) -->
@@ -54,7 +54,7 @@
     <param name="updateRate" value="1.0"/> <!-- Hz -->
 
     <!-- Inflated Obstacle width -->
-    <param name="inflateWidth" value="0.5"/>
+    <param name="inflateWidth" value="0.6"/>
 
     <!-- Vehicle Fence Volume Limits -->
     <!-- <param name="fenceOn" value="true"/>
