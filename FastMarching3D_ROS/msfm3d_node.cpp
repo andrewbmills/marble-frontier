@@ -1918,9 +1918,9 @@ int main(int argc, char **argv)
   // Set vehicle type, map type, and global frame name
   bool ground, esdf_or_octomap;
   std::string global_frame;
-  n.param("isGroundVehicle", ground, true);
+  n.param("isGroundVehicle", ground, false);
   n.param("useOctomap", esdf_or_octomap, true); // Use a TSDF/ESDF message PointCloud2 (0) or Use an octomap message (1)
-  n.param<std::string>("global_frame", global_frame, "world");
+  n.param<std::string>("frame_id", global_frame, "world");
   planner.ground = ground;
   planner.esdf_or_octomap = esdf_or_octomap;
   planner.frame = global_frame;
@@ -1937,7 +1937,7 @@ int main(int argc, char **argv)
   // Vehicle camera field of View and max range
   float verticalFoV, horizontalFoV, rMax, rMin;
   n.param("cameraVerticalFoV", verticalFoV, (float)30.0);
-  n.param("cameraVerticalFoV", horizontalFoV, (float)45.0);
+  n.param("cameraHorizontalFoV", horizontalFoV, (float)45.0);
   n.param("cameraMaxRange", rMax, (float)3.0);
   n.param("cameraMinRange", rMin, (float)0.2);
   planner.camera.verticalFoV = verticalFoV;
@@ -1986,7 +1986,11 @@ int main(int argc, char **argv)
 
   // Get planner operating rate in Hz
   float updateRate;
-  n.param("updateRate", updateRate, (float)1.0);
+  n.param("updateRate", updateRate, (float)1.0); // Hz
+
+  // Width to inflate obstacles for path planning
+  float inflateWidth
+  n.param("inflateWidth", inflateWidth, (float)0.5); // meters
 
   // if (planner.esdf_or_octomap) {
   ROS_INFO("Subscribing to Occupancy Grid...");
@@ -2071,7 +2075,7 @@ int main(int argc, char **argv)
 
         // Inflate the obstacle map to avoid collisions
         if (planner.updatedMap) {
-          planner.inflateObstacles(0.6, inflatedOccupiedMsg);
+          planner.inflateObstacles(inflateWidth, inflatedOccupiedMsg);
           planner.updatedMap = 0;
         }
         
