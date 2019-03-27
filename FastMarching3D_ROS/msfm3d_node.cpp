@@ -1911,24 +1911,32 @@ int main(int argc, char **argv)
   // Initialize planner object
   ROS_INFO("Initializing msfm3d planner...");
   // Voxel size for Octomap or Voxblox
-  float voxel_size = 0.2;
+  float voxel_size;
+  n.param<std::float>("resolution", voxel_size, 0.2);
   Msfm3d planner(voxel_size);
-  planner.ground = true;
-  planner.esdf_or_octomap = 1; // Use a TSDF message (0) or Use an octomap message (1)
+  n.param<std::bool>("isGroundVehicle", planner.ground, true);
+  n.param<std::bool>("useOctomap", planner.esdf_or_octomap, true); // Use a TSDF/ESDF message PointCloud2 (0) or Use an octomap message (1)
+  n.param<std::string>("global_frame", planner.frame, "world");  
 
   // Origin/Tunnel Entrance
-  planner.origin[0] = 0.0;
-  planner.origin[1] = 0.0;
-  planner.origin[2] = 0.0;
+  n.param<std::float>("entrance_x", planner.origin[0], 0.0);
+  n.param<std::float>("entrance_y", planner.origin[1], 0.0);
+  n.param<std::float>("entrance_z", planner.origin[2], 0.0);
 
   // Quad SubT stats
-  // planner.camera.verticalFoV = 10.0;
-  // planner.camera.horizontalFoV = 45.0;
-  // planner.camera.rMax = 3.0;
+  n.param<std::float>("cameraVerticalFoV", planner.camera.verticalFoV, 30.0);
+  n.param<std::float>("cameraVerticalFoV", planner.camera.horizontalFoV, 45.0);
+  n.param<std::float>("cameraMaxRange", planner.camera.rMax, 3.0);
+  n.param<std::float>("cameraMinRange", planner.camera.rMin, 0.2);
 
   // robot2camera quaternion
-  // planner.robot2camera.q = euler2Quaternion(0.0, (M_PI/180.0)*15.0, 0.0); // transform is just pitched down 15 degrees.
-  // // planner.robot2camera.R = quaternion2RotationMatrix(planner.robot2camera.q);
+  n.param<std::float>("robot2camera_q_w", planner.robot2camera.q.w, 1.0);
+  n.param<std::float>("robot2camera_q_x", planner.robot2camera.q.x, 0.0);
+  n.param<std::float>("robot2camera_q_y", planner.robot2camera.q.y, 0.0);
+  n.param<std::float>("robot2camera_q_z", planner.robot2camera.q.z, 0.0);
+  // planner.robot2camera.R = quaternion2RotationMatrix(planner.robot2camera.q);
+
+  // Hard coded pitch down by 15 degrees for the husky
   // planner.robot2camera.R.setZero();
   // planner.robot2camera.R(0,0) = std::cos((M_PI/180.0)*15.0);
   // planner.robot2camera.R(0,2) = std::sin((M_PI/180.0)*15.0);
@@ -1938,18 +1946,17 @@ int main(int argc, char **argv)
 
   // planner.bubble_radius = 3.0;
   // Set planner bounds so that the robot doesn't exit a defined volume
-  // planner.bounds.set = 1;
-  // planner.bounds.xmin = -5.0;
-  // planner.bounds.xmax = 50.0;
-  // planner.bounds.ymin = 40.0;
-  // planner.bounds.ymax = -40.0;
-  // planner.bounds.zmin = -0.5;
-  // planner.bounds.zmax = 2.0;
+  n.param<std::bool>("fenceOn", planner.bounds.set, false);
+  n.param<std::float>("fence_xmin", planner.bounds.xmin, -5.0);
+  n.param<std::float>("fence_xmax", planner.bounds.xmax, 50.0);
+  n.param<std::float>("fence_ymin", planner.bounds.ymin, -5.0);
+  n.param<std::float>("fence_ymax", planner.bounds.ymax, 50.0);
+  n.param<std::float>("fence_zmin", planner.bounds.zmin, -5.0);
+  n.param<std::float>("fence_zmax", planner.bounds.zmax, 50.0);
 
-  // planner.name = "X1";
-
-  // Get voxblox voxel size parameter
-  // n.getParam("/X4/voxblox_node/tsdf_voxel_size", planner.voxel_size);
+  // Get planner operating rate in Hz
+  float updateRate;
+  n.param<std::float>("updateRate", updateRate, 1.0);
 
   // if (planner.esdf_or_octomap) {
   ROS_INFO("Subscribing to Occupancy Grid...");
@@ -2003,7 +2010,7 @@ int main(int argc, char **argv)
 
   int i = 0;
   bool goalFound = 0;
-  ros::Rate r(1.0); // 1 hz
+  ros::Rate r(updateRate); // Hz
   clock_t tStart;
   int npixels;
   int spins = 0;
