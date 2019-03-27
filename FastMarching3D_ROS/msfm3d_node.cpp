@@ -161,6 +161,7 @@ class Msfm3d
     bool esdf_or_octomap = 0; // Boolean to use an esdf PointCloud2 or an Octomap as input
     bool receivedPosition = 0;
     bool receivedMap = 0;
+    bool updatedMap = 0;
     float voxel_size;
     float bubble_radius = 1.0; // map voxel size, and bubble radius
     float origin[3]; // location in xyz coordinates where the robot entered the environment
@@ -198,6 +199,7 @@ class Msfm3d
     void callback(sensor_msgs::PointCloud2 msg); // Subscriber callback function for PC2 msg (ESDF)
     void callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg); // Subscriber callback function for Octomap msg
     void callback_Octomap_freePCL(const sensor_msgs::PointCloud2 msg);
+    void callback_Octomap_occupiedPCL(const sensor_msgs::PointCloud2 msg);
     void callback_position(const nav_msgs::Odometry msg); // Subscriber callback for robot position
     void parsePointCloud(); // Function to parse pointCloud2 into an esdf format that msfm3d can use
     int xyz_index3(const float point[3]);
@@ -832,6 +834,7 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
 {
   ROS_INFO("Getting OctoMap message...");
   if (!receivedMap) receivedMap = 1;
+  if (!updatedMap) updatedMap = 1;
 
   // Free/Allocate the tree memory
   // ROS_INFO("Converting Octomap msg to AbstractOcTree...");
@@ -2009,6 +2012,7 @@ int main(int argc, char **argv)
   float frontierList[15];
   double frontierCost[5];
   float goal[3] = {0.0, 0.0, 0.0};
+  int replan_ticks = 0;
   
   ROS_INFO("Starting planner...");
   r.sleep();
@@ -2029,7 +2033,11 @@ int main(int argc, char **argv)
         ROS_INFO("ESDF or Occupancy at Position: %f", planner.esdf.data[i]);
 
         // Inflate the obstacle map to avoid collisions
-        planner.inflateObstacles(0.6, inflatedOccupiedMsg);
+        if (planner.updatedMap) {
+          planner.inflateObstacles(0.6, inflatedOccupiedMsg);
+          planner.updatedMap = 0;
+        }
+        
         if (planner.esdf_or_octomap) {
           inflatedOccupiedMsg.header.seq = 1;
           inflatedOccupiedMsg.header.frame_id = "world";
@@ -2072,57 +2080,54 @@ int main(int argc, char **argv)
           }
 
           // Call msfm3d function
-          tStart = clock();
-          ROS_INFO("Reachability matrix calculating...");
-          // reach(planner, 0, 0, (int)planner.frontierCloud->points.size());
-          reach(planner, 0, 0, 500);
-          ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+          if (replan || replan_ticks >= 5) {
+            replan_ticks = 0;
+            tStart = clock();
+            ROS_INFO("Reachability matrix calculating...");
+            // reach(planner, 0, 0, (int)planner.frontierCloud->points.size());
+            reach(planner, 0, 0, 500);
+            ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
 
-          // Choose a new goal point if previous point is no longer a frontier
-          // if ((dist3(goal, planner.position) < 0.3) || !planner.updatePath(goal)) {
-            // while (!goalFound){
-          // Find frontiers
-          // findFrontier(planner, frontierList, frontierCost);
+            // Find goal views
+            // closestGoalView(planner, goalViewList, goalViewCost);
+            infoGoalView(planner, goalViewList, goalViewCost);
 
-          // Find goal views
-          // closestGoalView(planner, goalViewList, goalViewCost);
-          infoGoalView(planner, goalViewList, goalViewCost);
 
-          // If there are no frontiers available, head to the entrance
-          if (frontierCost[4] >= 1e5) {
-            ROS_INFO("No reasonable frontier locations, heading to entrance.");
-            for (int i = 0; i < 3; i++) {
-              goal[i] = planner.origin[i];
+            // If there are no frontiers available, head to the entrance
+            if (frontierCost[4] >= 1e5) {
+              ROS_INFO("No reasonable frontier locations, heading to entrance.");
+              for (int i = 0; i < 3; i++) {
+                goal[i] = planner.origin[i];
+              }
+            } else {
+              // Write a new frontier goal location for publishing
+              frontierGoal.point.x = planner.goalViews[goalViewList[4]].pose.position.x;
+              frontierGoal.point.y = planner.goalViews[goalViewList[4]].pose.position.y;
+              frontierGoal.point.z = planner.goalViews[goalViewList[4]].pose.position.z;
+              goal[0] = planner.goalViews[goalViewList[4]].pose.position.x;
+              goal[1] = planner.goalViews[goalViewList[4]].pose.position.y;
+              goal[2] = planner.goalViews[goalViewList[4]].pose.position.z;
+
+              // Write a new goal pose for publishing
+              goalPose.header.stamp = ros::Time::now();
+              goalPose.pose.position.x = goal[0];
+              goalPose.pose.position.y = goal[1];
+              goalPose.pose.position.z = goal[2];
+              goalPose.pose.orientation.x = planner.goalViews[goalViewList[4]].pose.q.x;
+              goalPose.pose.orientation.y = planner.goalViews[goalViewList[4]].pose.q.y;
+              goalPose.pose.orientation.z = planner.goalViews[goalViewList[4]].pose.q.z;
+              goalPose.pose.orientation.w = planner.goalViews[goalViewList[4]].pose.q.w;
+
+              // Output status for debugging
+              // for (int i=0; i<5; i++) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, cost: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
+              // planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
+
+              for (int i=0; i<5; i++) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, utility: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
+              planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
             }
-          } else {
-            // Write a new frontier goal location for publishing
-            frontierGoal.point.x = planner.goalViews[goalViewList[4]].pose.position.x;
-            frontierGoal.point.y = planner.goalViews[goalViewList[4]].pose.position.y;
-            frontierGoal.point.z = planner.goalViews[goalViewList[4]].pose.position.z;
-            goal[0] = planner.goalViews[goalViewList[4]].pose.position.x;
-            goal[1] = planner.goalViews[goalViewList[4]].pose.position.y;
-            goal[2] = planner.goalViews[goalViewList[4]].pose.position.z;
-
-            // Write a new goal pose for publishing
-            goalPose.header.stamp = ros::Time::now();
-            goalPose.pose.position.x = goal[0];
-            goalPose.pose.position.y = goal[1];
-            goalPose.pose.position.z = goal[2];
-            goalPose.pose.orientation.x = planner.goalViews[goalViewList[4]].pose.q.x;
-            goalPose.pose.orientation.y = planner.goalViews[goalViewList[4]].pose.q.y;
-            goalPose.pose.orientation.z = planner.goalViews[goalViewList[4]].pose.q.z;
-            goalPose.pose.orientation.w = planner.goalViews[goalViewList[4]].pose.q.w;
-
-            // Output status for debugging
-            // for (int i=0; i<5; i++) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, cost: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
-            // planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
-
-            for (int i=0; i<5; i++) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, utility: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
-            planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
+            // Find a path to the goal point
+            goalFound = planner.updatePath(goal);
           }
-
-          // Find a path to the goal point
-          goalFound = planner.updatePath(goal);
 
           // Publish path, goal point, and goal point only path
           pub1.publish(frontierGoal);
@@ -2150,6 +2155,7 @@ int main(int argc, char **argv)
         // }
       }
     }
+    replan_ticks++;
   }
 
   return 0;
