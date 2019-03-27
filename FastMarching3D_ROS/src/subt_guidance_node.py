@@ -80,7 +80,7 @@ class guidance_controller:
 
 	def getGoalPose(self, data): # Goal Pose subscriber callback function
 		q = Quaternion()
-		q = data.pose.pose.orientation
+		q = data.pose.orientation
 		self.goal_yaw = np.arctan2(2.0*(q.w*q.z + q.x*q.y), 1.0 - 2.0*(q.y*q.y + q.z*q.z))
 		print("Goal pose yaw is %0.2f" % ((180.0/np.pi)*self.goal_yaw))
 		return
@@ -98,11 +98,14 @@ class guidance_controller:
 		return
 
 	def updateCommand(self): # Updates the twist command for publishing
-		# Check if the subscribers have updated the robot position and path
+# Check if the subscribers have updated the robot position and path
 		if (self.path.shape[1] < 1):
 			print("No guidance command, path is empty.")
 			return
 
+		if (self.positionUpdated == 0):
+			print("No odometry message.")
+			return
 		# Convert the body frame x-axis of the robot to inertial frame
 		heading_body = np.array([[1.0], [0.0], [0.0]]) # using commanded velocity for now (use actual later)
 		heading_inertial = np.matmul(self.R, heading_body)
@@ -157,14 +160,14 @@ class guidance_controller:
 		print("The L2 point is: [%0.2f, %0.2f]" % (p_L2[0], p_L2[1]))
 		print("The robot position is : [%0.2f, %0.2f]" % (p_robot[0], p_robot[1]))
 		print("The L2 vector in 2D is: [%0.2f, %0.2f]" % (L2_vec[0], L2_vec[1]))
-		print("The goal pose heading vector in 2D is: [%0.2f, %0.2f]" % (cos(self.goal_yaw), sin(self.goal_yaw)))
+		print("The goal pose heading vector in 2D is: [%0.2f, %0.2f]" % (np.cos(self.goal_yaw), np.sin(self.goal_yaw)))
 		print("cos(eta) = %0.2f" % dot_prod)
 		if (dot_prod > (.5)):
 			self.command.linear.x = self.speed
 			self.command.angular.z = chi_dot
-		# elif (dot_prod < 0.0):
-		# 	self.command.linear.x = -self.speed
-		# 	self.command.angular.z = chi_dot
+		elif (dot_prod < 0.0):
+			self.command.linear.x = -self.speed
+			self.command.angular.z = chi_dot
 		else:
 			self.command.linear.x = 0.0
 			self.command.angular.z = chi_dot
@@ -174,7 +177,7 @@ class guidance_controller:
 			error = L2_vec[2]
 			self.command.linear.z = self.gain_z*error
 
-		if (p_L2[0] == goal[0] and p_L2[1] == goal[1] and p_L2[2] == goal[2]):
+		if (np.linalg.norm(p_L2 - goal) <= 0.1):
 			if (self.vehicle_type == 'air'):
 				# Use proportional control to control to goal point
 				error = L2_vec[0]
@@ -185,7 +188,8 @@ class guidance_controller:
 				self.command.angular.z = -self.gain_yaw*error
 			elif (np.linalg.norm(L2_vec[0:2]) <= 0.3*self.Tstar*self.speed):
 				error = (np.pi/180.0)*guidance.angle_Diff((180.0/np.pi)*self.goal_yaw, (180.0/np.pi)*self.yaw)
-				self.command.angular.z = -self.gain_yaw*error
+				self.command.angular.z = self.gain_yaw*error
+				print("Yaw error of %0.2f deg." % ((180.0/np.pi)*error))
 				self.command.linear.x = 0.0;
 
 		return
@@ -193,8 +197,8 @@ class guidance_controller:
 	def __init__(self, name='X1', vehicle_type='ground', controller_type='L2', speed=1.0):
 		# Set controller specific parameters
 		self.name = name; # robot name
-		self.vehicle_type = vehicle_type; # vehicle type (ground vs air)
-		self.controller_type = controller_type; # Type of guidance controller from guidance
+		self.vehicle_type = vehicle_type # vehicle type (ground vs air)
+		self.controller_type = controller_type # Type of guidance controller from guidance
 		self.speed = float(speed) # m/s
 		self.Tstar = 1.5 # seconds
 
@@ -210,7 +214,8 @@ class guidance_controller:
 		self.path = np.empty((3,0))
 		rospy.Subscriber(name + '/planned_path', Path, self.getPath)
 		rospy.Subscriber(name + '/frontier_goal_pose', PoseStamped, self.getGoalPose)
-		self.goal_yaw = 0.0;
+		self.goal_yaw = 0.0
+		self.R = np.zeros(3,3)
 
 		# Initialize Publisher topics
 		self.pubTopic1 = name + '/cmd_vel'
