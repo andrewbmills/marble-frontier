@@ -215,7 +215,7 @@ class guidance_controller:
 		rospy.Subscriber(name + '/planned_path', Path, self.getPath)
 		rospy.Subscriber(name + '/frontier_goal_pose', PoseStamped, self.getGoalPose)
 		self.goal_yaw = 0.0
-		self.R = np.zeros(3,3)
+		self.R = np.zeros((3,3))
 
 		# Initialize Publisher topics
 		self.pubTopic1 = name + '/cmd_vel'
