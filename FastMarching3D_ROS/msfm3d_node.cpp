@@ -1989,7 +1989,7 @@ int main(int argc, char **argv)
   n.param("updateRate", updateRate, (float)1.0); // Hz
 
   // Width to inflate obstacles for path planning
-  float inflateWidth
+  float inflateWidth;
   n.param("inflateWidth", inflateWidth, (float)0.5); // meters
 
   // if (planner.esdf_or_octomap) {

@@ -2,9 +2,9 @@
   <!-- <include file="$(find arpg_husky)/launch/hosts.launch"/> -->
 
   <!-- Robot namespace -->
-  <arg name="machine" default="$(env ROS_HOSTNAME)"/>
+  <!-- <arg name="machine" default="$(env ROS_HOSTNAME)"/> -->
 
-  <node pkg="msfm3d" type="msfm3d" name="global_planning" output="screen" machine="$(arg machine)">
+  <node pkg="msfm3d" type="msfm3d" name="global_planning" output="screen">
     <!-- Inputs (Subscribed Topic Names) -->
 
     <!-- <remap from="octomap_binary" to="octomap_full"/>
