@@ -1,9 +1,69 @@
 <launch>
-  <include file="$(find arpg_husky)/launch/hosts.launch"/>
+  <!-- <include file="$(find arpg_husky)/launch/hosts.launch"/> -->
+
+  <!-- Robot namespace -->
   <arg name="machine" default="$(env ROS_HOSTNAME)"/>
 
   <node pkg="msfm3d" type="msfm3d" name="global_planning" output="screen" machine="$(arg machine)">
-    <remap from="frontier_goal_pose" to="goal"/>
+    <!-- Inputs (Subscribed Topic Names) -->
+
+    <!-- <remap from="octomap_binary" to="octomap_full"/>
+    <remap from="odometry" to="true_odom"/> -->
+
+    <!-- Outputs (Published Topic Names) -->
+
+    <!-- <remap from="nearest_frontier" to="goal_point"/>
+    <remap from="frontier_goal_pose" to="goal_pose"/>
+    <remap from="planned_path" to="path"/>
+    <remap from="frontier" to="frontier_PointCloud"/>
+    <remap from="goalFrustum" to="cameraViewFromGoal"/>
+    <remap from="inflatedOctomap" to="conservativeOctomap"/> -->
+
+
+    <!-- Parameters -->
+    <!-- Map Resolution -->
+    <param name="resolution" value="0.2"/>
+
+    <!-- The planner assumes the vehicle is an air vehicle.  If the vehicle is constrained to the ground (wheeled vehicle), set to true. -->
+    <param name="isGroundVehicle" value="true"/>
+
+	<!-- Whether or not you want to use an Occupancy Grid or an ESDF map type -->
+    <param name="useOctomap" value="true"/>
+
+    <!-- Name of the map world frame -->
+    <param name="frame_id" type="string" value="world"/>
+
+    <!-- Location of the environment entrance. (Default is [0.0, 0.0, 0.0])  The robot will not explore area within 15 meters of this point -->
+    <param name="entrance_x" value="0.0" />
+    <param name="entrance_y" value="0.0" />
+    <param name="entrance_z" value="0.0" />
+
+    <!-- Camera viewing parameters -->
+    <param name="cameraVerticalFoV" value="30.0"/> <!-- degrees -->
+    <param name="cameraHorizontalFoV" value="60.0"/> <!-- degrees -->
+    <param name="cameraMaxRange" value="3.0"/> <!-- meters -->
+    <param name="cameraMinRange" value="0.2"/> <!-- meters -->
+
+    <!-- Quaternion for rotation from robot orientation to camera orientation (Default is identity rotation matrix) -->
+    <!-- <param name="robot2camera_q_w" value="1.0"/>
+    <param name="robot2camera_q_x" value="0.0"/>
+    <param name="robot2camera_q_y" value="0.0"/>
+    <param name="robot2camera_q_z" value="0.0"/> -->
+
+    <!-- Update Rate, default is 1.0 Hz -->
+    <param name="updateRate" value="1.0"/> <!-- Hz -->
+
+    <!-- Inflated Obstacle width -->
+    <param name="inflateWidth" value="0.5"/>
+
+    <!-- Vehicle Fence Volume Limits -->
+    <!-- <param name="fenceOn" value="true"/>
+    <param name="fence_xmin", value="-50.0"/>
+    <param name="fence_xmax", value="50.0"/>
+    <param name="fence_ymin", value="-50.0"/>
+    <param name="fence_ymax", value="50.0"/>
+    <param name="fence_zmin", value="-50.0"/>
+    <param name="fence_zmax", value="50.0"/> -->
   </node>
 
 </launch>
