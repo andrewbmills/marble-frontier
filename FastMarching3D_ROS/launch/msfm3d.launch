@@ -1,9 +1,9 @@
 <launch>
-  <include file="$(find arpg_husky)/launch/hosts.launch"/>
-  <arg name="machine" default="$(env ROS_HOSTNAME)"/>
+ <!-- <include file="$(find arpg_husky)/launch/hosts.launch"/> -->
 
-  <node pkg="msfm3d" type="msfm3d" name="global_planning" output="screen" machine="$(arg machine)">
-    <remap from="frontier_goal_pose" to="goal"/>
+  <node pkg="msfm3d" type="msfm3d" name="global_planning" output="screen">
+    <remap from="odometry" to="vins_odom"/>
+    <remap from="octomap_binary" to="octomap_binary"/>
   </node>
 
 </launch>

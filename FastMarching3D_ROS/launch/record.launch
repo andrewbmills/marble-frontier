@@ -1,0 +1,5 @@
+<launch>
+
+    <node pkg="rosbag" type="record" name="frontier_record" args="-O frontier_test /nearest_frontier /frontier_goal_pose /planned_path /goalFrustum /octomap_final_output /vins_odom"
+
+</launch>

@@ -5,6 +5,7 @@
 #include <random>
 // ROS libraries
 #include <ros/ros.h>
+#include <ros/console.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <geometry_msgs/PointStamped.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -1908,15 +1909,15 @@ int main(int argc, char **argv)
   // Initialize planner object
   ROS_INFO("Initializing msfm3d planner...");
   // Voxel size for Octomap or Voxblox
-  float voxel_size = 0.2;
+  float voxel_size = 0.1;
   Msfm3d planner(voxel_size);
-  planner.ground = true;
+  planner.ground = false;
   planner.esdf_or_octomap = 1; // Use a TSDF message (0) or Use an octomap message (1)
 
   // Origin/Tunnel Entrance
   planner.origin[0] = 0.0;
   planner.origin[1] = 0.0;
-  planner.origin[2] = 0.0;
+  planner.origin[2] = 1000.0;
 
   // Quad SubT stats
   // planner.camera.verticalFoV = 10.0;
@@ -1950,7 +1951,7 @@ int main(int argc, char **argv)
 
   // if (planner.esdf_or_octomap) {
   ROS_INFO("Subscribing to Occupancy Grid...");
-  ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  ros::Subscriber sub1 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
   // }
   // else {
   // ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
@@ -2029,7 +2030,7 @@ int main(int argc, char **argv)
         ROS_INFO("ESDF or Occupancy at Position: %f", planner.esdf.data[i]);
 
         // Inflate the obstacle map to avoid collisions
-        planner.inflateObstacles(0.6, inflatedOccupiedMsg);
+        planner.inflateObstacles(0.25, inflatedOccupiedMsg);
         if (planner.esdf_or_octomap) {
           inflatedOccupiedMsg.header.seq = 1;
           inflatedOccupiedMsg.header.frame_id = "world";
