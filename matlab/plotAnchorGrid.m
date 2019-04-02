@@ -9,6 +9,11 @@ function plotAnchorGrid(anchor, k)
     plot(anchor.state(1)+0.5, anchor.state(2)+0.5, strcat('g*'));
     text(anchor.state(1)+1.5, anchor.state(2)+1.5, 'A', 'Color', 'green', 'FontSize', 12)
 
+    for artifact = anchor.artifacts
+        plot(artifact.pos(1), artifact.pos(2), 'w+');
+        text(artifact.pos(1)+1.5, artifact.pos(2)+1.5, artifact.type, 'Color', 'white', 'FontSize', 12);
+    end
+
     % Plot all of the agents that we have information about
     for agent = anchor.neighbors
         % Plot normal red if we have current information, yellow otherwise

@@ -15,6 +15,7 @@ classdef Agent < handle
         sensor % [range (m), field of view (radians]
         controlLims % [maxSpeed, maxTurnRate, maxDecel]
         neighbors = Neighbor.empty % array of the agents current in communication with self
+        artifacts = Artifact.empty % array of artifacts seen
         run
     end
    
@@ -83,6 +84,11 @@ classdef Agent < handle
                 obj.gridDims, obj.sensor);
         end
         
+        function detect(obj, artifacts)
+            obj.artifacts = detectGrid(obj.state, artifacts, obj.artifacts, obj.occGrid, ...
+                obj.gridDims, obj.sensor);
+        end
+
         function plot(obj)
             h = pcolor(obj.occGrid);
             hold on
@@ -91,6 +97,13 @@ classdef Agent < handle
                 plot(obj.path(:,1)+0.5, obj.path(:,2)+0.5, 'r');
             end
             plot(obj.stateHistory(:,2)+0.5, obj.stateHistory(:,3)+0.5, 'g-.');
+
+            % Plot the detected artifacts
+            for artifact = obj.artifacts
+                plot(artifact.pos(1), artifact.pos(2), 'w+');
+                text(artifact.pos(1)+1.5, artifact.pos(2)+1.5, artifact.type, 'Color', 'white', 'FontSize', 12);
+            end
+
             [m, n] = size(obj.occGrid);
             axis([1 n 1 m]);
             set(h, 'EdgeColor', 'none');

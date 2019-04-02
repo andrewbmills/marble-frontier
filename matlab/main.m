@@ -44,7 +44,6 @@ agentSpread = 0;
 
 %% Generate robot(s)
 x_agent = [144; 30; 0; 5]; % x (m), y (m), heading (rad from north), speed (m/s)
-% x_agent = [125; 125; 0; 5];
 sensor = [50, 2*pi];
 agentGrid = 0.5*ones(m,n); % completely unknown
 agents(1,1) = Agent(1, x_agent, agentGrid, [width, height], sensor);
@@ -118,7 +117,13 @@ end
 if plotAnchor
     plotAnchorGrid(anchor, anchorPlotNum);
 end
-    
+
+%% Generate artifacts
+
+artifacts(1,1) = Artifact([90; 75], 'flashlight');
+artifacts(1,2) = Artifact([105; 250], 'backpack');
+artifacts(1,3) = Artifact([220; 190], 'methane');
+
 %% Blob detector
 hblob = vision.BlobAnalysis;
 hblob.LabelMatrixOutputPort = true;
@@ -146,6 +151,10 @@ while any([agents.run])
                 fusedGrid = fuseOccGrids(agent.occGrid, agents(i).occGrid);
                 agent.occGrid = fusedGrid;
                 agents(i).occGrid = fusedGrid;
+
+                fusedArtifacts = fuseArtifacts(agent.artifacts, agents(i).artifacts);
+                agent.artifacts = fusedArtifacts;
+                agents(i).artifacts = fusedArtifacts;
 
                 % Get the goal point of the agent
                 if ~isempty(agents(i).path)
@@ -209,6 +218,7 @@ while any([agents.run])
         % Check comm with anchor node and fuse maps
         if checkLoS(agent.state(1:2), anchor.state(1:2), occGrid)
             anchor.occGrid = fuseOccGrids(anchor.occGrid, agent.occGrid);
+            anchor.artifacts = fuseArtifacts(anchor.artifacts, agent.artifacts);
             if ~isempty(agent.path)
                 npath = agent.path(end, :);
             else
@@ -261,6 +271,9 @@ while any([agents.run])
     
         % Sense
         agent.sense(occGrid);
+
+        % Detect artifacts
+        agent.detect(artifacts);
     
         % Check for collision
         if occGrid(floor(agent.state(2)), floor(agent.state(1)))
