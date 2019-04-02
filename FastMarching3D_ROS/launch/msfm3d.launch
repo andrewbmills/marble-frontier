@@ -41,7 +41,7 @@
     <!-- Camera viewing parameters -->
     <param name="cameraVerticalFoV" value="20.0"/> <!-- degrees -->
     <param name="cameraHorizontalFoV" value="60.0"/> <!-- degrees -->
-    <param name="cameraMaxRange" value="4.5"/> <!-- meters -->
+    <param name="cameraMaxRange" value="1.4"/> <!-- meters -->
     <param name="cameraMinRange" value="0.2"/> <!-- meters -->
 
     <!-- Quaternion for rotation from robot orientation to camera orientation (Default is identity rotation matrix) -->
