@@ -3,6 +3,7 @@ classdef Artifact < handle
     properties
         pos
         type
+        reportme = false
     end
     
     methods

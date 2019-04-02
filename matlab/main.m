@@ -25,6 +25,7 @@ plotAgents = 0; % Plot individual robot views on single graph, automatically siz
 plotAnchor = 1; % Plot what the anchor node can see
 plotRealtime = 0; % Plot the agent paths as they are calculated instead of all at once
 plotOccGrid = 0; % Plot the actual occgrid for reference
+enableArtifacts = 1; % Whether to use artifacts and artifact detection
 
 if plotOccGrid
     h1 = pcolor(occGrid);
@@ -119,10 +120,13 @@ if plotAnchor
 end
 
 %% Generate artifacts
-
-artifacts(1,1) = Artifact([90; 75], 'flashlight');
-artifacts(1,2) = Artifact([105; 250], 'backpack');
-artifacts(1,3) = Artifact([220; 190], 'methane');
+if enableArtifacts
+    artifacts(1,1) = Artifact([90; 75], 'flashlight');
+    artifacts(1,2) = Artifact([105; 250], 'backpack');
+    artifacts(1,3) = Artifact([220; 190], 'methane');
+else
+    artifacts = [];
+end
 
 %% Blob detector
 hblob = vision.BlobAnalysis;
@@ -141,6 +145,9 @@ gif_flag = 0; % Make .gif files boolean
 
 while any([agents.run])
     for agent = agents
+        % Detect artifacts first so we can pass that information along immediately
+        agent.detect(artifacts);
+
         % Start with the assumption we can't communicate with anyone
         agent.neighbors = Neighbor.empty;
         anchor.neighbors(agent.id).incomm = false;
@@ -215,10 +222,21 @@ while any([agents.run])
             end
         end
 
+        anchorGoal = [];
         % Check comm with anchor node and fuse maps
         if checkLoS(agent.state(1:2), anchor.state(1:2), occGrid)
-            anchor.occGrid = fuseOccGrids(anchor.occGrid, agent.occGrid);
-            anchor.artifacts = fuseArtifacts(anchor.artifacts, agent.artifacts);
+            fusedGrid = fuseOccGrids(anchor.occGrid, agent.occGrid);
+            anchor.occGrid = fusedGrid;
+            agent.occGrid = fusedGrid;
+
+            % Flag artifacts as reported now that we've talked with the anchor
+            for artifact = agent.artifacts
+                artifact.reportme = false;
+            end
+            fusedArtifacts = fuseArtifacts(anchor.artifacts, agent.artifacts);
+            anchor.artifacts = fusedArtifacts;
+            agent.artifacts = fusedArtifacts;
+
             if ~isempty(agent.path)
                 npath = agent.path(end, :);
             else
@@ -230,16 +248,21 @@ while any([agents.run])
                 anchor.neighbors(neighbor.id).update(neighbor.pos, neighbor.goal, neighbor.cost);
                 anchor.neighbors(neighbor.id).history(agents(neighbor.id).stateHistory, agents(neighbor.id).path);
             end
+        else
+            % Check if any artifacts need to be reported, and if so, plan to go there
+            for artifact = agent.artifacts
+                if artifact.reportme
+                    anchorGoal = sub2ind(size(occGrid), anchor.state(2), anchor.state(1));
+                    break;
+                end
+            end
         end
 
         % Plan Path(s)
         if (mod(t, dt_plan) == 0)
             if ~isempty(agent.path)
                 if ~frontierCheck(agent.path(end,2), agent.path(end,1), agent.occGrid)
-                    if agent.id == 7
-                        test = 1;
-                    end
-                    [agent.path, agent.cost] = frontierPlan(agent.occGrid, agent.state(1:2), hblob, minObsDist, agent.neighbors, 5); % (occupancy grid, agent position, blob detector, minimum obstacle distance, figure number)
+                    [agent.path, agent.cost] = frontierPlan(agent.occGrid, agent.state(1:2), anchorGoal, hblob, minObsDist, agent.neighbors, 5); % (occupancy grid, agent position, blob detector, minimum obstacle distance, figure number)
                     % Check to see if any neighbors need to be replanned because we took their goal point
                     for neighbor = agent.neighbors
                         % If the id is after us, they'll be forced to
@@ -268,13 +291,10 @@ while any([agents.run])
                 agent.move(dt, 5);
             end
         end
-    
+
         % Sense
         agent.sense(occGrid);
 
-        % Detect artifacts
-        agent.detect(artifacts);
-    
         % Check for collision
         if occGrid(floor(agent.state(2)), floor(agent.state(1)))
             % TODO fix this to display correct vehicle

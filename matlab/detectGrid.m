@@ -40,6 +40,7 @@ for artifact = trueArtifacts
                 end
             end
             if ~occluded
+                artifact.reportme = true;
                 artifacts(end+1) = artifact;
             end
         end

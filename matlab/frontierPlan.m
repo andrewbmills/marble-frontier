@@ -1,9 +1,9 @@
-function [path, cost] = frontierPlan(occGrid, position, hblob, minObsDist, neighbors, figNum)
+function [path, cost] = frontierPlan(occGrid, position, anchorGoal, hblob, minObsDist, neighbors, figNum)
 %   (occupancy grid, agent position, blob detector, minimum obstacle distance, figure number)
     %% Create Reachability Grid
     speedGrid = bwdist(occGrid);
     satSpeedGrid = speedGrid;
-    if nargin == 4
+    if nargin == 5
         satSpeedGrid(satSpeedGrid >= minObsDist) = minObsDist;
     end
     satSpeedGrid(satSpeedGrid == 0) = 1e-6;
@@ -11,7 +11,7 @@ function [path, cost] = frontierPlan(occGrid, position, hblob, minObsDist, neigh
 
     %%  Find frontier grid cells (Open cells adjacent to unexplored cells)
     frontGrid = findFrontier(occGrid);
-    if nargin >= 3
+    if nargin >= 4
         [area, centroids, bbox, labels] = step(hblob, logical(frontGrid));
     end
     frontGrid = double(labels >= 1);
@@ -23,9 +23,13 @@ function [path, cost] = frontierPlan(occGrid, position, hblob, minObsDist, neigh
   
     % Find the cost to reach the frontiers
     frontCost = frontGrid.*reachGrid + (1 - frontGrid)*1e6;
+    % If there's an anchor goal we need the cost to reach it
+    frontCost(anchorGoal) = reachGrid(anchorGoal);
     % Find the N lowest cost frontiers
     % TODO decide on optimum N.  >150 was seen once
     [~, idNext] = mink(frontCost(:), 500);
+    % Add the anchor node as our primary goal if that's what was passed
+    idNext = [anchorGoal; idNext];
 
     % Check all of the neighbors to decide which goal to explore
     [goal, cost] = deconflictGoal(occGrid, frontCost, idNext, neighbors);
@@ -41,7 +45,7 @@ function [path, cost] = frontierPlan(occGrid, position, hblob, minObsDist, neigh
     path = findPathContinuous(reachGrid, goal, [position(1), position(2)]);
     
     global gridPlots;
-    if nargin == 5 && gridPlots
+    if nargin == 7 && gridPlots
         figure(figNum)
         subplot(2,2,1);
         h = pcolor(satSpeedGrid);
