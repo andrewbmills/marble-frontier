@@ -185,6 +185,7 @@ class Msfm3d
       // Frontier Grouping
       std::vector<pcl::PointIndices> greedyGroups;
       pcl::PointCloud<pcl::PointXYZ> greedyCenters;
+      std::vector<int> greedyClusterNumber;
 
     // Vector of possible goal poses
     std::vector<View> goalViews;
@@ -486,6 +487,9 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
       // Add sample_point to greedyCenters
       greedyCenters.points.push_back(sample_point);
 
+      // Add the current cluster number to greedyClusterNumber
+      greedyClusterNumber.push_back(clusterCount);
+
       // Add group clouds to file for debugging
       int j = 0;
       pcl::PCDWriter writer;
@@ -710,17 +714,38 @@ void Msfm3d::updateGoalPoses()
   // Clear previous goalViews vector
   goalViews.clear();
 
+  // Track the current cluster for pruning unviewable clusters;
+  int lastCluster = 0;
+  bool clusterViewed = false;
+  pcl::PointIndices::Ptr removeablePoints(new pcl::PointIndices());
+
   ROS_INFO("Finding feasible poses from which to view frontier groups.");
   // Loop through the frontier group centroids
-  for (pcl::PointCloud<pcl::PointXYZ>::iterator it = greedyCenters.begin(); it != greedyCenters.end(); ++it) {
+  for (int it=0; it<(int)greedyCenters.points.size(); ++it) {
     // Sample an admissable pose that sees the centroid
     // ROS_INFO("Sampling an admissable pose that sees the group centroid.");
-    Pose goalPose = samplePose(*it, camera, 500);
-    // ROS_INFO("Goal pose x coordinate: %f", goalPose.position.x);
+    Pose goalPose = samplePose(greedyCenters.points[it], camera, 500);
+    
+    // Store the frontier clusters that are completely unviewable from the sample poses.
+    if ((greedyClusterNumber[it] != lastCluster) || (it == (int)greedyCenters.points.size()-1 && std::isnan(goalPose.position.x))) {
+      if (!clusterViewed) {
+        // Remove this cluster from the frontiers and the frontierCloud
+        for (int remove_index=0; remove_index<(int)frontierClusterIndices[lastCluster].indices.size(); remove_index++) {
+          removeablePoints->indices.push_back(frontierClusterIndices[lastCluster].indices[remove_index]);
+        }
+      }
+      clusterViewed = false;
+    }
+
+    lastCluster = greedyClusterNumber[it];
+
     if (std::isnan(goalPose.position.x)) {
       // ROS_INFO("Pose is invalid, next loop.");
       continue;
     }
+
+    // At least one group in this cluster is viewable
+    clusterViewed = true;
 
     // Convert the goalPose into a 4x4 view matrix in EUS (East Up South) or (Forward-Up-Right)
     // ROS_INFO("Converting to PCL coordinate system...");
@@ -778,6 +803,23 @@ void Msfm3d::updateGoalPoses()
     ROS_INFO("Sampled view from [%0.2f, %0.2f, %0.2f] sees %d frontier voxels.", sampleView.pose.position.x, sampleView.pose.position.y, sampleView.pose.position.z, (int)sampleView.cloud.points.size());
   }
   ROS_INFO("Sampled %d possible goal poses for viewing the frontier.", (int)goalViews.size());
+
+  ROS_INFO("Removing %d unviewable voxels from the frontier...", (int)removeablePoints->indices.size());
+  // Remove the filtered frontier voxels from the boolean storage array
+  for (int i=0; i<(int)removeablePoints->indices.size(); i++) {
+    float query[3];
+    query[0] = frontierCloud->points[removeablePoints->indices[i]].x;
+    query[1] = frontierCloud->points[removeablePoints->indices[i]].y;
+    query[2] = frontierCloud->points[removeablePoints->indices[i]].z;
+    int idx = xyz_index3(query);
+    frontier[idx] = false;
+  }
+  // Remove the filtered frontier voxels from the PointCloud pointer.
+  pcl::ExtractIndices<pcl::PointXYZ> extract;
+  extract.setInputCloud(frontierCloud);
+  extract.setIndices(removeablePoints);
+  extract.setNegative(true);
+  extract.filter(*frontierCloud);
 }
 
 Eigen::Matrix3f quaternion2RotationMatrix(Quaternion q)
@@ -2098,9 +2140,9 @@ int main(int argc, char **argv)
         // Find frontier cells and add them to planner.frontier for output to file.
         // Publish frontiers as MarkerArray
         if (updateFrontier(planner)) {
-          planner.updateFrontierMsg();
-          pub3.publish(planner.frontiermsg);
-          ROS_INFO("Frontier published!");
+          // planner.updateFrontierMsg();
+          // pub3.publish(planner.frontiermsg);
+          // ROS_INFO("Frontier published!");
 
           // Check to make sure that at least 50% of the viewed frontier voxels are still frontiers, if not, resample goal poses.
           int stillFrontierCount = 0;
@@ -2126,6 +2168,9 @@ int main(int argc, char **argv)
             ROS_INFO("At least 50 percent of the frontiers at the goal pose are no longer frontiers.  Replanning...");
             // Find goal poses from which to view the frontier
             planner.updateGoalPoses();
+            planner.updateFrontierMsg();
+            pub3.publish(planner.frontiermsg);
+            ROS_INFO("Frontier published!");
           }
 
           // Call msfm3d function
