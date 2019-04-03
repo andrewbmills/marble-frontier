@@ -8,7 +8,25 @@ width = 1;
 height = 1;
 minObsDist = 15; % it's just as fast to be at least x cells away as anywhere else.
 % occGrid = drawOccGrid([m,n], 5);
-image = imread('example_environment.PNG');
+
+% Use small demo environment or large tunnel environment
+demo = 0;
+if demo
+    image = imread('example_environment.PNG');
+    anchorState = [160; 20; 330*pi/180; 5];
+    agentState = [144; 30; 0; 5]; % x (m), y (m), heading (rad from north), speed (m/s)
+    artifact1pos = [90; 75];
+    artifact2pos = [105; 250];
+    artifact3pos = [220; 190];
+else
+    image = imread('tunnel_test.png');
+    anchorState = [240; 130; 330*pi/180; 5];
+    agentState = [280; 130; 0; 5];
+    artifact1pos = [60; 65];
+    artifact2pos = [240; 80];
+    artifact3pos = [40; 160];
+end
+
 grayimage = rgb2gray(image);
 occGrid = (grayimage/255)<=0.8;
 % load('FrontierPaper40x40_Fig5.mat')
@@ -27,6 +45,11 @@ plotRealtime = 0; % Plot the agent paths as they are calculated instead of all a
 plotOccGrid = 0; % Plot the actual occgrid for reference
 enableArtifacts = 1; % Whether to use artifacts and artifact detection
 
+% Define ranges for limiting performance.  Use 300 for unlimited range.
+sensorRange = 50;
+commRange = 100;
+commMapRange = 50;
+
 if plotOccGrid
     h1 = pcolor(occGrid);
     set(h1, 'EdgeColor', 'none');
@@ -40,71 +63,71 @@ else
 end
 
 %% Use this to decide how many agents to run, and whether they all start from the same location
-numAgents = 9;
+numAgents = 4;
 agentSpread = 0;
 
 %% Generate robot(s)
-x_agent = [144; 30; 0; 5]; % x (m), y (m), heading (rad from north), speed (m/s)
-sensor = [50, 2*pi];
+x_agent = agentState;
+sensor = [sensorRange, 2*pi];
 agentGrid = 0.5*ones(m,n); % completely unknown
 agents(1,1) = Agent(1, x_agent, agentGrid, [width, height], sensor);
 agents(1,1).sense(occGrid);
 
 if agentSpread; x_agent = [172; 240; pi; 5]; end
-sensor = [50, 2*pi];
+sensor = [sensorRange, 2*pi];
 agents(1,2) = Agent(2, x_agent, agentGrid, [width, height], sensor);
 agents(1,2).sense(occGrid);
 
 if numAgents > 2
     if agentSpread; x_agent = [100; 200; pi; 5]; end
-    sensor = [50, 2*pi];
+    sensor = [sensorRange, 2*pi];
     agents(1,3) = Agent(3, x_agent, agentGrid, [width, height], sensor);
     agents(1,3).sense(occGrid);
 end
 
 if numAgents > 3
     if agentSpread; x_agent = [120; 50; 270*pi/180; 5]; end
-    sensor = [50, 2*pi];
+    sensor = [sensorRange, 2*pi];
     agents(1,4) = Agent(4, x_agent, agentGrid, [width, height], sensor);
     agents(1,4).sense(occGrid);
 end
 
 if numAgents > 4
     if agentSpread; x_agent = [140; 20; 0; 5]; end
-    sensor = [50, 2*pi];
+    sensor = [sensorRange, 2*pi];
     agents(1,5) = Agent(5, x_agent, agentGrid, [width, height], sensor);
     agents(1,5).sense(occGrid);
 end
 
 if numAgents > 5
     if agentSpread; x_agent = [160; 230; pi; 5]; end
-    sensor = [50, 2*pi];
+    sensor = [sensorRange, 2*pi];
     agents(1,6) = Agent(6, x_agent, agentGrid, [width, height], sensor);
     agents(1,6).sense(occGrid);
 end
 
 if numAgents > 6
     if agentSpread; x_agent = [110; 210; pi; 5]; end
-    sensor = [50, 2*pi];
+    sensor = [sensorRange, 2*pi];
     agents(1,7) = Agent(7, x_agent, agentGrid, [width, height], sensor);
     agents(1,7).sense(occGrid);
 end
 
 if numAgents > 7
     if agentSpread; x_agent = [110; 70; 270*pi/180; 5]; end
-    sensor = [50, 2*pi];
+    sensor = [sensorRange, 2*pi];
     agents(1,8) = Agent(8, x_agent, agentGrid, [width, height], sensor);
     agents(1,8).sense(occGrid);
 end
 
 if numAgents > 8
     if agentSpread; x_agent = [144; 30; 0; 5]; end
-    sensor = [50, 2*pi];
+    sensor = [sensorRange, 2*pi];
     agents(1,9) = Agent(9, x_agent, agentGrid, [width, height], sensor);
     agents(1,9).sense(occGrid);
 end
 
-anchor = Agent(1, [160; 20; 330*pi/180; 5], agentGrid, [width, height], sensor);
+anchor = Agent(1, anchorState, agentGrid, [width, height], sensor);
 for agent = agents
     anchor.neighbors(end+1) = Neighbor(agent.id, agent.state(1:2), [], 0);
 end
@@ -121,9 +144,9 @@ end
 
 %% Generate artifacts
 if enableArtifacts
-    artifacts(1,1) = Artifact([90; 75], 'flashlight');
-    artifacts(1,2) = Artifact([105; 250], 'backpack');
-    artifacts(1,3) = Artifact([220; 190], 'methane');
+    artifacts(1,1) = Artifact(artifact1pos, 'flashlight');
+    artifacts(1,2) = Artifact(artifact2pos, 'backpack');
+    artifacts(1,3) = Artifact(artifact3pos, 'methane');
 else
     artifacts = [];
 end
@@ -154,10 +177,15 @@ while any([agents.run])
 
         % Check comm, fuse maps, and get goals from other nearby agents
         for i=1 : length(agents)
-            if agent.id ~= agents(i).id && checkLoS(agent.state(1:2), agents(i).state(1:2), occGrid)
-                fusedGrid = fuseOccGrids(agent.occGrid, agents(i).occGrid);
-                agent.occGrid = fusedGrid;
-                agents(i).occGrid = fusedGrid;
+            % Make sure the agents are at least within comm range and line of sight
+            dist = sqrt(sum((agent.state(1:2) - agents(i).state(1:2)) .^ 2));
+            if agent.id ~= agents(i).id && dist < commRange && checkLoS(agent.state(1:2), agents(i).state(1:2), occGrid)
+                % To fuse maps we need to be inside the commMapRange
+                if dist < commMapRange
+                    fusedGrid = fuseOccGrids(agent.occGrid, agents(i).occGrid);
+                    agent.occGrid = fusedGrid;
+                    agents(i).occGrid = fusedGrid;
+                end
 
                 fusedArtifacts = fuseArtifacts(agent.artifacts, agents(i).artifacts);
                 agent.artifacts = fusedArtifacts;
@@ -224,10 +252,14 @@ while any([agents.run])
 
         anchorGoal = [];
         % Check comm with anchor node and fuse maps
-        if checkLoS(agent.state(1:2), anchor.state(1:2), occGrid)
-            fusedGrid = fuseOccGrids(anchor.occGrid, agent.occGrid);
-            anchor.occGrid = fusedGrid;
-            agent.occGrid = fusedGrid;
+        dist = sqrt(sum((agent.state(1:2) - anchor.state(1:2)) .^ 2));
+        if dist < commRange && checkLoS(agent.state(1:2), anchor.state(1:2), occGrid)
+            % To fuse maps we need to be inside the commMapRange
+            if dist < commMapRange
+                fusedGrid = fuseOccGrids(anchor.occGrid, agent.occGrid);
+                anchor.occGrid = fusedGrid;
+                agent.occGrid = fusedGrid;
+            end
 
             % Flag artifacts as reported now that we've talked with the anchor
             for artifact = agent.artifacts
