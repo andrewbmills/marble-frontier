@@ -167,6 +167,7 @@ class Msfm3d
     float voxel_size;
     float bubble_radius = 1.0; // map voxel size, and bubble radius
     float origin[3]; // location in xyz coordinates where the robot entered the environment
+    float entranceRadius; // radius around the origin where frontiers can't exist
     
     double * reach; // reachability grid (output from reach())
     sensor_msgs::PointCloud2 PC2msg;
@@ -178,6 +179,7 @@ class Msfm3d
     bool * frontier;
     bool * entrance;
     int frontier_size = 0;
+    int dzFrontierVoxelWidth = 0;
       // Clustering/Filtering
       pcl::PointCloud<pcl::PointXYZ>::Ptr frontierCloud; // Frontier PCL
       std::vector<pcl::PointIndices> frontierClusterIndices;
@@ -1388,29 +1390,23 @@ bool updateFrontier(Msfm3d& planner){
         // if (!planner.esdf.seen[neighbor[5]]  && !(i == neighbor[5])) frontier = 1;
       }
       // Check if the point is on the ground if it is a ground robot
-      if (frontier && planner.ground) {
+      if (frontier) {
         // Only consider frontiers on the floor
         // if (planner.esdf.data[neighbor[5]] > (0.01)) frontier = 0;
         // if (!planner.esdf.seen[neighbor[5]]) frontier = 0;
 
         // Only consider frontiers close in z-coordinate (temporary hack)
-        // if (abs(planner.position[2] - point[2]) >= 5*planner.voxel_size) {
-        //   pass3++;
-        //   frontier = 0;
-        // }
-
-        // Eliminate frontiers that are adjacent to occupied cells
-        for (int j=0; j<6; j++) {
-          if (planner.esdf.data[neighbor[j]] < (0.01) && planner.esdf.seen[neighbor[j]] && frontier) {
-            pass4++;
+        if (planner.dzFrontierVoxelWidth > 0) {
+          if (abs(planner.position[2] - point[2]) >= planner.dzFrontierVoxelWidth*planner.voxel_size) {
+            pass3++;
             frontier = 0;
           }
         }
-      }
-      else if (frontier && !planner.ground) {
+
         // Eliminate frontiers that are adjacent to occupied cells
         for (int j=0; j<6; j++) {
           if (planner.esdf.data[neighbor[j]] < (0.01) && planner.esdf.seen[neighbor[j]]) {
+            pass4++;
             frontier = 0;
           }
         }
@@ -1418,7 +1414,7 @@ bool updateFrontier(Msfm3d& planner){
 
       // Check if the voxel is at the entrance
 
-      if (frontier && (dist3(point, planner.origin) <= 15.0)) {
+      if (frontier && (dist3(point, planner.origin) <= planner.entranceRadius)) {
         pass5++;
         planner.entrance[i] = 1;
         frontier = 0;
@@ -1970,19 +1966,24 @@ int main(int argc, char **argv)
   // Goal Height fixing for air vehicle (For a quad with constrained AGL)
   bool fixGoalHeightAGL;
   float goalHeightAGL;
+  int dzFrontierVoxelWidth;
   n.param("msfm3d/fixGoalHeightAGL", fixGoalHeightAGL, false);
   n.param("msfm3d/goalHeightAGL", goalHeightAGL, (float)0.64);
+  n.param("msfm3d/dzFrontierVoxelWidth", dzFrontierVoxelWidth, 0);
   planner.fixGoalHeightAGL = fixGoalHeightAGL;
   planner.goalHeightAGL = goalHeightAGL;
+  planner.dzFrontierVoxelWidth = dzFrontierVoxelWidth;
 
   // Origin/Tunnel Entrance
-  float origin_x, origin_y, origin_z;
+  float origin_x, origin_y, origin_z, entranceRadius;
   n.param("msfm3d/entrance_x", origin_x, (float)0.0);
   n.param("msfm3d/entrance_y", origin_y, (float)0.0);
   n.param("msfm3d/entrance_z", origin_z, (float)0.0);
+  n.param("msfm3d/entrance_radius", entranceRadius, (float)15.0);
   planner.origin[0] = origin_x;
   planner.origin[1] = origin_y;
   planner.origin[2] = origin_z;
+  planner.entranceRadius = entranceRadius;
 
   // Vehicle camera field of View and max range
   float verticalFoV, horizontalFoV, rMax, rMin;

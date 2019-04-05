@@ -38,11 +38,11 @@
     <param name="entrance_y" value="0.0" />
     <param name="entrance_z" value="0.0" />
 
-    <!-- Camera viewing parameters -->
-    <param name="cameraVerticalFoV" value="40.0"/> <!-- degrees -->
-    <param name="cameraHorizontalFoV" value="60.0"/> <!-- degrees -->
-    <param name="cameraMaxRange" value="3.0"/> <!-- meters -->
-    <param name="cameraMinRange" value="1.5"/> <!-- meters -->
+    <!-- Camera viewing parameters, angles in degrees, ranges in meters -->
+    <param name="cameraVerticalFoV" value="40.0"/>
+    <param name="cameraHorizontalFoV" value="60.0"/>
+    <param name="cameraMaxRange" value="3.0"/>
+    <param name="cameraMinRange" value="1.5"/>
 
     <!-- Quaternion for rotation from robot orientation to camera orientation (Default is identity rotation matrix) -->
     <!-- <param name="robot2camera_q_w" value="1.0"/>
@@ -51,7 +51,7 @@
     <param name="robot2camera_q_z" value="0.0"/> -->
 
     <!-- Update Rate, default is 1.0 Hz -->
-    <param name="updateRate" value="1.0"/> <!-- Hz -->
+    <param name="updateRate" value="1.0"/>
 
     <!-- Inflated Obstacle width -->
     <param name="inflateWidth" value="0.2"/>
@@ -65,9 +65,12 @@
     <param name="fence_zmin", value="-50.0"/>
     <param name="fence_zmax", value="50.0"/> -->
 
-    <!-- Fix vehicle goal height above map ground level for a quad/ground vehicle -->
-    <param name="fixGoalHeightAGL" value="true"/>
-    <param name="goalHeightAGL" value="1.50"/> <!-- meters -->
+    <!-- Fix vehicle goal height (in meters) above map ground level for a quad/ground vehicle -->
+    <param name="fixGoalHeightAGL" value="false"/>
+    <param name="goalHeightAGL" value="0.64"/>
+
+    <!-- Fix the delta z in voxels from the vehicle current height that are considered frontiers -->
+    <param name="dzFrontierVoxelWidth" value="5"/>
 
   </node>
 
