@@ -1189,22 +1189,28 @@ int Msfm3d::xyz_index3(const float point[3])
 bool Msfm3d::updatePath(const float goal[3])
 {
   int npixels = esdf.size[0]*esdf.size[1]*esdf.size[2], idx; // size of the reachability array, index in reachability array of the current path voxel.
-  int ijk000[3]; // i,j,k indices of corner[0]
-  float xyz000[3]; // x,y,z, coordinates of corner[0];
-  int corner[8]; // indices of the corners of the 8 closest voxels to the current point
   int neighbor[6]; // neighbor voxels to the current voxel
   float point[3]; // current point x,y,z coordinates
   float query[3]; // intermediate x,y,z coordinates for another operation
   float grad[3]; // gradient at the current point
-  float gradcorner[24]; // corner voxel gradients
   float grad_norm = 1.0; // norm of the gradient vector
-  float dist_robot2path = 10*voxel_size; // distance of the robot to the path
+  float dist_robot2path = 10.0*voxel_size; // distance of the robot to the path
   float position2D[2];
   float point2D[2];
   std::vector<float> path;
 
+  // If the goal point isn't in the reachable map, return false
+  int goal_idx = xyz_index3(goal);
+  if (goal_idx < 0 || goal_idx > npixels){
+    ROS_WARN("Goal point is not reachable.");
+    return false;
+  }
+  if (reach[goal_idx] <= 0.0 || reach[goal_idx] >= 1e6) {
+    ROS_WARN("Goal point is either too far away or is blocked by an obstacle.");
+    return false;
+  }
+
   // 3D Interpolation intermediate values from https://en.wikipedia.org/wiki/Trilinear_interpolation
-  float xd, yd, zd, c00, c01, c10, c11, c0, c1; // 3D linear interpolation weights.
   float step = voxel_size/2.0;
 
   // Path message for ROS
@@ -1280,6 +1286,12 @@ bool Msfm3d::updatePath(const float goal[3])
     }
   }
 
+  // Check if the path made it back to the vehicle
+  if (dist_robot2path > 2.0*voxel_size) {
+    ROS_WARN("Path did not make it back to the robot.  Select a different goal point.");
+    return false;
+  }
+
   // Add path vector to path message for plotting in rviz
   ROS_INFO("Path finished of length %d", (int)(path.size()/3.0));
   for (int i=(path.size()-3); i>=0; i=i-3){
@@ -1290,7 +1302,7 @@ bool Msfm3d::updatePath(const float goal[3])
     newpathmsg.poses.push_back(pose);
   }
   pathmsg = newpathmsg;
-  return 1;
+  return true;
 }
 
 
@@ -2170,9 +2182,6 @@ int main(int argc, char **argv)
             ROS_INFO("At least 50 percent of the frontiers at the goal pose are no longer frontiers or 5 loops have occurred since last plan.  Replanning...");
             // Find goal poses from which to view the frontier
             planner.updateGoalPoses();
-            // planner.updateFrontierMsg();
-            // pub3.publish(planner.frontiermsg);
-            // ROS_INFO("Frontier published!");
 
             replan_ticks = 0;
             tStart = clock();
