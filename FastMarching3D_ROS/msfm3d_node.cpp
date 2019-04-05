@@ -150,8 +150,9 @@ class Msfm3d
     };
 
     // Vehicle parameters
-    bool ground = 0; // whether the vehicle is a ground vehicle
-    float wheel_bottom_dist = 0.64;
+    bool ground = false; // whether the vehicle is a ground vehicle
+    bool fixGoalHeightAGL = false; // whether or not the vehicle has a fixed goal point height above ground level
+    float goalHeightAGL = 0.64; // meters
     float position[3] = {69.0, 420.0, 1337.0}; // robot position
     float euler[3]; // robot orientation in euler angles
     float R[9]; // Rotation matrix
@@ -657,11 +658,11 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, co
     }
 
     // If the vehicle is a ground vehicle, move the sampled point vertically until it's wheel_bottom_dist off the ground
-    if (ground) {
+    if (ground \\ fixGoalHeightAGL) {
       // ROS_INFO("Sample point is at height %0.2f.", sample.z);
       float height = heightAGL(sample_query);
       if (!std::isnan(height)) {
-        sample.z = sample.z - (height - wheel_bottom_dist);
+        sample.z = sample.z - (height - goalHeightAGL);
       } else {
         continue;
       }
@@ -1973,6 +1974,14 @@ int main(int argc, char **argv)
   else ROS_INFO("Vehicle type set to air vehicle");
   planner.esdf_or_octomap = esdf_or_octomap;
   planner.frame = global_frame;
+
+  // Goal Height fixing for air vehicle (For a quad with constrained AGL)
+  bool fixGoalHeightAGL;
+  float goalHeightAGL;
+  n.param("msfm3d/fixGoalHeightAGL", fixGoalHeightAGL, false);
+  n.param("msfm3d/goalHeightAGL", goalHeightAGL, 0.64);
+  planner.fixGoalHeightAGL = fixGoalHeightAGL;
+  planner.goalHeightAGL = goalHeightAGL;
 
   // Origin/Tunnel Entrance
   float origin_x, origin_y, origin_z;
