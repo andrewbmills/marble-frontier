@@ -261,7 +261,8 @@ float Msfm3d::heightAGL(const float point[3])
     if (query_idx < 0 || query_idx >= npixels) { // If the query location is at the z limit of the map, then it is the bottom of the map.
       return dz;
     } else {
-      if (!esdf.seen[query_idx] || (esdf.data[query_idx] <= 0.01)) { // If the query location is unseen or occupied, then it is the bottom of the local map
+      // if (!esdf.seen[query_idx] || (esdf.data[query_idx] <= 0.01)) { // If the query location is unseen or occupied, then it is the bottom of the local map
+      if (!esdf.seen[query_idx]) {
         return dz;
       }
     }
@@ -715,37 +716,25 @@ void Msfm3d::updateGoalPoses()
   goalViews.clear();
 
   // Track the current cluster for pruning unviewable clusters;
-  int lastCluster = 0;
-  bool clusterViewed = false;
-  pcl::PointIndices::Ptr removeablePoints(new pcl::PointIndices());
+  // std::vector<int> clusterViewCounts;
+  // clusterViewCounts.resize((int)frontierClusterIndices.size());
+  // std::fill(clusterViewCounts.begin(), clusterViewCounts.end(), 0); // Set all counts to zero to start
+  // pcl::PointIndices::Ptr removeablePoints(new pcl::PointIndices());
 
   ROS_INFO("Finding feasible poses from which to view frontier groups.");
   // Loop through the frontier group centroids
   for (int it=0; it<(int)greedyCenters.points.size(); ++it) {
     // Sample an admissable pose that sees the centroid
     // ROS_INFO("Sampling an admissable pose that sees the group centroid.");
-    Pose goalPose = samplePose(greedyCenters.points[it], camera, 500);
-    
-    // Store the frontier clusters that are completely unviewable from the sample poses.
-    if ((greedyClusterNumber[it] != lastCluster) || (it == (int)greedyCenters.points.size()-1 && std::isnan(goalPose.position.x))) {
-      if (!clusterViewed) {
-        // Remove this cluster from the frontiers and the frontierCloud
-        for (int remove_index=0; remove_index<(int)frontierClusterIndices[lastCluster].indices.size(); remove_index++) {
-          removeablePoints->indices.push_back(frontierClusterIndices[lastCluster].indices[remove_index]);
-        }
-      }
-      clusterViewed = false;
-    }
-
-    lastCluster = greedyClusterNumber[it];
+    Pose goalPose = samplePose(greedyCenters.points[it], camera, 1500);
 
     if (std::isnan(goalPose.position.x)) {
       // ROS_INFO("Pose is invalid, next loop.");
       continue;
     }
 
-    // At least one group in this cluster is viewable
-    clusterViewed = true;
+    // At least one group in this cluster is viewable, so add a view count to the vector
+    // clusterViewCounts[greedyClusterNumber[it]] = clusterViewCounts[greedyClusterNumber[it]] + 1;
 
     // Convert the goalPose into a 4x4 view matrix in EUS (East Up South) or (Forward-Up-Right)
     // ROS_INFO("Converting to PCL coordinate system...");
@@ -804,22 +793,32 @@ void Msfm3d::updateGoalPoses()
   }
   ROS_INFO("Sampled %d possible goal poses for viewing the frontier.", (int)goalViews.size());
 
-  ROS_INFO("Removing %d unviewable voxels from the frontier...", (int)removeablePoints->indices.size());
-  // Remove the filtered frontier voxels from the boolean storage array
-  for (int i=0; i<(int)removeablePoints->indices.size(); i++) {
-    float query[3];
-    query[0] = frontierCloud->points[removeablePoints->indices[i]].x;
-    query[1] = frontierCloud->points[removeablePoints->indices[i]].y;
-    query[2] = frontierCloud->points[removeablePoints->indices[i]].z;
-    int idx = xyz_index3(query);
-    frontier[idx] = false;
-  }
-  // Remove the filtered frontier voxels from the PointCloud pointer.
-  pcl::ExtractIndices<pcl::PointXYZ> extract;
-  extract.setInputCloud(frontierCloud);
-  extract.setIndices(removeablePoints);
-  extract.setNegative(true);
-  extract.filter(*frontierCloud);
+  // // Get all the indices in the unviewable clusters
+  // for (int cluster=0; cluster<(int)frontierClusterIndices.size(); cluster++) {
+  //   if (clusterViewCounts[cluster] == 0) {
+  //     // Remove this cluster from the frontiers and the frontierCloud
+  //     for (int remove_index=0; remove_index<(int)frontierClusterIndices[cluster].indices.size(); remove_index++) {
+  //       removeablePoints->indices.push_back(frontierClusterIndices[cluster].indices[remove_index]);
+  //     }
+  //   } 
+  // }
+
+  // ROS_INFO("Removing %d unviewable voxels from the frontier...", (int)removeablePoints->indices.size());
+  // // Remove the filtered frontier voxels from the boolean storage array
+  // for (int i=0; i<(int)removeablePoints->indices.size(); i++) {
+  //   float query[3];
+  //   query[0] = frontierCloud->points[removeablePoints->indices[i]].x;
+  //   query[1] = frontierCloud->points[removeablePoints->indices[i]].y;
+  //   query[2] = frontierCloud->points[removeablePoints->indices[i]].z;
+  //   int idx = xyz_index3(query);
+  //   frontier[idx] = false;
+  // }
+  // // Remove the filtered frontier voxels from the PointCloud pointer.
+  // pcl::ExtractIndices<pcl::PointXYZ> extract;
+  // extract.setInputCloud(frontierCloud);
+  // extract.setIndices(removeablePoints);
+  // extract.setNegative(true);
+  // extract.filter(*frontierCloud);
 }
 
 Eigen::Matrix3f quaternion2RotationMatrix(Quaternion q)
@@ -1122,7 +1121,7 @@ void Msfm3d::inflateObstacles(const float radius, sensor_msgs::PointCloud2& infl
               query_point[1] = current_point[1] + dy;
               query_idx = xyz_index3(query_point);
               if ((query_idx >= 0) && (query_idx < npixels)) { // Check for valid array indices
-                if ((esdf.data[query_idx] > 0.05) && esdf.seen[query_idx]) { // Check if the voxel has been labeled as free/seen so it may be changed
+                if ((esdf.data[query_idx] > 0.05) && esdf.seen[query_idx] && (dist3(query_point, position) >= 2*voxel_size)) { // Check if the voxel has been labeled as free/seen so it may be changed and that it's not within 2 voxel radius of the vehicle
                   esdf.data[query_idx] = 0.0;
                   changed_value[query_idx] = true;
                   changed_point.x = query_point[0];
@@ -2008,12 +2007,12 @@ int main(int argc, char **argv)
   // planner.robot2camera.R = quaternion2RotationMatrix(planner.robot2camera.q);
 
   // Hard coded pitch down by 15 degrees for the husky
-  // planner.robot2camera.R.setZero();
-  // planner.robot2camera.R(0,0) = std::cos((M_PI/180.0)*15.0);
-  // planner.robot2camera.R(0,2) = std::sin((M_PI/180.0)*15.0);
-  // planner.robot2camera.R(2,0) = -std::sin((M_PI/180.0)*15.0);
-  // planner.robot2camera.R(2,2) = std::cos((M_PI/180.0)*15.0);
-  // planner.robot2camera.R(1,1) = 1.0;
+  planner.robot2camera.R.setZero();
+  planner.robot2camera.R(0,0) = std::cos((M_PI/180.0)*20.0);
+  planner.robot2camera.R(0,2) = std::sin((M_PI/180.0)*20.0);
+  planner.robot2camera.R(2,0) = -std::sin((M_PI/180.0)*20.0);
+  planner.robot2camera.R(2,2) = std::cos((M_PI/180.0)*20.0);
+  planner.robot2camera.R(1,1) = 1.0;
 
   // planner.bubble_radius = 3.0;
   // Set planner bounds so that the robot doesn't exit a defined volume
@@ -2140,9 +2139,9 @@ int main(int argc, char **argv)
         // Find frontier cells and add them to planner.frontier for output to file.
         // Publish frontiers as MarkerArray
         if (updateFrontier(planner)) {
-          // planner.updateFrontierMsg();
-          // pub3.publish(planner.frontiermsg);
-          // ROS_INFO("Frontier published!");
+          planner.updateFrontierMsg();
+          pub3.publish(planner.frontiermsg);
+          ROS_INFO("Frontier published!");
 
           // Check to make sure that at least 50% of the viewed frontier voxels are still frontiers, if not, resample goal poses.
           int stillFrontierCount = 0;
@@ -2164,22 +2163,20 @@ int main(int argc, char **argv)
             }
           }
 
-          if (replan) {
-            ROS_INFO("At least 50 percent of the frontiers at the goal pose are no longer frontiers.  Replanning...");
-            // Find goal poses from which to view the frontier
-            planner.updateGoalPoses();
-            planner.updateFrontierMsg();
-            pub3.publish(planner.frontiermsg);
-            ROS_INFO("Frontier published!");
-          }
-
           // Call msfm3d function
           if (replan || replan_ticks >= 5) {
+            ROS_INFO("At least 50 percent of the frontiers at the goal pose are no longer frontiers or 5 loops have occurred since last plan.  Replanning...");
+            // Find goal poses from which to view the frontier
+            planner.updateGoalPoses();
+            // planner.updateFrontierMsg();
+            // pub3.publish(planner.frontiermsg);
+            // ROS_INFO("Frontier published!");
+
             replan_ticks = 0;
             tStart = clock();
-            if ((int)planner.frontierCloud->points.size() > 3*(int)planner.frontierClusterIndices[0].indices.size()) {
-              ROS_INFO("Reachability matrix calculating to %d closest frontier points...", 3*(int)planner.frontierClusterIndices[0].indices.size());
-              reach(planner, 0, 0, 3*(int)planner.frontierClusterIndices[0].indices.size(), false);
+            if ((int)planner.frontierCloud->points.size() > 2*(int)planner.frontierClusterIndices[0].indices.size()) {
+              ROS_INFO("Reachability matrix calculating to %d closest frontier points...", 2*(int)planner.frontierClusterIndices[0].indices.size());
+              reach(planner, 0, 0, 2*(int)planner.frontierClusterIndices[0].indices.size(), false);
             } else {
               ROS_INFO("Reachability matrix calculating to %d closest frontier points...", (int)planner.frontierCloud->points.size());
               reach(planner, 0, 0, (int)planner.frontierCloud->points.size(), false);
