@@ -8,7 +8,7 @@
     <!-- Inputs (Subscribed Topic Names) -->
 
     <!-- <remap from="octomap_binary" to="octomap_full"/> -->
-    <remap from="odometry" to="vins_odom"/>
+    <remap from="odometry" to="/vins_estimator/odometry"/>
 
     <!-- Outputs (Published Topic Names) -->
 
@@ -25,7 +25,7 @@
     <param name="resolution" value="0.1"/>
 
     <!-- The planner assumes the vehicle is an air vehicle.  If the vehicle is constrained to the ground (wheeled vehicle), set to true. -->
-    <param name="isGroundVehicle" value="true"/>
+    <param name="isGroundVehicle" value="false"/>
 
 	<!-- Whether or not you want to use an Occupancy Grid or an ESDF map type -->
     <param name="useOctomap" value="true"/>
@@ -34,7 +34,7 @@
     <param name="frame_id" type="string" value="world"/>
 
     <!-- Location of the environment entrance. (Default is [0.0, 0.0, 0.0])  The robot will not explore area within 15 meters of this point -->
-    <param name="entrance_x" value="0.0" />
+    <param name="entrance_x" value="-15.0" />
     <param name="entrance_y" value="0.0" />
     <param name="entrance_z" value="0.0" />
 
