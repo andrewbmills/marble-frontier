@@ -66,8 +66,8 @@
     <param name="fence_zmax", value="50.0"/> -->
 
     <!-- Fix vehicle goal height above map ground level for a quad/ground vehicle -->
-    <param name="fixGoalHeightAGL", value="true"/>
-    <param name="goalHeightAGL", value="1.50"/> <!-- meters -->
+    <param name="fixGoalHeightAGL" value="true"/>
+    <param name="goalHeightAGL" value="1.50"/> <!-- meters -->
 
   </node>
 
