@@ -98,7 +98,7 @@ class guidance_controller:
 		return
 
 	def updateCommand(self): # Updates the twist command for publishing
-# Check if the subscribers have updated the robot position and path
+		# Check if the subscribers have updated the robot position and path
 		if (self.path.shape[1] < 1):
 			print("No guidance command, path is empty.")
 			return
@@ -165,9 +165,9 @@ class guidance_controller:
 		if (dot_prod > (.5)):
 			self.command.linear.x = self.speed
 			self.command.angular.z = chi_dot
-		elif (dot_prod < -0.5):
-			self.command.linear.x = -self.speed
-			self.command.angular.z = chi_dot
+		# elif (dot_prod < -0.5):
+		# 	self.command.linear.x = -self.speed
+		# 	self.command.angular.z = chi_dot
 		else:
 			self.command.linear.x = 0.0
 			self.command.angular.z = chi_dot
@@ -177,15 +177,15 @@ class guidance_controller:
 			error = L2_vec[2]
 			self.command.linear.z = self.gain_z*error
 
-		if (np.linalg.norm(p_L2 - goal) <= 0.1):
+		if (np.linalg.norm(p_L2 - goal) <= 0.2):
 			if (self.vehicle_type == 'air'):
 				# Use proportional control to control to goal point
 				error = L2_vec[0]
 				self.command.linear.x = self.gain_z*error
 				error = L2_vec[1]
 				self.command.linear.y = self.gain_z*error
-				error = (np.pi/180.0)*guidance.angle_Diff((180.0/np.pi)*self.yaw, (180.0/np.pi)*self.goal_yaw)
-				self.command.angular.z = -self.gain_yaw*error
+				error = (np.pi/180.0)*guidance.angle_Diff((180.0/np.pi)*self.goal_yaw, (180.0/np.pi)*self.yaw)
+				self.command.angular.z = self.gain_yaw*error
 			elif (np.linalg.norm(L2_vec[0:2]) <= 0.3*self.Tstar*self.speed):
 				error = (np.pi/180.0)*guidance.angle_Diff((180.0/np.pi)*self.goal_yaw, (180.0/np.pi)*self.yaw)
 				self.command.angular.z = self.gain_yaw*error
@@ -207,20 +207,20 @@ class guidance_controller:
 		self.pathUpdated = 0
 
 		# Initialize ROS node and Subscribers
-		node_name = self.name + 'guidance_controller'
+		node_name = self.name + '_guidance_controller'
 		rospy.init_node(node_name)
-		rospy.Subscriber(name + 'X1/odometry', Odometry, self.getPosition)
+		rospy.Subscriber(name + '/odometry', Odometry, self.getPosition)
 		self.link_id = -1
 		self.path = np.empty((3,0))
-		rospy.Subscriber(name + 'planned_path', Path, self.getPath)
-		rospy.Subscriber(name + 'frontier_goal_pose', PoseStamped, self.getGoalPose)
+		rospy.Subscriber(name + '/planned_path', Path, self.getPath)
+		rospy.Subscriber(name + '/frontier_goal_pose', PoseStamped, self.getGoalPose)
 		self.goal_yaw = 0.0
 		self.R = np.zeros((3,3))
 
 		# Initialize Publisher topics
-		self.pubTopic1 = name + 'cmd_vel'
+		self.pubTopic1 = name + '/cmd_vel'
 		self.pub1 = rospy.Publisher(self.pubTopic1, Twist, queue_size=10)
-		self.pubTopic2 = name + 'lookahead_vec'
+		self.pubTopic2 = name + '/lookahead_vec'
 		self.pub2 = rospy.Publisher(self.pubTopic2, Marker, queue_size=10)
 
 		# Initialize twist object for publishing
