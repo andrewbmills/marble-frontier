@@ -1979,7 +1979,7 @@ int main(int argc, char **argv)
   bool fixGoalHeightAGL;
   float goalHeightAGL;
   n.param("msfm3d/fixGoalHeightAGL", fixGoalHeightAGL, false);
-  n.param("msfm3d/goalHeightAGL", goalHeightAGL, 0.64);
+  n.param("msfm3d/goalHeightAGL", goalHeightAGL, ((float)0.64);
   planner.fixGoalHeightAGL = fixGoalHeightAGL;
   planner.goalHeightAGL = goalHeightAGL;
 
