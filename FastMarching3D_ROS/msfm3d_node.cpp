@@ -212,7 +212,7 @@ class Msfm3d
     void updateFrontierMsg(); // Updates the frontiermsg MarkerArray with the frontier matrix for publishing
     bool clusterFrontier(const bool print2File); // Clusters the frontier pointCloud with euclidean distance within a radius
     bool inBoundary(const float point[3]); // Checks if a point is inside the planner boundaries
-    bool collisionCheck(const float point[3]); // Checks if the robot being at the current point (given vehicleVolume) intersects with the obstacle environment (esdf)
+    // bool collisionCheck(const float point[3]); // Checks if the robot being at the current point (given vehicleVolume) intersects with the obstacle environment (esdf)
     void greedyGrouping(const float r, const bool print2File);
     bool raycast(const pcl::PointXYZ start, const pcl::PointXYZ end);
     Pose samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, const int sampleLimit);
@@ -517,45 +517,45 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
   ROS_INFO("%d groups generated from the frontier clusters.", groupCount);
 }
 
-bool Msfm3d::collisionCheck(const float position[3]) 
-{
-  // Get indices corresponding to the voxels occupied by the vehicle
-  int lower_corner[3], voxel_width[3], idx, npixels = esdf.size[0]*esdf.size[1]*esdf.size[2]; // xyz point of the lower left of the vehicle rectangle
-  lower_corner[0] = position[0] + vehicleVolume.xmin;
-  lower_corner[1] = position[1] + vehicleVolume.ymin;
-  lower_corner[2] = position[2] + vehicleVolume.zmin;
-  voxel_width[0] = roundf((vehicleVolume.xmax - vehicleVolume.xmin)/voxel_size);
-  voxel_width[1] = roundf((vehicleVolume.xmax - vehicleVolume.xmin)/voxel_size);
-  voxel_width[2] = roundf((vehicleVolume.xmax - vehicleVolume.xmin)/voxel_size);
-  bool collision = 0;
-  float query[3];
+// bool Msfm3d::collisionCheck(const float position[3]) 
+// {
+//   // Get indices corresponding to the voxels occupied by the vehicle
+//   int lower_corner[3], voxel_width[3], idx, npixels = esdf.size[0]*esdf.size[1]*esdf.size[2]; // xyz point of the lower left of the vehicle rectangle
+//   lower_corner[0] = position[0] + vehicleVolume.xmin;
+//   lower_corner[1] = position[1] + vehicleVolume.ymin;
+//   lower_corner[2] = position[2] + vehicleVolume.zmin;
+//   voxel_width[0] = roundf((vehicleVolume.xmax - vehicleVolume.xmin)/voxel_size);
+//   voxel_width[1] = roundf((vehicleVolume.xmax - vehicleVolume.xmin)/voxel_size);
+//   voxel_width[2] = roundf((vehicleVolume.xmax - vehicleVolume.xmin)/voxel_size);
+//   bool collision = 0;
+//   float query[3];
 
-  // Loop through all of the voxels occupied by the vehicle and check for occupancy to detect a collision
-  // Return when a collision is detected
-  for (int i=0; i<voxel_width[0]; i++){
-    query[0] = lower_corner[0] + i*voxel_size;
-    for (int j=0; j<voxel_width[1]; j++){
-      query[1] = lower_corner[1] + j*voxel_size;
-      for (int k=0; k<voxel_width[2]; k++){
-        query[2] = lower_corner[2] + k*voxel_size;
-        idx = xyz_index3(query);
-        // Check to see if idx is inside a valid index
-        if (idx < 0 || idx >= npixels ) {
-          if (ground && (query[2] >= (position[2] - wheel_bottom_dist + voxel_size/2.0)) && esdf.data[idx] < 0.0) {
-          	return 1; // Check for collisions above the wheels on the ground robot
-      	  }
-          if (!ground && esdf.data[idx] < 0.0) {
-          	return 1; // Check for air vehicle collision
-          }
-          if (ground && (query[2] <= (position[2] - wheel_bottom_dist - voxel_size/2.0)) && esdf.data[idx] > 0.0) { // Check for wheel contact with the ground for the ground vehicle
-            ROS_INFO("Original path doesn't keep the ground vehicle on the ground, replanning to next closest frontier voxel...");
-            return 1;
-          }
-        }
-      }
-    }
-  }
-}
+//   // Loop through all of the voxels occupied by the vehicle and check for occupancy to detect a collision
+//   // Return when a collision is detected
+//   for (int i=0; i<voxel_width[0]; i++){
+//     query[0] = lower_corner[0] + i*voxel_size;
+//     for (int j=0; j<voxel_width[1]; j++){
+//       query[1] = lower_corner[1] + j*voxel_size;
+//       for (int k=0; k<voxel_width[2]; k++){
+//         query[2] = lower_corner[2] + k*voxel_size;
+//         idx = xyz_index3(query);
+//         // Check to see if idx is inside a valid index
+//         if (idx < 0 || idx >= npixels ) {
+//           if (ground && (query[2] >= (position[2] - wheel_bottom_dist + voxel_size/2.0)) && esdf.data[idx] < 0.0) {
+//           	return 1; // Check for collisions above the wheels on the ground robot
+//       	  }
+//           if (!ground && esdf.data[idx] < 0.0) {
+//           	return 1; // Check for air vehicle collision
+//           }
+//           if (ground && (query[2] <= (position[2] - wheel_bottom_dist - voxel_size/2.0)) && esdf.data[idx] > 0.0) { // Check for wheel contact with the ground for the ground vehicle
+//             ROS_INFO("Original path doesn't keep the ground vehicle on the ground, replanning to next closest frontier voxel...");
+//             return 1;
+//           }
+//         }
+//       }
+//     }
+//   }
+// }
 
 bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end) {
   float dx = end.x - start.x;
@@ -658,7 +658,7 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, co
     }
 
     // If the vehicle is a ground vehicle, move the sampled point vertically until it's wheel_bottom_dist off the ground
-    if (ground \\ fixGoalHeightAGL) {
+    if (ground || fixGoalHeightAGL) {
       // ROS_INFO("Sample point is at height %0.2f.", sample.z);
       float height = heightAGL(sample_query);
       if (!std::isnan(height)) {
@@ -1273,16 +1273,8 @@ bool Msfm3d::updatePath(const float goal[3])
       point2D[1] = point[1];
       dist_robot2path = dist2(position2D, point2D);
     }
-    else {dist_robot2path = dist3(position, point);}
-
-    // Check for a collision with the environment to make sure this goal point is feasible.
-    if (vehicleVolume.set) {
-      if (collisionCheck(point)){
-        // Take the goal point out of the frontier and entrance arrays
-        frontier[xyz_index3(goal)] = 0;
-        entrance[xyz_index3(goal)] = 0;
-        return 0;
-      }
+    else {
+      dist_robot2path = dist3(position, point);
     }
   }
 
@@ -1979,7 +1971,7 @@ int main(int argc, char **argv)
   bool fixGoalHeightAGL;
   float goalHeightAGL;
   n.param("msfm3d/fixGoalHeightAGL", fixGoalHeightAGL, false);
-  n.param("msfm3d/goalHeightAGL", goalHeightAGL, ((float)0.64);
+  n.param("msfm3d/goalHeightAGL", goalHeightAGL, (float)0.64);
   planner.fixGoalHeightAGL = fixGoalHeightAGL;
   planner.goalHeightAGL = goalHeightAGL;
 
