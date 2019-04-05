@@ -5,6 +5,7 @@
 #include <random>
 // ROS libraries
 #include <ros/ros.h>
+#include <std_msgs/Bool.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <geometry_msgs/PointStamped.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -193,6 +194,9 @@ class Msfm3d
     // Vector of possible goal poses
     std::vector<View> goalViews;
 
+    // Artifact detected flag
+    bool artifactDetected = false;
+
     // Sensor parameters
     SensorFoV camera;
     Pose robot2camera;
@@ -206,6 +210,7 @@ class Msfm3d
     void callback_Octomap_freePCL(const sensor_msgs::PointCloud2 msg);
     void callback_Octomap_occupiedPCL(const sensor_msgs::PointCloud2 msg);
     void callback_position(const nav_msgs::Odometry msg); // Subscriber callback for robot position
+    void callback_artifactDetected(const std_msgs::Bool msg);
     void parsePointCloud(); // Function to parse pointCloud2 into an esdf format that msfm3d can use
     int xyz_index3(const float point[3]);
     void index3_xyz(const int index, float point[3]);
@@ -222,6 +227,12 @@ class Msfm3d
     void inflateObstacles(const float radius, sensor_msgs::PointCloud2& inflatedOccupiedMsg);
     float heightAGL(const float point[3]);
 };
+
+void Msfm3d::callback_artifactDetected(const std_msgs::Bool msg)
+{
+  artifactDetected = msg.data;
+  return;
+}
 
 float Msfm3d::heightAGL(const float point[3])
 {
@@ -2066,6 +2077,9 @@ int main(int argc, char **argv)
   ROS_INFO("Subscribing to robot state...");
   ros::Subscriber sub2 = n.subscribe("odometry", 1, &Msfm3d::callback_position, &planner);
 
+  ROS_INFO("Subscribing to artifact message...");
+  ros::Subscriber sub3 = n.subscribe("report_artifact", 1, &Msfm3d::callback_artifactDetected, &planner);
+
   ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("nearest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
   frontierGoal.header.frame_id = planner.frame;
@@ -2195,13 +2209,13 @@ int main(int argc, char **argv)
 
             ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
 
-            // Find goal views
+            // Find goal views with an information-based optimization
             // closestGoalView(planner, goalViewList, goalViewCost);
             infoGoalView(planner, goalViewList, goalViewCost);
 
             if (goalViewCost[4] < 0.0) {
               // The vehicle couldn't find any reasonable frontier views, head to the anchor node.
-              ROS_INFO("No reasonable frontier views, heading to the anchor.");
+              ROS_INFO("No reachable frontier views, heading to the anchor.");
               tStart = clock();
               ROS_INFO("Replanning to be able to reach the origin...");
               reach(planner, 0, 0, 1, true);
@@ -2224,7 +2238,32 @@ int main(int argc, char **argv)
               goalPose.pose.orientation.z = 0.0;
               goalPose.pose.orientation.w = 1.0;
 
-            } else {
+            } else if (planner.artifactDetected) {
+              // Head to the origin if a new artifact is detected.
+              ROS_INFO("New artifact detected, heading to the anchor.");
+              tStart = clock();
+              ROS_INFO("Replanning to be able to reach the origin...");
+              reach(planner, 0, 0, 1, true);
+              ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+
+              frontierGoal.point.x = planner.origin[0];
+              frontierGoal.point.y = planner.origin[1];
+              frontierGoal.point.z = planner.origin[2];
+              goal[0] = planner.origin[0];
+              goal[1] = planner.origin[1];
+              goal[2] = planner.origin[2];
+
+              // Write a new goal pose for publishing
+              goalPose.header.stamp = ros::Time::now();
+              goalPose.pose.position.x = goal[0];
+              goalPose.pose.position.y = goal[1];
+              goalPose.pose.position.z = goal[2];
+              goalPose.pose.orientation.x = 0.0;
+              goalPose.pose.orientation.y = 0.0;
+              goalPose.pose.orientation.z = 0.0;
+              goalPose.pose.orientation.w = 1.0;
+            }
+            else {
               // Write a new frontier goal location for publishing
               frontierGoal.point.x = planner.goalViews[goalViewList[4]].pose.position.x;
               frontierGoal.point.y = planner.goalViews[goalViewList[4]].pose.position.y;
