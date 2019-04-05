@@ -8,11 +8,7 @@
     <!-- Inputs (Subscribed Topic Names) -->
 
     <!-- <remap from="octomap_binary" to="octomap_full"/> -->
-<<<<<<< HEAD
-    <remap from="odometry" to="X4/odometry"/>
-=======
     <remap from="odometry" to="vins_odom"/>
->>>>>>> launchfile changes
 
     <!-- Outputs (Published Topic Names) -->
 
