@@ -18,6 +18,7 @@
     <remap from="frontier" to="X4/frontier"/>
     <remap from="goalFrustum" to="X4/goalFrustum"/>
     <remap from="inflatedOctomap" to="X4/inflatedOctomap"/>
+    <remap from="report_artifact" to="X4/report_artifact"/>
 
 
     <!-- Parameters -->
@@ -33,10 +34,14 @@
     <!-- Name of the map world frame -->
     <param name="frame_id" type="string" value="world"/>
 
+    <!-- Vehicle speed in m/s and turnRate in deg/s -->
+    <param name="speed" value="1.0"/>
+    <param name="turnRate" value="5.0"/>
+
     <!-- Location of the environment entrance. (Default is [0.0, 0.0, 0.0])  The robot will not explore area within 15 meters of this point -->
     <param name="entrance_x" value="0.0" />
     <param name="entrance_y" value="0.0" />
-    <param name="entrance_z" value="0.0" />
+    <param name="entrance_z" value="1.0" />
 
     <!-- Camera viewing parameters, angles in degrees, ranges in meters -->
     <param name="cameraVerticalFoV" value="40.0"/>
@@ -70,7 +75,7 @@
     <param name="goalHeightAGL" value="0.64"/>
 
     <!-- Fix the delta z in voxels from the vehicle current height that are considered frontiers -->
-    <param name="dzFrontierVoxelWidth" value="5"/>
+    <param name="dzFrontierVoxelWidth" value="0"/>
 
   </node>
 

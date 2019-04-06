@@ -67,6 +67,17 @@ int sign(float a){
   return 0;
 }
 
+float angle_diff(float a, float b)
+{
+    // Computes a-b, preserving the correct sign (counter-clockwise positive angles)
+    // All angles are in degrees
+    a = std::fmod(360000.0 + a, 360.0);
+    b = std::fmod(360000.0 + b, 360.0);
+    float d = a - b;
+    d = std::fmod(d + 180.0, 360.0) - 180.0;
+    return d;
+}
+
 // Some orientation and pose structures
 struct Quaternion {
   float w, x, y, z;
@@ -158,6 +169,10 @@ class Msfm3d
     float euler[3]; // robot orientation in euler angles
     float R[9]; // Rotation matrix
     Boundary vehicleVolume; // xyz boundary of the vehicle bounding box in rectilinear coordinates for collision detection/avoidance
+
+    // Vehicle linear and angular velocities
+    float speed = 1.0; // m/s
+    float turnRate = 5.0; // deg/s
 
     // Environment/Sensor parameters
     std::string frame = "world";
@@ -1543,9 +1558,11 @@ void infoGoalView(Msfm3d& planner, int viewIndices[5], double utility[5])
 {
    // infoGoalView finds the most "informative" View in the planner.goalViews vector.
   float point[3];
+  float cost_time; // seconds
   int slot = 0;
   int idx; // index of the current view pose in the reach matrix
   double current_utility;
+  bool calculate_actual_cost = false;
 
   // Initialize utility list with negative ascending values.
   for (int i=0; i<5; i++) {
@@ -1553,28 +1570,79 @@ void infoGoalView(Msfm3d& planner, int viewIndices[5], double utility[5])
     viewIndices[i] = -1;
   }
 
-  // Main  
+  // Find the 5 views with the greatest utility (frontier voxels/second) and arrange them in ascending order in utility[5] 
   for (int i=0; i<planner.goalViews.size(); i++) {
     point[0] = planner.goalViews[i].pose.position.x;
     point[1] = planner.goalViews[i].pose.position.y;
     point[2] = planner.goalViews[i].pose.position.z;
     idx = planner.xyz_index3(point);
+    // Check to see if the goal view has a cost to travel to it (if not we can't generate a path anyways)
     if (planner.reach[idx] > (double)0.0) {
-      // Calculate the point's utility
-      current_utility = std::sqrt((double)(planner.goalViews[i].cloud.points.size())/planner.reach[idx]);
-      ROS_INFO("[%.2f, %.2f, %.2f] sees %d voxels at a %.2f cost to travel and has a utility of %.2f.", point[0], point[1], point[2], (int)planner.goalViews[i].cloud.points.size(), planner.reach[idx], current_utility);
+
+      // Convert the reachability to the time it takes the robot to get there in seconds (point to point)
+      cost_time = (planner.reach[idx]*planner.voxel_size)/planner.speed; // (voxels*meters/voxel)/(meters/second)
+
+      // Do a preliminary calculation the point's utility
+      current_utility = std::sqrt((double)(planner.goalViews[i].cloud.points.size())/cost_time);
+
+      // ROS_INFO("[%.2f, %.2f, %.2f] sees %d voxels at a %.2f point-to-point seconds to travel and has a utility of %.2f.", point[0], point[1], point[2], (int)planner.goalViews[i].cloud.points.size(), cost_time, current_utility);
+      
+      // Check to see if the optimisitic current_utility is less than any of the top 5 values.
+      // The optimistic current_utility doesn't account for the cost to turn in place at the start and end of the path.
       for (int j=0; j<5; j++) {
         if (current_utility>utility[j]) {
-          slot = j;
+          calculate_actual_cost = true;
         }
       }
-      for (int j=0; j<slot; j++) {
-        utility[j] = utility[j+1];
-        viewIndices[j] = viewIndices[j+1];
+
+      if (calculate_actual_cost) {
+
+        // Calculate the feasability and path to arrive at the current goal view
+        if (planner.updatePath(point)) {
+          // Get the angle between the current robot pose and the path start
+          float start_path_vec[3] = {(float)(planner.pathmsg.poses[1].pose.position.x - planner.pathmsg.poses[0].pose.position.x), 
+                                     (float)(planner.pathmsg.poses[1].pose.position.y - planner.pathmsg.poses[0].pose.position.y),
+                                     (float)(planner.pathmsg.poses[1].pose.position.z - planner.pathmsg.poses[0].pose.position.z)};
+          float start_path_yaw = std::atan2(start_path_vec[1], start_path_vec[0]); // degrees
+          float vehicle_yaw = std::atan2(2.0*(planner.q.w*planner.q.z + planner.q.x*planner.q.y), 1.0 - 2.0*(planner.q.y*planner.q.y + planner.q.z*planner.q.z)); // degrees
+
+          // Get the angle between the path end and the goal pose
+          int end_path_idx = (int)planner.pathmsg.poses.size()-1;
+          float end_path_vec[3] = {(float)(planner.pathmsg.poses[end_path_idx].pose.position.x - planner.pathmsg.poses[end_path_idx-1].pose.position.x), 
+                                   (float)(planner.pathmsg.poses[end_path_idx].pose.position.y - planner.pathmsg.poses[end_path_idx-1].pose.position.y),
+                                   (float)(planner.pathmsg.poses[end_path_idx].pose.position.z - planner.pathmsg.poses[end_path_idx-1].pose.position.z)};;
+          float end_path_yaw = std::atan2(end_path_vec[1], end_path_vec[0]); // degrees
+          Quaternion goal_q = planner.goalViews[i].pose.q;
+          float goal_yaw = std::atan2(2.0*(goal_q.w*goal_q.z + goal_q.x*goal_q.y), 1.0 - 2.0*(goal_q.y*goal_q.y + goal_q.z*goal_q.z)); // degrees
+
+          // Add these angle differences to the cost_time
+          cost_time = cost_time + (std::abs(angle_diff((180.0/M_PI)*end_path_yaw, (180.0/M_PI)*goal_yaw)) + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)))/planner.turnRate;
+
+          // Calculate the actual utility
+          current_utility = std::sqrt((double)(planner.goalViews[i].cloud.points.size())/cost_time); // frontier voxels/second
+
+          ROS_INFO("[%.2f, %.2f, %.2f] sees %d voxels at a %.2f actual seconds to travel and has a utility of %.2f.", point[0], point[1], point[2], (int)planner.goalViews[i].cloud.points.size(), cost_time, current_utility);
+
+          // See which slot the current view actually belongs in after accounting for the view's reachability and time to turn.
+          for (int j=0; j<5; j++) {
+            if (current_utility>utility[j]) {
+              slot = j;
+            }
+          }
+
+          // Add the current view utility and index to the correct slot in the top 5 list
+          for (int j=0; j<slot; j++) {
+            utility[j] = utility[j+1];
+            viewIndices[j] = viewIndices[j+1];
+          }
+          utility[slot] = current_utility;
+          viewIndices[slot] = i;
+
+          // Reset flag variables
+          slot = 0;
+          calculate_actual_cost = false;
+        }
       }
-      utility[slot] = current_utility;
-      viewIndices[slot] = i;
-      slot = 0;
     }
   }
 }
@@ -1985,6 +2053,13 @@ int main(int argc, char **argv)
   else ROS_INFO("Vehicle type set to air vehicle");
   planner.esdf_or_octomap = esdf_or_octomap;
   planner.frame = global_frame;
+
+  // Vehicle speed and turnRate
+  float speed, turnRate;
+  n.param("msfm3d/speed", speed, (float)1.0); // m/s
+  n.param("msfm3d/turnRate", turnRate, (float)5.0); // deg/s
+  planner.speed = speed;
+  planner.turnRate = turnRate;
 
   // Goal Height fixing for air vehicle (For a quad with constrained AGL)
   bool fixGoalHeightAGL;
