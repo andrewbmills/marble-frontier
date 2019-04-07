@@ -259,7 +259,7 @@ void Msfm3d::callback_artifactDetected(const std_msgs::Bool msg)
   // return;
 
   // Switch to commented out text once the marble common library shows up
-  artifactDetected = msg;
+  artifactDetected = msg.data
   return;
 }
 
