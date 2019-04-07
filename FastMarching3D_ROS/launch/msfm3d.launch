@@ -8,17 +8,17 @@
     <!-- Inputs (Subscribed Topic Names) -->
 
     <!-- <remap from="octomap_binary" to="octomap_full"/> -->
-    <remap from="odometry" to="X4/odometry"/>
+    <remap from="odometry" to="X1/odometry"/>
 
     <!-- Outputs (Published Topic Names) -->
 
-    <remap from="nearest_frontier" to="X4/nearest_frontier"/>
-    <remap from="frontier_goal_pose" to="X4/frontier_goal_pose"/>
-    <remap from="planned_path" to="X4/planned_path"/>
-    <remap from="frontier" to="X4/frontier"/>
-    <remap from="goalFrustum" to="X4/goalFrustum"/>
-    <remap from="inflatedOctomap" to="X4/inflatedOctomap"/>
-    <remap from="report_artifact" to="X4/report_artifact"/>
+    <remap from="nearest_frontier" to="X1/nearest_frontier"/>
+    <remap from="frontier_goal_pose" to="X1/frontier_goal_pose"/>
+    <remap from="planned_path" to="X1/planned_path"/>
+    <remap from="frontier" to="X1/frontier"/>
+    <remap from="goalFrustum" to="X1/goalFrustum"/>
+    <remap from="inflatedOctomap" to="X1/inflatedOctomap"/>
+    <remap from="report_artifact" to="X1/report_artifact"/>
 
 
     <!-- Parameters -->
@@ -26,7 +26,7 @@
     <param name="resolution" value="0.2"/>
 
     <!-- The planner assumes the vehicle is an air vehicle.  If the vehicle is constrained to the ground (wheeled vehicle), set to true. -->
-    <param name="isGroundVehicle" value="false"/>
+    <param name="isGroundVehicle" value="true"/>
 
 	<!-- Whether or not you want to use an Occupancy Grid or an ESDF map type -->
     <param name="useOctomap" value="true"/>
@@ -36,18 +36,19 @@
 
     <!-- Vehicle speed in m/s and turnRate in deg/s -->
     <param name="speed" value="1.0"/>
-    <param name="turnRate" value="5.0"/>
+    <param name="turnRate" value="2.5"/>
 
-    <!-- Location of the environment entrance. (Default is [0.0, 0.0, 0.0])  The robot will not explore area within 15 meters of this point -->
+    <!-- Location of the environment entrance. (Default is [0.0, 0.0, 0.0])  The robot will not explore area within entrance_radius meters of this point -->
     <param name="entrance_x" value="0.0" />
     <param name="entrance_y" value="0.0" />
-    <param name="entrance_z" value="1.0" />
+    <param name="entrance_z" value="0.2" />
+    <param name="entrance_radius" value="15.0" />
 
     <!-- Camera viewing parameters, angles in degrees, ranges in meters -->
     <param name="cameraVerticalFoV" value="40.0"/>
     <param name="cameraHorizontalFoV" value="60.0"/>
-    <param name="cameraMaxRange" value="3.0"/>
-    <param name="cameraMinRange" value="1.5"/>
+    <param name="cameraMaxRange" value="2.5"/>
+    <param name="cameraMinRange" value="0.5"/>
 
     <!-- Quaternion for rotation from robot orientation to camera orientation (Default is identity rotation matrix) -->
     <!-- <param name="robot2camera_q_w" value="1.0"/>
@@ -59,7 +60,7 @@
     <param name="updateRate" value="1.0"/>
 
     <!-- Inflated Obstacle width -->
-    <param name="inflateWidth" value="0.2"/>
+    <param name="inflateWidth" value="0.6"/>
 
     <!-- Vehicle Fence Volume Limits -->
     <!-- <param name="fenceOn" value="true"/>

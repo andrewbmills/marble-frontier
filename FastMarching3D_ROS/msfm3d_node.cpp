@@ -12,6 +12,7 @@
 #include <visualization_msgs/MarkerArray.h>
 #include <nav_msgs/Path.h>
 #include <nav_msgs/Odometry.h>
+// #include <marble_common/ArtifactArray.msg>
 // Octomap libaries
 #include <octomap/octomap.h>
 #include <octomap/ColorOcTree.h>
@@ -259,7 +260,7 @@ void Msfm3d::callback_artifactDetected(const std_msgs::Bool msg)
   // return;
 
   // Switch to commented out text once the marble common library shows up
-  artifactDetected = msg.data
+  artifactDetected = msg.data;
   return;
 }
 
@@ -1484,13 +1485,17 @@ bool updateFrontier(Msfm3d& planner){
   ROS_INFO("%d points are free.  %d points are free and adjacent to unoccupied voxels.  %d points filtered for being too high/low.  %d points filtered for being adjacent to occupied voxels.  %d points at entrance.", pass1, pass2, pass3, pass4, pass5);
   ROS_INFO("Frontier updated. %d voxels initially labeled as frontier.", frontierCount);
 
+  if (frontierCount == 0) {
+    return false;
+  }
+
   // Cluster the frontier into euclidean distance groups
   if (planner.clusterFrontier(false)) {
     // Group frontier within each cluster with greedy algorithm
     planner.greedyGrouping(4*planner.voxel_size, false);
-    return 1;
+    return true;
   } else {
-    return 0;
+    return false;
   }
 }
 
@@ -2416,7 +2421,44 @@ int main(int argc, char **argv)
           ROS_INFO("The robot is %0.2f meters off of the ground.  The goal point is %0.2f meters off of the ground.", planner.heightAGL(planner.position), planner.heightAGL(goal));
 
         } else {
-          ROS_INFO("No frontiers after filtering, robot is waiting for a map update...");
+          ROS_INFO("No frontiers after filtering, robot is heading to the anchor.");
+          tStart = clock();
+          ROS_INFO("Replanning to be able to reach the origin...");
+          reach(planner, 0, 0, 1, true);
+          ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+
+          frontierGoal.point.x = planner.origin[0];
+          frontierGoal.point.y = planner.origin[1];
+          frontierGoal.point.z = planner.origin[2];
+          goal[0] = planner.origin[0];
+          goal[1] = planner.origin[1];
+          goal[2] = planner.origin[2];
+
+          // Write a new goal pose for publishing
+          goalPose.header.stamp = ros::Time::now();
+          goalPose.pose.position.x = goal[0];
+          goalPose.pose.position.y = goal[1];
+          goalPose.pose.position.z = goal[2];
+          goalPose.pose.orientation.x = 0.0;
+          goalPose.pose.orientation.y = 0.0;
+          goalPose.pose.orientation.z = 0.0;
+          goalPose.pose.orientation.w = 1.0;
+
+          // Find a path to the goal point
+          goalFound = planner.updatePath(goal);
+
+           // Publish path, goal point, and goal point only path
+          pub1.publish(frontierGoal);
+          pub4.publish(goalPose);
+          ROS_INFO("Goal point published!");
+
+          // Output and publish path
+          pub2.publish(planner.pathmsg);
+          ROS_INFO("Path to goal published!");
+          goalFound = 0;
+
+          // Height debugging
+          // ROS_INFO("The robot is %0.2f meters off of the ground.  The goal point is %0.2f meters off of the ground.", planner.heightAGL(planner.position), planner.heightAGL(goal));
         }
         // }
       }
