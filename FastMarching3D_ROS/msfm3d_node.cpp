@@ -2121,12 +2121,14 @@ int main(int argc, char **argv)
   // planner.robot2camera.R = quaternion2RotationMatrix(planner.robot2camera.q);
 
   // Hard coded pitch down by 15 degrees for the husky
-  planner.robot2camera.R.setZero();
-  planner.robot2camera.R(0,0) = std::cos((M_PI/180.0)*20.0);
-  planner.robot2camera.R(0,2) = std::sin((M_PI/180.0)*20.0);
-  planner.robot2camera.R(2,0) = -std::sin((M_PI/180.0)*20.0);
-  planner.robot2camera.R(2,2) = std::cos((M_PI/180.0)*20.0);
-  planner.robot2camera.R(1,1) = 1.0;
+  if (planner.ground) {
+    planner.robot2camera.R.setZero();
+    planner.robot2camera.R(0,0) = std::cos((M_PI/180.0)*15.0);
+    planner.robot2camera.R(0,2) = std::sin((M_PI/180.0)*15.0);
+    planner.robot2camera.R(2,0) = -std::sin((M_PI/180.0)*15.0);
+    planner.robot2camera.R(2,2) = std::cos((M_PI/180.0)*15.0);
+    planner.robot2camera.R(1,1) = 1.0;
+  }
 
   // planner.bubble_radius = 3.0;
   // Set planner bounds so that the robot doesn't exit a defined volume
