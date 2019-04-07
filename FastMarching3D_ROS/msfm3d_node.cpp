@@ -226,6 +226,7 @@ class Msfm3d
     void callback_Octomap_occupiedPCL(const sensor_msgs::PointCloud2 msg);
     void callback_position(const nav_msgs::Odometry msg); // Subscriber callback for robot position
     void callback_artifactDetected(const std_msgs::Bool msg);
+    // void callback_artifactDetected(const marble_common::ArtifactArray msg);
     void parsePointCloud(); // Function to parse pointCloud2 into an esdf format that msfm3d can use
     int xyz_index3(const float point[3]);
     void index3_xyz(const int index, float point[3]);
@@ -243,9 +244,22 @@ class Msfm3d
     float heightAGL(const float point[3]);
 };
 
+// void Msfm3d::callback_artifactDetected(const marble_common::ArtifactArray msg)
 void Msfm3d::callback_artifactDetected(const std_msgs::Bool msg)
 {
-  artifactDetected = msg.data;
+  // If any of the artifacts have yet to be reported, set artifactDetected to true and return the vehicle to the origin.
+  // for (int i=0; i<(int)msg.artifacts.size(); i++) {
+  //   if (!(msg.artifacts[i].has_been_reported)) {
+  //     artifactDetected = true;
+  //     return;
+  //   }
+  // }
+
+  // artifactDetected = false;
+  // return;
+
+  // Switch to commented out text once the marble common library shows up
+  artifactDetected = msg;
   return;
 }
 
@@ -2153,7 +2167,7 @@ int main(int argc, char **argv)
   ros::Subscriber sub2 = n.subscribe("odometry", 1, &Msfm3d::callback_position, &planner);
 
   ROS_INFO("Subscribing to artifact message...");
-  ros::Subscriber sub3 = n.subscribe("report_artifact", 1, &Msfm3d::callback_artifactDetected, &planner);
+  ros::Subscriber sub3 = n.subscribe("artifact_list", 1, &Msfm3d::callback_artifactDetected, &planner);
 
   ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("nearest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
@@ -2288,9 +2302,17 @@ int main(int argc, char **argv)
             // closestGoalView(planner, goalViewList, goalViewCost);
             infoGoalView(planner, goalViewList, goalViewCost);
 
+            // If no reasonable goal views are found, expand search to all frontier cells to see if any goal view can be found
+            if (goalViewCost[4] < 0.0) {
+              tStart = clock();
+              ROS_INFO("Reachability matrix calculating to %d closest frontier points...", (int)planner.frontierCloud->points.size());
+              reach(planner, 0, 0, (int)planner.frontierCloud->points.size(), false);
+              infoGoalView(planner, goalViewList, goalViewCost);
+            }
+
             if (goalViewCost[4] < 0.0) {
               // The vehicle couldn't find any reasonable frontier views, head to the anchor node.
-              ROS_INFO("No reachable frontier views, heading to the anchor.");
+              ROS_INFO("No reachable frontier views after expanded search, heading to the anchor.");
               tStart = clock();
               ROS_INFO("Replanning to be able to reach the origin...");
               reach(planner, 0, 0, 1, true);
