@@ -22,7 +22,7 @@ class guidance_controller:
 	# 				self.link_id = i
 	# 				print("link_id = %d" % self.link_id)
 	# 			i = i+1
-	# 	# Get the link state data		
+	# 	# Get the link state data
 	# 	if (self.link_id == -1):
 	# 		print('Could not find robot state information in /gazebo/link_states/')
 	# 	else:
@@ -257,7 +257,7 @@ class guidance_controller:
 		# Proportional Controller
 		self.gain_x = 0.3
 		self.gain_y = 0.3
-		self.gain_yaw = 0.5
+		self.gain_yaw = 0.3
 
 		# Altitude controller
 		self.gain_z = 0.3

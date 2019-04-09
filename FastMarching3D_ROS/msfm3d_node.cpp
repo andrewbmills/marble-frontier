@@ -185,7 +185,7 @@ class Msfm3d
     float bubble_radius = 1.0; // map voxel size, and bubble radius
     float origin[3]; // location in xyz coordinates where the robot entered the environment
     float entranceRadius; // radius around the origin where frontiers can't exist
-    
+
     double * reach; // reachability grid (output from reach())
     sensor_msgs::PointCloud2 PC2msg;
     nav_msgs::Path pathmsg;
@@ -268,7 +268,7 @@ float Msfm3d::heightAGL(const float point[3])
 {
   // heightAGL finds the distance that the query point is above/below the "ground" of the obstacle map.
   // Function returns NaN if the point is unseen or outside of the current esdf.
-  // Input - 
+  // Input -
   //    - point: a 3 element float of the (x,y,z) position of the point that you want the AGL height of.
   // Output -
   //    - dz: The query point's height above the obstacle map.
@@ -383,7 +383,7 @@ bool Msfm3d::clusterFrontier(const bool print2File)
       ss << "pcl_clusters/cloud_cluster_" << j << ".pcd";
       writer.write<pcl::PointXYZ> (ss.str (), *cloud_cluster, false); //*
       j++;
-    } 
+    }
   }
 
   // Loop through the remaining points in frontierCloud and remove them from the frontier bool array
@@ -470,7 +470,7 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
 
   // Intialize random seed:
   std::random_device rd;
-  // std::mt19937 mt(19937); 
+  // std::mt19937 mt(19937);
   std::mt19937 mt(rd()); // Really random (much better than using rand())
 
   // Initialize counts of the current group and cluster in the algorithm
@@ -560,7 +560,7 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
   ROS_INFO("%d groups generated from the frontier clusters.", groupCount);
 }
 
-// bool Msfm3d::collisionCheck(const float position[3]) 
+// bool Msfm3d::collisionCheck(const float position[3])
 // {
 //   // Get indices corresponding to the voxels occupied by the vehicle
 //   int lower_corner[3], voxel_width[3], idx, npixels = esdf.size[0]*esdf.size[1]*esdf.size[2]; // xyz point of the lower left of the vehicle rectangle
@@ -729,7 +729,7 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, co
     if (!raycast(sample, centroid)) {
       continue;
     }
-    
+
     // ROS_INFO("Returning sample pose...");
     // This pose is valid! Save it and exit the loop.
     float sample_yaw = M_PI + azimuth_sample;
@@ -844,7 +844,7 @@ void Msfm3d::updateGoalPoses()
   //     for (int remove_index=0; remove_index<(int)frontierClusterIndices[cluster].indices.size(); remove_index++) {
   //       removeablePoints->indices.push_back(frontierClusterIndices[cluster].indices[remove_index]);
   //     }
-  //   } 
+  //   }
   // }
 
   // ROS_INFO("Removing %d unviewable voxels from the frontier...", (int)removeablePoints->indices.size());
@@ -899,7 +899,7 @@ void Msfm3d::getEuler()
       euler[1] = std::asin(sinp);
     // Yaw
     float siny_cosp = +2.0 * (q.w * q.z + q.x * q.y);
-    float cosy_cosp = +1.0 - 2.0 * (q.y * q.y + q.z * q.z);  
+    float cosy_cosp = +1.0 - 2.0 * (q.y * q.y + q.z * q.z);
     euler[2] = std::atan2(siny_cosp, cosy_cosp);
   }
 }
@@ -1076,7 +1076,7 @@ void Msfm3d::parsePointCloud()
   // pointcloud xyz limits
   float xyzi_max[4], xyzi_min[4];
   int offset;
-  
+
   // parse pointcloud2 data
   ROS_INFO("Parsing ESDF data into holder arrays.");
   for (int i=0; i<(PC2msg.width); i++) {
@@ -1293,7 +1293,7 @@ bool Msfm3d::updatePath(const float goal[3])
         }
       }
     }
-    
+
     // Normalize the size of the gradient vector if it is too large
     grad_norm = std::sqrt(grad[0]*grad[0] + grad[1]*grad[1] + grad[2]*grad[2]);
     if (grad_norm > 1.0){
@@ -1508,7 +1508,7 @@ void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5])
 
   // Initialize cost list with large descending values.
   for (int i=0; i<5; i++) cost[i] = 1e6 - 100*i;
-  // Main  
+  // Main
   for (int i=0; i<npixels; i++){
     // Check if the voxel has been seen, is unoccupied and it costs less to reach it than the 5 cheapest voxels
     if (planner.esdf.seen[i] && (planner.reach[i]<cost[0]) && (planner.esdf.data[i]>0 && planner.reach[i] > (double)0.0)){
@@ -1548,7 +1548,7 @@ void closestGoalView(Msfm3d& planner, int viewIndices[5], double cost[5])
   }
 
   ROS_INFO("Finding the closest viewpoint to see frontiers.");
-  // Main  
+  // Main
   for (int i=0; i<planner.goalViews.size(); i++){
     point[0] = planner.goalViews[i].pose.position.x;
     point[1] = planner.goalViews[i].pose.position.y;
@@ -1589,7 +1589,7 @@ void infoGoalView(Msfm3d& planner, int viewIndices[5], double utility[5])
     viewIndices[i] = -1;
   }
 
-  // Find the 5 views with the greatest utility (frontier voxels/second) and arrange them in ascending order in utility[5] 
+  // Find the 5 views with the greatest utility (frontier voxels/second) and arrange them in ascending order in utility[5]
   for (int i=0; i<planner.goalViews.size(); i++) {
     point[0] = planner.goalViews[i].pose.position.x;
     point[1] = planner.goalViews[i].pose.position.y;
@@ -1605,7 +1605,7 @@ void infoGoalView(Msfm3d& planner, int viewIndices[5], double utility[5])
       current_utility = std::sqrt((double)(planner.goalViews[i].cloud.points.size())/cost_time);
 
       // ROS_INFO("[%.2f, %.2f, %.2f] sees %d voxels at a %.2f point-to-point seconds to travel and has a utility of %.2f.", point[0], point[1], point[2], (int)planner.goalViews[i].cloud.points.size(), cost_time, current_utility);
-      
+
       // Check to see if the optimisitic current_utility is less than any of the top 5 values.
       // The optimistic current_utility doesn't account for the cost to turn in place at the start and end of the path.
       for (int j=0; j<5; j++) {
@@ -1619,7 +1619,7 @@ void infoGoalView(Msfm3d& planner, int viewIndices[5], double utility[5])
         // Calculate the feasability and path to arrive at the current goal view
         if (planner.updatePath(point)) {
           // Get the angle between the current robot pose and the path start
-          float start_path_vec[3] = {(float)(planner.pathmsg.poses[1].pose.position.x - planner.pathmsg.poses[0].pose.position.x), 
+          float start_path_vec[3] = {(float)(planner.pathmsg.poses[1].pose.position.x - planner.pathmsg.poses[0].pose.position.x),
                                      (float)(planner.pathmsg.poses[1].pose.position.y - planner.pathmsg.poses[0].pose.position.y),
                                      (float)(planner.pathmsg.poses[1].pose.position.z - planner.pathmsg.poses[0].pose.position.z)};
           float start_path_yaw = std::atan2(start_path_vec[1], start_path_vec[0]); // degrees
@@ -1627,7 +1627,7 @@ void infoGoalView(Msfm3d& planner, int viewIndices[5], double utility[5])
 
           // Get the angle between the path end and the goal pose
           int end_path_idx = (int)planner.pathmsg.poses.size()-1;
-          float end_path_vec[3] = {(float)(planner.pathmsg.poses[end_path_idx].pose.position.x - planner.pathmsg.poses[end_path_idx-1].pose.position.x), 
+          float end_path_vec[3] = {(float)(planner.pathmsg.poses[end_path_idx].pose.position.x - planner.pathmsg.poses[end_path_idx-1].pose.position.x),
                                    (float)(planner.pathmsg.poses[end_path_idx].pose.position.y - planner.pathmsg.poses[end_path_idx-1].pose.position.y),
                                    (float)(planner.pathmsg.poses[end_path_idx].pose.position.z - planner.pathmsg.poses[end_path_idx-1].pose.position.z)};;
           float end_path_yaw = std::atan2(end_path_vec[1], end_path_vec[0]); // degrees
@@ -1675,7 +1675,7 @@ void findEntrance(Msfm3d& planner, float entranceList[15], double cost[5])
 
   // Initialize cost list with large descending values.
   for (int i=0; i<5; i++) cost[i] = 1e6 - 100*i;
-  // Main  
+  // Main
   for (int i=0; i<npixels; i++){
     // Check if the voxel has been seen, is unoccupied and it costs less to reach it than the 5 cheapest voxels
     if (planner.esdf.seen[i] && (planner.reach[i]<cost[0]) && (planner.esdf.data[i]>0 && planner.reach[i] > (double)0.0)){
@@ -1724,7 +1724,7 @@ void view2MarkerMsg(const View cameraView, const SensorFoV camera, visualization
   Eigen::Vector3f corner4;
   corner4 << 1.0, std::sin((M_PI/180.0)*camera.horizontalFoV/2.0), -std::sin((M_PI/180.0)*camera.verticalFoV/2.0);
   corner4 = cameraView.pose.R*robot2camera.R*(camera.rMax*corner4) + camera_position;
-  
+
   // Write to marker.points[]
   geometry_msgs::Point robot;
   robot.x = origin(0);
@@ -1746,7 +1746,7 @@ void view2MarkerMsg(const View cameraView, const SensorFoV camera, visualization
   BL.x = corner4(0);
   BL.y = corner4(1);
   BL.z = corner4(2);
-  
+
   // clear points
   marker.points.clear();
 
@@ -1776,31 +1776,31 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
     /* The input variables */
     double *F;
     int SourcePoints[3];
-    
+
     /* The output distance image */
     double *T;
-    
+
     /* Euclidian distance image */
     double *Y;
-    
+
     /* Current distance values */
     double Tt, Ty;
-    
+
     /* Matrix containing the Frozen Pixels" */
     bool *Frozen;
-    
+
     /* Augmented Fast Marching (For skeletonize) */
     bool Ed;
-    
+
     /* Size of input image */
     int dims[3];
-    
+
     /* Size of  SourcePoints array */
     int dims_sp[3];
-    
+
     /* Number of pixels in image */
     int npixels;
-    
+
     /* Neighbour list */
     int neg_free;
     int neg_pos;
@@ -1809,19 +1809,19 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
     double *neg_listy;
     double *neg_listz;
     double *neg_listo;
-    
+
     int *listprop;
     double **listval;
-    
+
     /* Neighbours 6x3 */
     int ne[18]={-1,  0,  0, 1, 0, 0, 0, -1,  0, 0, 1, 0, 0,  0, -1, 0, 0, 1};
-    
+
     /* Loop variables */
     int s, w, itt, q;
-    
+
     /* Current location */
     int x, y, z, i, j, k;
-    
+
     /* Index */
     int IJK_index, XYZ_index, index;
 
@@ -1850,11 +1850,11 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
     if(Ed) {
         for(q=0;q<npixels;q++){Y[q]=-1;}
     }
-    
+
     /*Free memory to store neighbours of the (segmented) region */
     neg_free = 100000;
     neg_pos=0;
-    
+
     neg_listx = (double *)malloc( neg_free*sizeof(double) );
     neg_listy = (double *)malloc( neg_free*sizeof(double) );
     neg_listz = (double *)malloc( neg_free*sizeof(double) );
@@ -1862,16 +1862,16 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
         neg_listo = (double *)malloc( neg_free*sizeof(double) );
         for(q=0;q<neg_free;q++) { neg_listo[q]=0; }
     }
-    
+
     /* List parameters array */
     listprop=(int*)malloc(3* sizeof(int));
     /* Make jagged list to store a maximum of 2^64 values */
     listval= (double **)malloc( 64* sizeof(double *) );
-    
+
     /* Initialize parameter list */
     initialize_list(listval, listprop);
     neg_listv=listval[listprop[1]-1];
-    
+
     /*(There are 3 pixel classes: */
     /*  - frozen (processed) */
     /*  - narrow band (boundary) (in list to check for the next pixel with smallest distance) */
@@ -1884,7 +1884,7 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
         y= SourcePoints[1+s*3];
         z= SourcePoints[2+s*3];
         XYZ_index=mindex3(x, y, z, dims[0], dims[1]);
-        
+
         Frozen[XYZ_index]=1;
         T[XYZ_index]=0;
         if(Ed) { Y[XYZ_index]=0; }
@@ -1895,18 +1895,18 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
         x= SourcePoints[0+s*3];
         y= SourcePoints[1+s*3];
         z= SourcePoints[2+s*3];
-                
+
         XYZ_index=mindex3(x, y, z, dims[0], dims[1]);
         for (w=0; w<6; w++) {
             /*Location of neighbour */
             i=x+ne[w];
             j=y+ne[w+6];
             k=z+ne[w+12];
-            
+
             IJK_index=mindex3(i, j, k, dims[0], dims[1]);
-            
+
             /*Check if current neighbour is not yet frozen and inside the */
-            
+
             /*picture */
             if(isntfrozen3d(i, j, k, dims, Frozen)) {
                 Tt=(1/(max(F[IJK_index],eps)));
@@ -1946,10 +1946,10 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
         index=list_minimum(listval, listprop);
         neg_listv=listval[listprop[1]-1];
         /* Stop if pixel distance is infinite (all pixels are processed) */
-        if(IsInf(neg_listv[index])) { 
+        if(IsInf(neg_listv[index])) {
           break;
         }
-        
+
         /*index=minarray(neg_listv, neg_pos); */
         x=(int)neg_listx[index]; y=(int)neg_listy[index]; z=(int)neg_listz[index];
         XYZ_index=mindex3(x, y, z, dims[0], dims[1]);
@@ -1986,7 +1986,7 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
             /*Check if current neighbour is not yet frozen and inside the */
             /*picture */
             if(isntfrozen3d(i, j, k, dims, Frozen)) {
-                
+
                 Tt=CalculateDistance(T, F[IJK_index], dims, i, j, k, usesecond, usecross, Frozen);
                 if(Ed) {
                     Ty=CalculateDistance(Y, 1, dims, i, j, k, usesecond, usecross, Frozen);
@@ -2016,7 +2016,7 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
                     if(Ed) {
                         neg_listo[neg_pos]=Ty;
                     }
-                    
+
                     T[IJK_index]=neg_pos;
                     neg_pos++;
                 }
@@ -2058,15 +2058,15 @@ int main(int argc, char **argv)
   ROS_INFO("Initializing msfm3d planner...");
   // Voxel size for Octomap or Voxblox
   float voxel_size;
-  n.param("msfm3d/resolution", voxel_size, (float)0.2);
+  n.param("global_planning/resolution", voxel_size, (float)0.1);
   Msfm3d planner(voxel_size);
 
   // Set vehicle type, map type, and global frame name
   bool ground, esdf_or_octomap;
   std::string global_frame;
-  n.param("msfm3d/isGroundVehicle", ground, false);
-  n.param("msfm3d/useOctomap", esdf_or_octomap, true); // Use a TSDF/ESDF message PointCloud2 (0) or Use an octomap message (1)
-  n.param<std::string>("msfm3d/frame_id", global_frame, "world");
+  n.param("global_planning/isGroundVehicle", ground, false);
+  n.param("global_planning/useOctomap", esdf_or_octomap, true); // Use a TSDF/ESDF message PointCloud2 (0) or Use an octomap message (1)
+  n.param<std::string>("global_planning/frame_id", global_frame, "world");
   planner.ground = ground;
   if (planner.ground) ROS_INFO("Vehicle type set to ground vehicle.");
   else ROS_INFO("Vehicle type set to air vehicle");
@@ -2075,8 +2075,8 @@ int main(int argc, char **argv)
 
   // Vehicle speed and turnRate
   float speed, turnRate;
-  n.param("msfm3d/speed", speed, (float)1.0); // m/s
-  n.param("msfm3d/turnRate", turnRate, (float)5.0); // deg/s
+  n.param("global_planning/speed", speed, (float)1.0); // m/s
+  n.param("global_planning/turnRate", turnRate, (float)5.0); // deg/s
   planner.speed = speed;
   planner.turnRate = turnRate;
 
@@ -2084,19 +2084,19 @@ int main(int argc, char **argv)
   bool fixGoalHeightAGL;
   float goalHeightAGL;
   int dzFrontierVoxelWidth;
-  n.param("msfm3d/fixGoalHeightAGL", fixGoalHeightAGL, false);
-  n.param("msfm3d/goalHeightAGL", goalHeightAGL, (float)0.64);
-  n.param("msfm3d/dzFrontierVoxelWidth", dzFrontierVoxelWidth, 0);
+  n.param("global_planning/fixGoalHeightAGL", fixGoalHeightAGL, false);
+  n.param("global_planning/goalHeightAGL", goalHeightAGL, (float)0.64);
+  n.param("global_planning/dzFrontierVoxelWidth", dzFrontierVoxelWidth, 0);
   planner.fixGoalHeightAGL = fixGoalHeightAGL;
   planner.goalHeightAGL = goalHeightAGL;
   planner.dzFrontierVoxelWidth = dzFrontierVoxelWidth;
 
   // Origin/Tunnel Entrance
   float origin_x, origin_y, origin_z, entranceRadius;
-  n.param("msfm3d/entrance_x", origin_x, (float)0.0);
-  n.param("msfm3d/entrance_y", origin_y, (float)0.0);
-  n.param("msfm3d/entrance_z", origin_z, (float)0.0);
-  n.param("msfm3d/entrance_radius", entranceRadius, (float)15.0);
+  n.param("global_planning/entrance_x", origin_x, (float)0.0);
+  n.param("global_planning/entrance_y", origin_y, (float)0.0);
+  n.param("global_planning/entrance_z", origin_z, (float)0.6);
+  n.param("global_planning/entrance_radius", entranceRadius, (float)10.0);
   planner.origin[0] = origin_x;
   planner.origin[1] = origin_y;
   planner.origin[2] = origin_z;
@@ -2104,10 +2104,10 @@ int main(int argc, char **argv)
 
   // Vehicle camera field of View and max range
   float verticalFoV, horizontalFoV, rMax, rMin;
-  n.param("msfm3d/cameraVerticalFoV", verticalFoV, (float)30.0);
-  n.param("msfm3d/cameraHorizontalFoV", horizontalFoV, (float)45.0);
-  n.param("msfm3d/cameraMaxRange", rMax, (float)3.0);
-  n.param("msfm3d/cameraMinRange", rMin, (float)0.2);
+  n.param("global_planning/cameraVerticalFoV", verticalFoV, (float)30.0);
+  n.param("global_planning/cameraHorizontalFoV", horizontalFoV, (float)45.0);
+  n.param("global_planning/cameraMaxRange", rMax, (float)3.0);
+  n.param("global_planning/cameraMinRange", rMin, (float)0.2);
   planner.camera.verticalFoV = verticalFoV;
   planner.camera.horizontalFoV = horizontalFoV;
   planner.camera.rMax = rMax;
@@ -2115,10 +2115,10 @@ int main(int argc, char **argv)
 
   // robot2camera quaternion
   float q_w, q_x, q_y, q_z;
-  n.param("msfm3d/robot2camera_q_w", q_w, (float)1.0);
-  n.param("msfm3d/robot2camera_q_x", q_x, (float)0.0);
-  n.param("msfm3d/robot2camera_q_y", q_y, (float)0.0);
-  n.param("msfm3d/robot2camera_q_z", q_z, (float)0.0);
+  n.param("global_planning/robot2camera_q_w", q_w, (float)1.0);
+  n.param("global_planning/robot2camera_q_x", q_x, (float)0.0);
+  n.param("global_planning/robot2camera_q_y", q_y, (float)0.0);
+  n.param("global_planning/robot2camera_q_z", q_z, (float)0.0);
   planner.robot2camera.q.w = q_w;
   planner.robot2camera.q.x = q_x;
   planner.robot2camera.q.y = q_y;
@@ -2139,13 +2139,13 @@ int main(int argc, char **argv)
   // Set planner bounds so that the robot doesn't exit a defined volume
   bool fenceOn;
   float fence_x_min, fence_x_max, fence_y_min, fence_y_max, fence_z_min, fence_z_max;
-  n.param("msfm3d/fenceOn", fenceOn, false);
-  n.param("msfm3d/fence_xmin", fence_x_min, (float)-50.0);
-  n.param("msfm3d/fence_xmax", fence_x_max, (float)50.0);
-  n.param("msfm3d/fence_ymin", fence_y_min, (float)-50.0);
-  n.param("msfm3d/fence_ymax", fence_y_max, (float)50.0);
-  n.param("msfm3d/fence_zmin", fence_z_min, (float)-50.0);
-  n.param("msfm3d/fence_zmax", fence_z_max, (float)50.0);
+  n.param("global_planning/fenceOn", fenceOn, false);
+  n.param("global_planning/fence_xmin", fence_x_min, (float)-50.0);
+  n.param("global_planning/fence_xmax", fence_x_max, (float)50.0);
+  n.param("global_planning/fence_ymin", fence_y_min, (float)-50.0);
+  n.param("global_planning/fence_ymax", fence_y_max, (float)50.0);
+  n.param("global_planning/fence_zmin", fence_z_min, (float)-50.0);
+  n.param("global_planning/fence_zmax", fence_z_max, (float)50.0);
   planner.bounds.set = fenceOn;
   planner.bounds.xmin = fence_x_min;
   planner.bounds.xmax = fence_x_max;
@@ -2156,15 +2156,15 @@ int main(int argc, char **argv)
 
   // Get planner operating rate in Hz
   float updateRate;
-  n.param("msfm3d/updateRate", updateRate, (float)1.0); // Hz
+  n.param("global_planning/updateRate", updateRate, (float)1.0); // Hz
 
   // Width to inflate obstacles for path planning
   float inflateWidth;
-  n.param("msfm3d/inflateWidth", inflateWidth, (float)0.5); // meters
+  n.param("global_planning/inflateWidth", inflateWidth, (float)0.6); // meters
 
   // if (planner.esdf_or_octomap) {
   ROS_INFO("Subscribing to Occupancy Grid...");
-  ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  ros::Subscriber sub1 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
   // }
   // else {
   // ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
@@ -2227,7 +2227,7 @@ int main(int argc, char **argv)
   double frontierCost[5];
   float goal[3] = {0.0, 0.0, 0.0};
   int replan_ticks = 0;
-  
+
   ROS_INFO("Starting planner...");
   r.sleep();
   while (ros::ok())
@@ -2251,7 +2251,7 @@ int main(int argc, char **argv)
           planner.inflateObstacles(inflateWidth, inflatedOccupiedMsg);
           planner.updatedMap = 0;
         }
-        
+
         if (planner.esdf_or_octomap) {
           inflatedOccupiedMsg.header.seq = 1;
           inflatedOccupiedMsg.header.frame_id = "world";
