@@ -257,7 +257,7 @@ class guidance_controller:
 		# Proportional Controller
 		self.gain_x = 0.3
 		self.gain_y = 0.3
-		self.gain_yaw = 0.3
+		self.gain_yaw = 0.2
 
 		# Altitude controller
 		self.gain_z = 0.3

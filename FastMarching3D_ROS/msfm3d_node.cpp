@@ -305,8 +305,8 @@ float Msfm3d::heightAGL(const float point[3])
     if (query_idx < 0 || query_idx >= npixels) { // If the query location is at the z limit of the map, then it is the bottom of the map.
       return dz;
     } else {
-      // if (!esdf.seen[query_idx] || (esdf.data[query_idx] <= 0.01)) { // If the query location is unseen or occupied, then it is the bottom of the local map
-      if (!esdf.seen[query_idx]) {
+      if (!esdf.seen[query_idx] || (esdf.data[query_idx] <= 0.01)) { // If the query location is unseen or occupied, then it is the bottom of the local map
+      // if (!esdf.seen[query_idx]) {
         return dz;
       }
     }
