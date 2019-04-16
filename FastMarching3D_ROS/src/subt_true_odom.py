@@ -21,7 +21,8 @@ class LinkStateToOdometry:
 			print('Could not find robot state information in /gazebo/link_states/')
 		else:
 			self.Odometry.pose.pose = data.pose[self.link_id]
-			self.Odometry.pose.pose.position.z = self.Odometry.pose.pose.position.z + 0.75
+			# self.Odometry.pose.pose.position.z = self.Odometry.pose.pose.position.z + 0.3
+			self.Odometry.pose.pose.position.z = self.Odometry.pose.pose.position.z
 			self.Odometry.twist.twist = data.twist[self.link_id]
 		
 		# Add time stamp
@@ -30,13 +31,13 @@ class LinkStateToOdometry:
 		return
 
 	def start(self):
-		rate = rospy.Rate(50.0) # 50Hz
+		rate = rospy.Rate(25.0) # 50Hz
 		while not rospy.is_shutdown():
 			rate.sleep()
 			self.pub1.publish(self.Odometry)
 		return
 
-	def __init__(self, link_name="base_link", topic_name="odom_truth", robot_name="X1", frame="uav", child_frame="uav"):
+	def __init__(self, link_name="base_link", topic_name="odometry", robot_name="X1", frame="uav", child_frame="uav"):
 		
 		node_name = topic_name+ "_" + robot_name
 		rospy.init_node(node_name)

@@ -164,9 +164,9 @@ void project_truncated_depths::callback_image(const sensor_msgs::ImageConstPtr& 
         if (std::isnan(z_neighbor) || (z_neighbor < ((camera.rMax + camera.rMin)/2.0))) {
           pt.x = pt.y = pt.z = std::numeric_limits<float>::quiet_NaN();
         } else {
-          pt.x = z_neighbor*(((float)u - cx)/fx);
-          pt.y = z_neighbor*(((float)v - cy)/fy);
-          pt.z = z_neighbor;
+          pt.x = std::max(z_neighbor, (float)camera.rMax)*(((float)u - cx)/fx);
+          pt.y = std::max(z_neighbor, (float)camera.rMax)*(((float)v - cy)/fy);
+          pt.z = std::max(z_neighbor, (float)camera.rMax);
         }
       }
       else {
@@ -211,7 +211,7 @@ int main(int argc, char **argv)
   // Get depth camera min and max range values
   double rMin, rMax;
   n.param("rgbd_camera/rMin", rMin, (double)0.05);
-  n.param("rgbd_camera/rMax", rMax, (double)6.0);
+  n.param("rgbd_camera/rMax", rMax, (double)6.5);
   trunc_depths.camera.rMin = rMin;
   trunc_depths.camera.rMax = rMax;
 
