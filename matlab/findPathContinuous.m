@@ -4,8 +4,8 @@ function [path] = findPathContinuous(reachGrid, goal, start, step)
 if nargin < 4
     step = 1;
 end
-y = goal(1);
-x = goal(2);
+x = goal(1);
+y = goal(2);
 % figure(10)
 [px,py] = gradient(reachGrid);
 modGrid = sqrt(px.^2 + py.^2);

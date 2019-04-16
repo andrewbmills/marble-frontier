@@ -1,21 +1,27 @@
-classdef agent < handle
+classdef Agent < handle
     %UNTITLED Summary of this class goes here
     %   Detailed explanation goes here
     
     properties
+        id
         state
         stateHistory
         path
+        cost = 0 % Cost to reach the current goal point
         tLook % Lookahead time for guidance controller
 %         carrot % path distance parameter
         occGrid
         gridDims
         sensor % [range (m), field of view (radians]
         controlLims % [maxSpeed, maxTurnRate, maxDecel]
+        neighbors = Neighbor.empty % array of the agents current in communication with self
+        artifacts = Artifact.empty % array of artifacts seen
+        run
     end
    
     methods
-        function obj = agent(state0, occGrid0, gridDims, sensor, maxControl)
+        function obj = Agent(id, state0, occGrid0, gridDims, sensor, maxControl)
+            obj.id = id;
             obj.state = state0; % [x_pos, y_pos, angle, speed]
             obj.stateHistory = [0, obj.state'];
             obj.occGrid = occGrid0;
@@ -24,10 +30,11 @@ classdef agent < handle
             obj.sensor = [10; 2*pi];
             obj.controlLims = [5; 180*pi/180; 0.1*9.81];
             obj.path = [state0(1), state0(2)];
+            obj.run = true;
 %             obj.carrot = [0, 1]; % 0 distance along path segment 1
-            if nargin == 4
+            if nargin == 5
                 obj.sensor = sensor;
-            elseif nargin == 5
+            elseif nargin == 6
                 obj.controlLims = maxControl;
             end
         end
@@ -77,8 +84,12 @@ classdef agent < handle
                 obj.gridDims, obj.sensor);
         end
         
-        function plot(obj, k)
-            figure(k)
+        function detect(obj, artifacts)
+            obj.artifacts = detectGrid(obj.state, artifacts, obj.artifacts, obj.occGrid, ...
+                obj.gridDims, obj.sensor);
+        end
+
+        function plot(obj)
             h = pcolor(obj.occGrid);
             hold on
             plot(obj.state(1)+0.5, obj.state(2)+0.5, 'r*')
@@ -86,13 +97,18 @@ classdef agent < handle
                 plot(obj.path(:,1)+0.5, obj.path(:,2)+0.5, 'r');
             end
             plot(obj.stateHistory(:,2)+0.5, obj.stateHistory(:,3)+0.5, 'g-.');
+
+            % Plot the detected artifacts
+            for artifact = obj.artifacts
+                plot(artifact.pos(1), artifact.pos(2), 'w+');
+                text(artifact.pos(1)+1.5, artifact.pos(2)+1.5, artifact.type, 'Color', 'white', 'FontSize', 12);
+            end
+
             [m, n] = size(obj.occGrid);
             axis([1 n 1 m]);
             set(h, 'EdgeColor', 'none');
-            set(gcf, 'Position', [1, 1, 1080, 1080]);
             axis equal
             axis tight
-            tightfig;
             hold off
         end
         
