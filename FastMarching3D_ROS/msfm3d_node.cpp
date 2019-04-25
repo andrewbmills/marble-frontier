@@ -2246,20 +2246,6 @@ int main(int argc, char **argv)
       if (planner.receivedMap){
         ROS_INFO("ESDF or Occupancy at Position: %f", planner.esdf.data[i]);
 
-        // Inflate the obstacle map to avoid collisions
-        if (planner.updatedMap) {
-          planner.inflateObstacles(inflateWidth, inflatedOccupiedMsg);
-          planner.updatedMap = 0;
-        }
-
-        if (planner.esdf_or_octomap) {
-          inflatedOccupiedMsg.header.seq = 1;
-          inflatedOccupiedMsg.header.frame_id = "world";
-          inflatedOccupiedMsg.header.stamp = ros::Time();
-          pub6.publish(inflatedOccupiedMsg);
-          ROS_INFO("Inflated occupancy grid published!");
-        }
-
         // Find frontier cells and add them to planner.frontier for output to file.
         // Publish frontiers as MarkerArray
         if (updateFrontier(planner)) {
@@ -2285,6 +2271,20 @@ int main(int argc, char **argv)
             if (((float)stillFrontierCount)/((float)viewableFrontierCount)<= 0.5) {
               replan = 1;
             }
+          }
+
+          // Inflate the obstacle map to avoid collisions
+          if (planner.updatedMap) {
+            planner.inflateObstacles(inflateWidth, inflatedOccupiedMsg);
+            planner.updatedMap = 0;
+          }
+
+          if (planner.esdf_or_octomap) {
+            inflatedOccupiedMsg.header.seq = 1;
+            inflatedOccupiedMsg.header.frame_id = "world";
+            inflatedOccupiedMsg.header.stamp = ros::Time();
+            pub6.publish(inflatedOccupiedMsg);
+            ROS_INFO("Inflated occupancy grid published!");
           }
 
           // Call msfm3d function
@@ -2421,6 +2421,21 @@ int main(int argc, char **argv)
           ROS_INFO("The robot is %0.2f meters off of the ground.  The goal point is %0.2f meters off of the ground.", planner.heightAGL(planner.position), planner.heightAGL(goal));
 
         } else {
+
+          // Inflate the obstacle map to avoid collisions
+          if (planner.updatedMap) {
+            planner.inflateObstacles(inflateWidth, inflatedOccupiedMsg);
+            planner.updatedMap = 0;
+          }
+
+          if (planner.esdf_or_octomap) {
+            inflatedOccupiedMsg.header.seq = 1;
+            inflatedOccupiedMsg.header.frame_id = "world";
+            inflatedOccupiedMsg.header.stamp = ros::Time();
+            pub6.publish(inflatedOccupiedMsg);
+            ROS_INFO("Inflated occupancy grid published!");
+          }
+
           ROS_INFO("No frontiers after filtering, robot is heading to the anchor.");
           tStart = clock();
           ROS_INFO("Replanning to be able to reach the origin...");
