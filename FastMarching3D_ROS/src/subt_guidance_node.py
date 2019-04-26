@@ -122,11 +122,27 @@ class guidance_controller:
 			v_L2 = (goal - p_robot)/np.linalg.norm(goal - p_robot)
 			print("Path is only one point long, heading to goal point.")
 		else:
-			p_L2, v_L2 = guidance.find_Lookahead_Discrete_3D(path, p_robot, self.speed*self.Tstar, 0, 0)
+			if (self.vehicle_type == 'ground'):
+				p_L2, v_L2 = guidance.find_Lookahead_Discrete_2D(path[0:2,:], p_robot[0:2], self.speed*self.Tstar, 0, 0)
+				# Update class members
+				self.L2.x = p_L2[0]
+				self.L2.y = p_L2[1]
+				self.L2.z = p_robot[2]
+				L2_vec = p_L2 - p_robot[0:2]
+				# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
+				if (np.linalg.norm(p_L2 - start[0:2]) <= 0.05 and np.linalg.norm(p_robot - goal) <= 0.9*self.speed*self.Tstar):
+					p_L2 = goal
+			else:
+				p_L2, v_L2 = guidance.find_Lookahead_Discrete_3D(path, p_robot, self.speed*self.Tstar, 0, 0)
+				# Update class members
+				self.L2.x = p_L2[0]
+				self.L2.y = p_L2[1]
+				self.L2.z = p_L2[2]
+				L2_vec = p_L2 - p_robot[0:2]
+				# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
+				if (np.linalg.norm(p_L2 - start) <= 0.05 and np.linalg.norm(p_robot - goal) <= 0.9*self.speed*self.Tstar):
+					p_L2 = goal
 
-		# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
-		if (np.linalg.norm(p_L2 - start) <= 0.05 and np.linalg.norm(p_robot - goal) <= 0.9*self.speed*self.Tstar):
-			p_L2 = goal
 			# Edit later to use proportional control to just command to the goal point and the goal pose!
 
 		# Generate a lateral acceleration command from the lookahead point
@@ -149,11 +165,6 @@ class guidance_controller:
 													 np.array([velocity_inertial[0], velocity_inertial[1]]), self.Tstar, 0)
 				chi_dot = -a_cmd/self.speed
 
-		# Update class members
-		self.L2.x = p_L2[0]
-		self.L2.y = p_L2[1]
-		self.L2.z = p_L2[2]
-		L2_vec = p_L2 - p_robot
 		# Change what the vehicle does depending on the path orientation relative to the robot
 		dot_prod = np.dot(L2_vec[0:2], heading_inertial[0:2])/(np.linalg.norm(L2_vec[0:2])*np.linalg.norm(heading_inertial[0:2]))
 		print("The heading vector in 2D is: [%0.2f, %0.2f]" % (heading_inertial[0], heading_inertial[1]))
@@ -177,8 +188,8 @@ class guidance_controller:
 			error = L2_vec[2]
 			self.command.linear.z = self.gain_z*error
 
-		if (np.linalg.norm(p_L2 - goal) <= 0.2):
-			if (self.vehicle_type == 'air'):
+		if (self.vehicle_type == 'air'):
+			if (np.linalg.norm(p_L2 - goal) <= 0.2):
 				# Use proportional control to control to goal point
 				error = L2_vec[0]
 				self.command.linear.x = self.gain_z*error
@@ -186,11 +197,11 @@ class guidance_controller:
 				self.command.linear.y = self.gain_z*error
 				error = (np.pi/180.0)*guidance.angle_Diff((180.0/np.pi)*self.goal_yaw, (180.0/np.pi)*self.yaw)
 				self.command.angular.z = self.gain_yaw*error
-			elif (np.linalg.norm(L2_vec[0:2]) <= 0.3*self.Tstar*self.speed):
-				error = (np.pi/180.0)*guidance.angle_Diff((180.0/np.pi)*self.goal_yaw, (180.0/np.pi)*self.yaw)
-				self.command.angular.z = self.gain_yaw*error
-				print("Yaw error of %0.2f deg." % ((180.0/np.pi)*error))
-				self.command.linear.x = 0.0;
+		elif (np.linalg.norm(L2_vec) <= 0.3*self.Tstar*self.speed):
+			error = (np.pi/180.0)*guidance.angle_Diff((180.0/np.pi)*self.goal_yaw, (180.0/np.pi)*self.yaw)
+			self.command.angular.z = self.gain_yaw*error
+			print("Yaw error of %0.2f deg." % ((180.0/np.pi)*error))
+			self.command.linear.x = 0.0;
 
 		return
 
