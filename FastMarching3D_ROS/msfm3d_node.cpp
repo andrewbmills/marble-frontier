@@ -633,7 +633,7 @@ bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end) {
     }
   } else {
     // I don't have this built out yet
-    ROS_INFO("Occlusion detection is not defined for ESDF at the moment.  Use Octomap for pose sampling.  Returning True for all raycasts.");
+    // ROS_INFO("Occlusion detection is not defined for ESDF at the moment.  Use Octomap for pose sampling.  Returning True for all raycasts.");
     return true;
   }
 }
@@ -2163,12 +2163,12 @@ int main(int argc, char **argv)
   n.param("global_planning/inflateWidth", inflateWidth, (float)0.6); // meters
 
   // if (planner.esdf_or_octomap) {
-  ROS_INFO("Subscribing to Occupancy Grid...");
-  ros::Subscriber sub1 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  // ROS_INFO("Subscribing to Occupancy Grid...");
+  // ros::Subscriber sub1 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
   // }
   // else {
-  // ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
-  // ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
+  ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
+  ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
   ros::Subscriber sub2 = n.subscribe("odometry", 1, &Msfm3d::callback_position, &planner);
@@ -2274,7 +2274,7 @@ int main(int argc, char **argv)
           }
 
           // Inflate the obstacle map to avoid collisions
-          if (planner.updatedMap) {
+          if (planner.updatedMap && planner.esdf_or_octomap) {
             planner.inflateObstacles(inflateWidth, inflatedOccupiedMsg);
             planner.updatedMap = 0;
           }
