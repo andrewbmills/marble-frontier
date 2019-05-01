@@ -1072,7 +1072,8 @@ void Msfm3d::parsePointCloud()
   // integer array to store uint8 byte values
   int bytes[4];
   // local pointcloud storage array
-  float xyzis[5*(PC2msg.width)];
+  // float xyzis[5*(PC2msg.width)];
+  float * xyzis = new float[5*(PC2msg.width)];
   // pointcloud xyz limits
   float xyzi_max[4], xyzi_min[4];
   int offset;
@@ -1135,6 +1136,9 @@ void Msfm3d::parsePointCloud()
     }
     esdf.seen[index] = (xyzis[i+4]>0.0);
   }
+
+  // Free xyzis holder array memory
+  delete[] xyzis;
 }
 
 void Msfm3d::inflateObstacles(const float radius, sensor_msgs::PointCloud2& inflatedOccupiedMsg) {
