@@ -3,19 +3,23 @@ classdef Neighbor < handle
     %   Detailed explanation goes here
     
     properties
+        cid  % id of the node that's actually in direct comm
         id
+        type
         pos
         goal
         cost
         stateHistory
         path = []
         replan = false
-        incomm = false
+        incomm = true  % if we just created a neighbor, then we must be in comm!
     end
     
     methods
-        function obj = Neighbor(id, pos, goal, cost)
+        function obj = Neighbor(cid, id, type, pos, goal, cost)
+            obj.cid = cid;
             obj.id = id;
+            obj.type = type;
             obj.pos = pos;
             obj.goal = goal;
             obj.cost = cost;

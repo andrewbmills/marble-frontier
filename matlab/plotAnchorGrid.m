@@ -24,12 +24,18 @@ function plotAnchorGrid(anchor, k)
             color = 'yellow';
             scolor = 'y';
         end
-        plot(agent.pos(1)+0.5, agent.pos(2)+0.5, strcat(scolor, '*'));
-        text(agent.pos(1)+1.5, agent.pos(2)+1.5, num2str(agent.id), 'Color', color, 'FontSize', 12)
-        if ~isempty(agent.path)
-            plot(agent.path(:,1)+0.5, agent.path(:,2)+0.5, scolor);
+
+        if strcmp(agent.type, 'robot')
+            plot(agent.pos(1)+0.5, agent.pos(2)+0.5, strcat(scolor, '*'));
+            text(agent.pos(1)+1.5, agent.pos(2)+1.5, num2str(agent.id), 'Color', color, 'FontSize', 12)
+            if ~isempty(agent.path)
+                plot(agent.path(:,1)+0.5, agent.path(:,2)+0.5, scolor);
+            end
+            plot(agent.stateHistory(:,2)+0.5, agent.stateHistory(:,3)+0.5, 'g-.');
+        elseif strcmp(agent.type, 'beacon') && ~isequal(agent.pos, [0;0])
+            plot(agent.pos(1)+0.5, agent.pos(2)+0.5, 'g*');
+            text(agent.pos(1)+1.5, agent.pos(2)+1.5, num2str(agent.id), 'Color', 'green', 'FontSize', 12)
         end
-        plot(agent.stateHistory(:,2)+0.5, agent.stateHistory(:,3)+0.5, 'g-.');
     end
     
     [m, n] = size(anchor.occGrid);

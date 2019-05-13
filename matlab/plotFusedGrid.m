@@ -25,12 +25,17 @@ function plotFusedGrid(agents, anchor, k)
     text(anchor.state(1)+1.5, anchor.state(2)+1.5, 'A', 'Color', 'green', 'FontSize', 12)
 
     for agent = agents
-        plot(agent.state(1)+0.5, agent.state(2)+0.5, 'r*');
-        text(agent.state(1)+1.5, agent.state(2)+1.5, num2str(agent.id), 'Color', 'red', 'FontSize', 12)
-        if ~isempty(agent.path)
-            plot(agent.path(:,1)+0.5, agent.path(:,2)+0.5, 'r');
+        if strcmp(agent.type, 'robot')
+            plot(agent.state(1)+0.5, agent.state(2)+0.5, 'r*');
+            text(agent.state(1)+1.5, agent.state(2)+1.5, num2str(agent.id), 'Color', 'red', 'FontSize', 12)
+            if ~isempty(agent.path)
+                plot(agent.path(:,1)+0.5, agent.path(:,2)+0.5, 'r');
+            end
+            plot(agent.stateHistory(:,2)+0.5, agent.stateHistory(:,3)+0.5, 'g-.');
+        elseif strcmp(agent.type, 'beacon') && ~isequal(agent.state, [0;0;0;0])
+            plot(agent.state(1)+0.5, agent.state(2)+0.5, 'g*');
+            text(agent.state(1)+1.5, agent.state(2)+1.5, num2str(agent.id), 'Color', 'green', 'FontSize', 12)
         end
-        plot(agent.stateHistory(:,2)+0.5, agent.stateHistory(:,3)+0.5, 'g-.');
     end
     
     for artifact = fusedArtifacts

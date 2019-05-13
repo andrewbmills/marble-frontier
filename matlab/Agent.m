@@ -4,6 +4,7 @@ classdef Agent < handle
     
     properties
         id
+        type
         state
         stateHistory
         path
@@ -16,12 +17,14 @@ classdef Agent < handle
         controlLims % [maxSpeed, maxTurnRate, maxDecel]
         neighbors = Neighbor.empty % array of the agents current in communication with self
         artifacts = Artifact.empty % array of artifacts seen
+        beacons = 0 % number of beacons the agent is carrying
         run
     end
    
     methods
-        function obj = Agent(id, state0, occGrid0, gridDims, sensor, maxControl)
+        function obj = Agent(id, type, state0, occGrid0, gridDims, sensor, numBeacons, maxControl)
             obj.id = id;
+            obj.type = type;
             obj.state = state0; % [x_pos, y_pos, angle, speed]
             obj.stateHistory = [0, obj.state'];
             obj.occGrid = occGrid0;
@@ -30,11 +33,15 @@ classdef Agent < handle
             obj.sensor = [10; 2*pi];
             obj.controlLims = [5; 180*pi/180; 0.1*9.81];
             obj.path = [state0(1), state0(2)];
-            obj.run = true;
+            if strcmp(type, 'beacon')
+                obj.run = false;
+            else
+                obj.run = true;
+            end
 %             obj.carrot = [0, 1]; % 0 distance along path segment 1
-            if nargin == 5
-                obj.sensor = sensor;
-            elseif nargin == 6
+            obj.sensor = sensor;
+            obj.beacons = numBeacons;
+            if nargin == 8
                 obj.controlLims = maxControl;
             end
         end
