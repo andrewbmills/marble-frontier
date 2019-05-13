@@ -56,8 +56,13 @@ enableArtifacts = 1; % Whether to use artifacts and artifact detection
 % Define ranges for limiting performance.  Use 300 for unlimited range.
 sensorRange = 50;
 commRange = 100;
-commMapRange = 50;
-commBuffer = 10;  % used for when to drop a beacon when near the end of comm range
+commMapRange = 100;
+commBuffer = 5;  % used for when to drop a beacon when near the end of comm range
+
+% Define whether to drop beacons when approaching a corner, for both anchor and other beacon comm
+% Normally set these the same, but available for testing
+beaconsInAnchorCorner = 1;
+beaconsInBeaconCorner = 1;
 
 if plotOccGrid
     h1 = pcolor(occGrid);
@@ -292,11 +297,11 @@ while any([agents.run])
 
         anchorGoal = [];
         % Check comm with anchor node and fuse maps
-        dist = sqrt(sum((agent.state(1:2) - anchor.state(1:2)) .^ 2));
-        checkAnchorComm = dist < commRange && checkLoS(agent.state(1:2), anchor.state(1:2), occGrid);
+        dista = sqrt(sum((agent.state(1:2) - anchor.state(1:2)) .^ 2));
+        checkAnchorComm = dista < commRange && checkLoS(agent.state(1:2), anchor.state(1:2), occGrid);
         if checkAnchorComm
             % To fuse maps we need to be inside the commMapRange
-            if dist < commMapRange
+            if dista < commMapRange
                 fusedGrid = fuseOccGrids(anchor.occGrid, agent.occGrid);
                 anchor.occGrid = fusedGrid;
                 agent.occGrid = fusedGrid;
@@ -331,44 +336,6 @@ while any([agents.run])
             end
         end
 
-        % Decide whether to drop a beacon, only if we have one to drop
-        if dist > (commRange - commBuffer) && agent.beacons > 0
-            dropBeacon = 0;
-            beaconsInRange = 0;
-
-            % Look at each active beacon
-            for beacon = agents
-                if strcmp(beacon.type, 'beacon') && ~isequal(beacon.state, [0;0;0;0])
-                    % Check to see if we can talk to a beacon, and therefore the anchor
-                    distb = sqrt(sum((agent.state(1:2) - beacon.state(1:2)) .^ 2));
-                    if distb < commRange && checkLoS(agent.state(1:2), beacon.state(1:2), occGrid)
-                        beaconsInRange = beaconsInRange + 1;
-                        if distb > (commRange - commBuffer)
-                            dropBeacon = 1;
-                        end
-                    end
-                end
-            end
-
-            if ~beaconsInRange && checkAnchorComm
-                dropBeacon = 1;
-            elseif beaconsInRange > 1
-                dropBeacon = 0;
-            end
-
-            if dropBeacon
-                % Find the first available beacon
-                for beacon = agents
-                    if strcmp(beacon.type, 'beacon') && isequal(beacon.state, [0;0;0;0])
-                        % Drop it
-                        beacon.state = agent.state;
-                        agent.beacons = agent.beacons - 1;
-                        break;
-                    end
-                end
-            end
-        end
-
         % Plan Path(s)
         if (mod(t, dt_plan) == 0)
             if ~isempty(agent.path)
@@ -388,6 +355,72 @@ while any([agents.run])
                 end
             else
                 agent.run = false;
+            end
+        end
+
+        % Decide whether to drop a beacon, only if we have one to drop
+        if agent.beacons > 0
+            dropBeacon = 0;
+            beaconsInRange = 0;
+
+            % The path may start behind, so we can't just look at the first couple of points
+            pathlength = size(agent.path, 1);
+            if pathlength > 30
+                pathlength = 30;
+            end
+
+            % Look at each active beacon
+            for beacon = agents
+                if strcmp(beacon.type, 'beacon') && ~isequal(beacon.state, [0;0;0;0])
+                    % Check to see if we can talk to a beacon, and therefore the anchor
+                    distb = sqrt(sum((agent.state(1:2) - beacon.state(1:2)) .^ 2));
+                    if distb < commRange && checkLoS(agent.state(1:2), beacon.state(1:2), occGrid)
+                        beaconsInRange = beaconsInRange + 1;
+
+                        % Drop a beacon if we're in the buffer range
+                        if distb > (commRange - commBuffer)
+                            dropBeacon = 1;
+                        elseif beaconsInBeaconCorner
+                            % Look ahead at the path to see if we'll go around a corner, and drop a beacon if so
+                            for path = agent.path(1:pathlength,:).'
+                                if ~checkLoS(path, beacon.state(1:2), occGrid)
+                                    dropBeacon = 1;
+                                    break;
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            % If there are no beacons in range, but we're talking to the anchor, check if we should drop
+            if ~beaconsInRange && checkAnchorComm
+                % Drop if we're in the buffer zone
+                if dista > (commRange - commBuffer)
+                    dropBeacon = 1;
+                elseif beaconsInAnchorCorner
+                    % Drop if we're about to go around a corner, as above
+                    for path = agent.path(1:pathlength,:).'
+                        if ~checkLoS(path, anchor.state(1:2), occGrid)
+                            dropBeacon = 1;
+                            break;
+                        end
+                    end
+                end
+            elseif beaconsInRange > 1
+                dropBeacon = 0;
+            end
+
+            if dropBeacon
+                % Find the first available beacon
+                for beacon = agents
+                    if strcmp(beacon.type, 'beacon') && isequal(beacon.state, [0;0;0;0])
+                        % Drop it
+                        beacon.state = agent.state;
+                        agent.beacons = agent.beacons - 1;
+                        break;
+                    end
+                end
             end
         end
 
