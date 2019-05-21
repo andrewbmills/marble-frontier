@@ -2184,12 +2184,12 @@ int main(int argc, char **argv)
   n.param("global_planning/inflateWidth", inflateWidth, (float)0.6); // meters
 
   // if (planner.esdf_or_octomap) {
-  // ROS_INFO("Subscribing to Occupancy Grid...");
-  // ros::Subscriber sub1 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  ROS_INFO("Subscribing to Occupancy Grid...");
+  ros::Subscriber sub1 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
   // }
   // else {
-  ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
-  ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
+  // ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
+  // ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
   ros::Subscriber sub2 = n.subscribe("odometry", 1, &Msfm3d::callback_position, &planner);
