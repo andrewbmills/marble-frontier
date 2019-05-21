@@ -8,6 +8,7 @@ classdef Neighbor < handle
         type
         pos
         goal
+        goalType
         cost
         stateHistory
         path = []
@@ -16,19 +17,21 @@ classdef Neighbor < handle
     end
     
     methods
-        function obj = Neighbor(cid, id, type, pos, goal, cost)
+        function obj = Neighbor(cid, id, type, pos, goal, goalType, cost)
             obj.cid = cid;
             obj.id = id;
             obj.type = type;
             obj.pos = pos;
             obj.goal = goal;
+            obj.goalType = goalType;
             obj.cost = cost;
             obj.stateHistory = [0, pos'];
         end
         
-        function update(obj, pos, goal, cost)
+        function update(obj, pos, goal, goalType, cost)
             obj.pos = pos;
             obj.goal = goal;
+            obj.goalType = goalType;
             obj.cost = cost;
             obj.incomm = true;
         end

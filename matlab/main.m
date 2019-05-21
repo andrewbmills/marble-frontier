@@ -43,6 +43,8 @@ occGrid = (grayimage/255)<=0.8;
 %% Some global variables to define behavior
 global deconfliction;
 deconfliction = 2; % Deconfliction level: 0-None, 1-Finders Keepers, 2-Lowest Cost
+global nogoalBehavior;
+nogoalBehavior = 2; % What happens if deconfliction finds no goal?  0-Stop, 1-Continue to Lowest Cost, 2-Follow nearest neighbor
 global gridPlots;
 gridPlots = 0; % Plot the frontier plots or not
 % These used to be globals, don't need to be
@@ -54,6 +56,7 @@ plotOccGrid = 0; % Plot the actual occgrid for reference
 enableArtifacts = 1; % Whether to use artifacts and artifact detection
 
 % Define ranges for limiting performance.  Use 300 for unlimited range.
+global sensorRange;
 sensorRange = 50;
 commRange = 100;
 commMapRange = 100;
@@ -153,7 +156,7 @@ end
 
 anchor = Agent(1, 'anchor', anchorState, agentGrid, [width, height], sensor, 0);
 for agent = agents
-    anchor.neighbors(end+1) = Neighbor(anchor.id, agent.id, agent.type, agent.state(1:2), [], 0);
+    anchor.neighbors(end+1) = Neighbor(anchor.id, agent.id, agent.type, agent.state(1:2), [], '', 0);
 end
 
 if plotFused
@@ -244,9 +247,11 @@ while any([agents.run])
                         % Need to check the current goal point for the neighbors because it may have changed since
                         % our neighbor received it, depending on the order of the neighbors
                         if ~isempty(agents(i).path)
-                            agent.neighbors(j).goal = agents(i).path(end, :);
+                            agent.neighbors(j).update(agents(i).state(1:2), agents(i).path(end, :), agents(i).goalType, agents(i).cost);
+                            agent.neighbors(j).history(agents(i).stateHistory, agents(i).path);
                         else
                             agent.neighbors(j).goal = [];
+                            agent.neighbors(j).goal = 'wait';
                         end
                         store = false;
                         break;
@@ -255,7 +260,8 @@ while any([agents.run])
 
                 % Save our direct neighbor, unless deconfliction level 0
                 if deconfliction > 0 && store
-                    agent.neighbors(end+1) = Neighbor(agent.id, agents(i).id, agents(i).type, agents(i).state(1:2), npath, agents(i).cost);
+                    agent.neighbors(end+1) = Neighbor(agent.id, agents(i).id, agents(i).type, agents(i).state(1:2), npath, agents(i).goalType, agents(i).cost);
+                    agent.neighbors(end).history(agents(i).stateHistory, agents(i).path);
                 end
 
                 % Get our neighbor's neighbors
@@ -285,9 +291,11 @@ while any([agents.run])
                             % Need to check the current information for the neighbors because it may have changed since
                             % our neighbor received it, depending on the order of the neighbors
                             if ~isempty(agents(test_agent).path)
-                                agent.neighbors(end).update(agents(test_agent).state(1:2), agents(test_agent).path(end, :), agents(test_agent).cost);
+                                agent.neighbors(end).update(agents(test_agent).state(1:2), agents(test_agent).path(end, :), agents(test_agent).goalType, agents(test_agent).cost);
+                                agent.neighbors(end).history(agents(test_agent).stateHistory, agents(test_agent).path);
                             else
                                 agent.neighbors(end).goal = [];
+                                agent.neighbors(end).goalType = 'wait';
                             end
                         end
                     end
@@ -320,11 +328,11 @@ while any([agents.run])
             else
                 npath = [];
             end
-            anchor.neighbors(agent.id).update(agent.state(1:2), npath, agent.cost);
+            anchor.neighbors(agent.id).update(agent.state(1:2), npath, agent.goalType, agent.cost);
             anchor.neighbors(agent.id).history(agent.stateHistory, agent.path);
             for neighbor = agent.neighbors
-                anchor.neighbors(neighbor.id).update(neighbor.pos, neighbor.goal, neighbor.cost);
-                anchor.neighbors(neighbor.id).history(agents(neighbor.id).stateHistory, agents(neighbor.id).path);
+                anchor.neighbors(neighbor.id).update(neighbor.pos, neighbor.goal, neighbor.goalType, neighbor.cost);
+                anchor.neighbors(neighbor.id).history(neighbor.stateHistory, neighbor.path);
             end
         elseif strcmp(agent.type, 'robot')
             % Check if any artifacts need to be reported, and if so, plan to go there
@@ -340,7 +348,7 @@ while any([agents.run])
         if (mod(t, dt_plan) == 0)
             if ~isempty(agent.path)
                 if ~frontierCheck(agent.path(end,2), agent.path(end,1), agent.occGrid)
-                    [agent.path, agent.cost] = frontierPlan(agent.occGrid, agent.state(1:2), anchorGoal, hblob, minObsDist, agent.neighbors, 5); % (occupancy grid, agent position, blob detector, minimum obstacle distance, figure number)
+                    agent.frontierPlan(anchorGoal, hblob, minObsDist, 5); % (occupancy grid, agent position, blob detector, minimum obstacle distance, figure number)
                     % Check to see if any neighbors need to be replanned because we took their goal point
                     for neighbor = agent.neighbors
                         % If the id is after us, they'll be forced to
@@ -364,9 +372,12 @@ while any([agents.run])
             beaconsInRange = 0;
 
             % The path may start behind, so we can't just look at the first couple of points
+            % Tradeoff in pathLength is we may change paths before we get there if it's too long,
+            % but if it's too short we put the beacon too close to the corner
+            % For now 40 seems to be a good number for sensorRange = 10, 15 and 50
             pathlength = size(agent.path, 1);
-            if pathlength > 30
-                pathlength = 30;
+            if pathlength > 40
+                pathlength = 40;
             end
 
             % Look at each active beacon

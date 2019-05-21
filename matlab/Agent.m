@@ -8,6 +8,7 @@ classdef Agent < handle
         state
         stateHistory
         path
+        goalType
         cost = 0 % Cost to reach the current goal point
         tLook % Lookahead time for guidance controller
 %         carrot % path distance parameter
@@ -119,6 +120,180 @@ classdef Agent < handle
             hold off
         end
         
+        function goal = deconflictGoal(obj, frontCost, idNext)
+            %% Deconflict the goal point with all of the neighbor agents
+            global deconfliction;
+            global nogoalBehavior;
+            global sensorRange;
+            i = 1;
+            % If there are no neighbors, we can just go to the lowest cost frontier
+            if isempty(obj.neighbors)
+                [y_test, x_test] = ind2sub(size(obj.occGrid), idNext(1));
+                goal = [x_test, y_test];
+                obj.cost = frontCost(idNext(1));
+                obj.goalType = 'explore';
+            else
+                conflict = true;
+
+                % Search through each of the low cost frontiers in order
+                % If we reach one with a cost of 1000000 it's outside the map
+                while conflict && i <= length(idNext) && frontCost(idNext(i)) < 1000000
+                    % Get the goal point
+                    [y_test, x_test] = ind2sub(size(obj.occGrid), idNext(i));
+                    goal = [x_test, y_test];
+                    obj.cost = frontCost(idNext(i));
+                    obj.goalType = 'explore';
+                    % Check the distance between our goal and each neighbors' goal
+                    for neighbor = obj.neighbors
+                        if ~isempty(neighbor.goal) && strcmp(neighbor.goalType, 'explore')
+                            dist = sqrt(sum((goal - neighbor.goal) .^ 2));
+                            % If it's close, we don't need to look at anymore
+                            % neighbors, we just need to look at our next goal
+                            % TODO, check who has the lower cost to do this goal
+                            % TODO, figure out best distance, maybe sensor width?
+                            if dist < sensorRange
+                                % See who has the lower cost.  If it's self, take the path and flag the neighbor to change his
+                                % Otherwise, skip the other neighbors (since they can't have the same goal point due to previous
+                                % iterations) and look at the next goal point
+                                if deconfliction > 1 && obj.cost < neighbor.cost
+                                    conflict = false;
+                                    neighbor.replan = true;
+                                else
+                                    conflict = true;
+                                end
+                                break;
+                            end
+                        end
+                        % If we get through all of the neighbors without being too
+                        % close, there's no conflict, and this will remain false,
+                        % ending the outer loop
+                        conflict = false;
+                    end
+
+                    i = i + 1;
+                end
+            end
+
+            % If we ran out of possible frontiers, set the frontier to the current position,
+            % so that we keep checking every cycle until there is no more frontier
+            if i - 1 == 500 || frontCost(idNext(i)) == 1000000
+                if nogoalBehavior == 1
+                    % Continue on to our first goal point
+                    [y_test, x_test] = ind2sub(size(obj.occGrid), idNext(1));
+                    goal = [x_test, y_test];
+                    obj.cost = frontCost(idNext(1));
+                    obj.goalType = 'follow';
+                elseif nogoalBehavior == 2
+                    % Follow our nearest neighbor
+                    goal = [];
+                    obj.cost = 0;
+                    obj.goalType = 'follow';
+                    closest = 10000;
+                    for neighbor = obj.neighbors
+                        % Check neighbor is the closer than any others we've looked at,
+                        % is at least sensorRange ahead, and has a path other than current position
+                        dist = sqrt(sum((obj.state(1:2) - neighbor.pos(1:2)) .^ 2));
+                        if dist < closest && dist > sensorRange && length(neighbor.path) > 2
+                            goal = [round(neighbor.pos(1)), round(neighbor.pos(2))];
+                            closest = dist;
+                        end
+                    end
+                else
+                    goal = [];
+                    obj.cost = 0;
+                    obj.goalType = 'wait';
+                end
+            end
+        end
+
+        function frontierPlan(obj, anchorGoal, hblob, minObsDist, figNum)
+            %   (anchor position, blob detector, minimum obstacle distance, figure number)
+            %% Create Reachability Grid
+            speedGrid = bwdist(obj.occGrid);
+            satSpeedGrid = speedGrid;
+            if nargin == 3
+                satSpeedGrid(satSpeedGrid >= minObsDist) = minObsDist;
+            end
+            satSpeedGrid(satSpeedGrid == 0) = 1e-6;
+            reachGrid = msfm(double(satSpeedGrid), [obj.state(2); obj.state(1)]);
+
+            %%  Find frontier grid cells (Open cells adjacent to unexplored cells)
+            frontGrid = findFrontier(obj.occGrid);
+            if nargin >= 4
+                [~, centroids, bbox, labels] = step(hblob, logical(frontGrid));
+            end
+            frontGrid = double(labels >= 1);
+            if sum(frontGrid(:)) <= 10
+                obj.path = [];
+                obj.cost = 0;
+                return
+            end
+
+            % Find the cost to reach the frontiers
+            frontCost = frontGrid.*reachGrid + (1 - frontGrid)*1e6;
+            % If there's an anchor goal we need the cost to reach it
+            frontCost(anchorGoal) = reachGrid(anchorGoal);
+            % Find the N lowest cost frontiers
+            % TODO decide on optimum N.  >150 was seen once.
+            % This also needs to be changed in a couple other places if changed here
+            [~, idNext] = mink(frontCost(:), 500);
+            % Add the anchor node as our primary goal if that's what was passed
+            idNext = [anchorGoal; idNext];
+
+            % Check all of the neighbors to decide which goal to explore
+            goal = obj.deconflictGoal(frontCost, idNext);
+
+            % If there's no goal (potentially because all of them are already taken by other agents), stay in place for now
+            if isempty(goal)
+                obj.path = [round(obj.state(1)), round(obj.state(2))];
+                return
+            end
+
+            % Compute the path to the chosen frontier
+            obj.path = findPathContinuous(reachGrid, goal, [obj.state(1), obj.state(2)]);
+
+            global gridPlots;
+            if nargin == 4 && gridPlots
+                figure(figNum)
+                subplot(2,2,1);
+                h = pcolor(satSpeedGrid);
+                set(h, 'EdgeColor', 'none');
+                title('Saturated ESDF')
+                ax2 = subplot(2,2,2);
+                maxReachFree = 50;
+                reachGrid(reachGrid >= maxReachFree) = maxReachFree;
+                %         h = pcolor(reachGrid);
+                %         hold on
+                h = contourf(log(reachGrid), 'LevelStep', 0.5);
+                colormap(ax2, cool)
+                %         set(h, 'EdgeColor', 'none');
+                title('Reachability (Cost)')
+                subplot(2,2,3)
+                h = pcolor(frontGrid);
+                set(h, 'EdgeColor', 'none');
+                hold on
+                for i = 1:size(bbox,1)
+                    plot(centroids(i,1), centroids(i,2));
+                    rectangle('Position', bbox(i,:));
+                end
+                hold off
+                title('Frontier')
+                subplot(2,2,4)
+                h = pcolor(obj.occGrid);
+                set(h, 'EdgeColor', 'none');
+                hold on
+                plot(obj.path(:,1), obj.path(:,2), 'r');
+                plot(obj.state(1), obj.state(2), 'r*');
+                title('Path')
+                hold off
+                set(gcf, 'Position', [1, 1, 1080, 1080]);
+                axis equal
+                axis tight
+                tightfig;
+            end
+        end
+
+
     end
 end
 
