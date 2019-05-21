@@ -3,41 +3,30 @@ import sys
 import numpy as np
 import guidance
 import rospy
-from gazebo_msgs.msg import LinkStates
-from nav_msgs.msg import Odometry
+from nav_msgs.msg import *
+from geometry_msgs.msg import *
+from gazebo_msgs.srv import GetLinkState
 
 class LinkStateToOdometry:
-	def getLinkState(self, data): # Position subscriber callback function
-		# Find the index of the link_state
-		if (self.link_id == -1):
-			i = 0
-			for name in data.name[:]:
-				if name == self.link_name:
-					self.link_id = i
-					print("link_id = %d" % self.link_id)
-				i = i+1
-		# Get the link state data
-		if (self.link_id == -1):
-			print('Could not find robot state information in /gazebo/link_states/')
-		else:
-			self.Odometry.pose.pose = data.pose[self.link_id]
-			# self.Odometry.pose.pose.position.z = self.Odometry.pose.pose.position.z + 0.3
-			self.Odometry.pose.pose.position.z = self.Odometry.pose.pose.position.z
-			self.Odometry.twist.twist = data.twist[self.link_id]
-		
+	def getLinkState(self): # Position subscriber callback function		
+		X1_state = self.gazebo_link_state(self.link_name, 'world')
+		self.Odometry.pose.pose = X1_state.link_state.pose
+		self.Odometry.twist.twist = X1_state.link_state.twist
+
 		# Add time stamp
 		self.Odometry.header.stamp = rospy.Time.now()
 
 		return
 
 	def start(self):
-		rate = rospy.Rate(25.0) # 50Hz
+		rate = rospy.Rate(50.0) # 50Hz
 		while not rospy.is_shutdown():
 			rate.sleep()
+			self.getLinkState()
 			self.pub1.publish(self.Odometry)
 		return
 
-	def __init__(self, link_name="base_link", topic_name="odometry", robot_name="X1", frame="uav", child_frame="uav"):
+	def __init__(self, link_name="base_link", topic_name="odometry", robot_name="X1", frame="world", child_frame="X1/base_link"):
 		
 		node_name = topic_name+ "_" + robot_name
 		rospy.init_node(node_name)
@@ -52,9 +41,9 @@ class LinkStateToOdometry:
 		self.Odometry.header.frame_id = frame
 		self.Odometry.child_frame_id = child_frame
 
-		# Initialize Gazebo LinkState message subscriber
-		self.link_id = -1
-		rospy.Subscriber('/gazebo/link_states', LinkStates, self.getLinkState)
+		# Initialize Gazebo LinkState service
+		rospy.wait_for_service('/gazebo/get_link_state')
+		self.gazebo_link_state = rospy.ServiceProxy('/gazebo/get_link_state', GetLinkState, persistent=True)
 
 if __name__ == '__main__':
 	publish_tool = LinkStateToOdometry()
