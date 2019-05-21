@@ -120,6 +120,52 @@ struct View {
   int index = -1;
 };
 
+// Frontier class declaration
+class Frontier
+{
+  public:
+    std::vector<bool> data;
+    float x_min;
+    float y_min;
+    float z_min;
+    float x_max;
+    float y_max;
+    float z_max;
+    float x_size;
+    float y_size;
+    float z_size;
+    float voxel_size;
+
+    int xyz_index3(const float xyz[3]);
+    void index3_xyz(const int index, float xyz[3]);
+    void expand(const float limits[6]); // 
+}
+
+void Frontier::index3_xyz(const int index, float xyz[3])
+{
+  // x+y*sizx+z*sizx*sizy
+  xyz[2] = z_min + (index/(y_size*x_size))*voxel_size;
+  xyz[1] = y_min + ((index % (y_size*x_size))/x_size)*voxel_size;
+  xyz[0] = x_min + ((index % (y_size*x_size)) % x_size)*voxel_size;
+}
+
+int Frontier::xyz_index3(const float xyz[3])
+{
+  int ind[3];
+  ind[0] = roundf((xyz[0]-x_min)/voxel_size);
+  ind[1] = roundf((xyz[1]-y_min)/voxel_size);
+  ind[2] = roundf((xyz[2]-z_min)/voxel_size);
+  return mindex3(ind[0], ind[1], ind[2], x_size, y_size);
+}
+
+void Frontier::expand(const float limits[6])
+{
+  // Calculate the new required size of the vector
+  // Copy the old data to a holding vector of the old size
+  // Resize the data property to the new size and clear the data
+  // Copy the previous data into the data property
+}
+
 //Msfm3d class declaration
 class Msfm3d
 {
@@ -193,6 +239,8 @@ class Msfm3d
     octomap::OcTree* mytree; // OcTree object for holding Octomap
 
     // Frontier and frontier filter parameters
+    // std::vector<bool> frontier;
+    // float 
     bool * frontier;
     bool * entrance;
     int frontier_size = 0;
@@ -559,46 +607,6 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
   }
   ROS_INFO("%d groups generated from the frontier clusters.", groupCount);
 }
-
-// bool Msfm3d::collisionCheck(const float position[3])
-// {
-//   // Get indices corresponding to the voxels occupied by the vehicle
-//   int lower_corner[3], voxel_width[3], idx, npixels = esdf.size[0]*esdf.size[1]*esdf.size[2]; // xyz point of the lower left of the vehicle rectangle
-//   lower_corner[0] = position[0] + vehicleVolume.xmin;
-//   lower_corner[1] = position[1] + vehicleVolume.ymin;
-//   lower_corner[2] = position[2] + vehicleVolume.zmin;
-//   voxel_width[0] = roundf((vehicleVolume.xmax - vehicleVolume.xmin)/voxel_size);
-//   voxel_width[1] = roundf((vehicleVolume.xmax - vehicleVolume.xmin)/voxel_size);
-//   voxel_width[2] = roundf((vehicleVolume.xmax - vehicleVolume.xmin)/voxel_size);
-//   bool collision = 0;
-//   float query[3];
-
-//   // Loop through all of the voxels occupied by the vehicle and check for occupancy to detect a collision
-//   // Return when a collision is detected
-//   for (int i=0; i<voxel_width[0]; i++){
-//     query[0] = lower_corner[0] + i*voxel_size;
-//     for (int j=0; j<voxel_width[1]; j++){
-//       query[1] = lower_corner[1] + j*voxel_size;
-//       for (int k=0; k<voxel_width[2]; k++){
-//         query[2] = lower_corner[2] + k*voxel_size;
-//         idx = xyz_index3(query);
-//         // Check to see if idx is inside a valid index
-//         if (idx < 0 || idx >= npixels ) {
-//           if (ground && (query[2] >= (position[2] - wheel_bottom_dist + voxel_size/2.0)) && esdf.data[idx] < 0.0) {
-//           	return 1; // Check for collisions above the wheels on the ground robot
-//       	  }
-//           if (!ground && esdf.data[idx] < 0.0) {
-//           	return 1; // Check for air vehicle collision
-//           }
-//           if (ground && (query[2] <= (position[2] - wheel_bottom_dist - voxel_size/2.0)) && esdf.data[idx] > 0.0) { // Check for wheel contact with the ground for the ground vehicle
-//             ROS_INFO("Original path doesn't keep the ground vehicle on the ground, replanning to next closest frontier voxel...");
-//             return 1;
-//           }
-//         }
-//       }
-//     }
-//   }
-// }
 
 bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end) {
   float dx = end.x - start.x;
@@ -1367,6 +1375,15 @@ void Msfm3d::updateFrontierMsg() {
 
 bool updateFrontier(Msfm3d& planner){
   ROS_INFO("Beginning Frontier update step...");
+
+  // Expand the frontier vector to be at least as big as the esdf space
+  // Make sure to copy the previous frontier data
+
+
+
+  //**Plan on updating the frontier only in a sliding window of grid spaces surrounding the vehicle**
+
+
   int npixels = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
   delete[] planner.frontier;
   ROS_INFO("Previous frontier deleted.  Allocating new frontier of size %d...", npixels);
@@ -2130,14 +2147,14 @@ int main(int argc, char **argv)
   // planner.robot2camera.R = quaternion2RotationMatrix(planner.robot2camera.q);
 
   // Hard coded pitch down by 15 degrees for the husky
-  if (planner.ground) {
-    planner.robot2camera.R.setZero();
-    planner.robot2camera.R(0,0) = std::cos((M_PI/180.0)*15.0);
-    planner.robot2camera.R(0,2) = std::sin((M_PI/180.0)*15.0);
-    planner.robot2camera.R(2,0) = -std::sin((M_PI/180.0)*15.0);
-    planner.robot2camera.R(2,2) = std::cos((M_PI/180.0)*15.0);
-    planner.robot2camera.R(1,1) = 1.0;
-  }
+  // if (planner.ground) {
+  //   planner.robot2camera.R.setZero();
+  //   planner.robot2camera.R(0,0) = std::cos((M_PI/180.0)*-15.0);
+  //   planner.robot2camera.R(0,2) = std::sin((M_PI/180.0)*-15.0);
+  //   planner.robot2camera.R(2,0) = -std::sin((M_PI/180.0)*-15.0);
+  //   planner.robot2camera.R(2,2) = std::cos((M_PI/180.0)*-15.0);
+  //   planner.robot2camera.R(1,1) = 1.0;
+  // }
 
   // planner.bubble_radius = 3.0;
   // Set planner bounds so that the robot doesn't exit a defined volume
