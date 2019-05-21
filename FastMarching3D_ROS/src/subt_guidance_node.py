@@ -220,7 +220,7 @@ class guidance_controller:
 		# Initialize ROS node and Subscribers
 		node_name = self.name + '_guidance_controller'
 		rospy.init_node(node_name)
-		rospy.Subscriber(name + '/odometry_noisy', Odometry, self.getPosition)
+		rospy.Subscriber(name + '/odometry', Odometry, self.getPosition)
 		self.link_id = -1
 		self.path = np.empty((3,0))
 		rospy.Subscriber(name + '/planned_path', Path, self.getPath)
