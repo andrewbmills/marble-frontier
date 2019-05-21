@@ -121,50 +121,50 @@ struct View {
 };
 
 // Frontier class declaration
-class Frontier
-{
-  public:
-    std::vector<bool> data;
-    float x_min;
-    float y_min;
-    float z_min;
-    float x_max;
-    float y_max;
-    float z_max;
-    float x_size;
-    float y_size;
-    float z_size;
-    float voxel_size;
+// class Frontier
+// {
+//   public:
+//     std::vector<bool> data;
+//     float x_min;
+//     float y_min;
+//     float z_min;
+//     float x_max;
+//     float y_max;
+//     float z_max;
+//     float x_size;
+//     float y_size;
+//     float z_size;
+//     float voxel_size;
 
-    int xyz_index3(const float xyz[3]);
-    void index3_xyz(const int index, float xyz[3]);
-    void expand(const float limits[6]); // 
-}
+//     int xyz_index3(const float xyz[3]);
+//     void index3_xyz(const int index, float xyz[3]);
+//     void expand(const float limits[6]); // 
+// }
 
-void Frontier::index3_xyz(const int index, float xyz[3])
-{
-  // x+y*sizx+z*sizx*sizy
-  xyz[2] = z_min + (index/(y_size*x_size))*voxel_size;
-  xyz[1] = y_min + ((index % (y_size*x_size))/x_size)*voxel_size;
-  xyz[0] = x_min + ((index % (y_size*x_size)) % x_size)*voxel_size;
-}
+// void Frontier::index3_xyz(const int index, float xyz[3])
+// {
+//   // x+y*sizx+z*sizx*sizy
+//   xyz[2] = z_min + (index/(y_size*x_size))*voxel_size;
+//   xyz[1] = y_min + ((index % (y_size*x_size))/x_size)*voxel_size;
+//   xyz[0] = x_min + ((index % (y_size*x_size)) % x_size)*voxel_size;
+// }
 
-int Frontier::xyz_index3(const float xyz[3])
-{
-  int ind[3];
-  ind[0] = roundf((xyz[0]-x_min)/voxel_size);
-  ind[1] = roundf((xyz[1]-y_min)/voxel_size);
-  ind[2] = roundf((xyz[2]-z_min)/voxel_size);
-  return mindex3(ind[0], ind[1], ind[2], x_size, y_size);
-}
+// int Frontier::xyz_index3(const float xyz[3])
+// {
+//   int ind[3];
+//   ind[0] = roundf((xyz[0]-x_min)/voxel_size);
+//   ind[1] = roundf((xyz[1]-y_min)/voxel_size);
+//   ind[2] = roundf((xyz[2]-z_min)/voxel_size);
+//   return mindex3(ind[0], ind[1], ind[2], x_size, y_size);
+// }
 
-void Frontier::expand(const float limits[6])
-{
-  // Calculate the new required size of the vector
-  // Copy the old data to a holding vector of the old size
-  // Resize the data property to the new size and clear the data
-  // Copy the previous data into the data property
-}
+// void Frontier::expand(const float limits[6])
+// {
+//   // Calculate the new required size of the vector
+//   // Copy the old data to a holding vector of the old size
+//   // Resize the data property to the new size and clear the data
+//   // Copy the previous data into the data property
+// }
 
 //Msfm3d class declaration
 class Msfm3d
