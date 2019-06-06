@@ -33,6 +33,13 @@ elseif strcmp(environment, 'tunnel')
     artifact1pos = [60; 65];
     artifact2pos = [240; 80];
     artifact3pos = [40; 160];
+elseif strcmp(environment, 'pittsburgh')
+    image = imread('pittsburgh.png');
+    anchorState = [30; 240; 330*pi/180; 5];
+    agentState = [50; 240; 0; 5];
+    artifact1pos = [225; 10];
+    artifact2pos = [450; 320];
+    artifact3pos = [215; 420];
 end
 
 grayimage = rgb2gray(image);
@@ -84,6 +91,30 @@ numAgents = 4;
 agentSpread = 0;
 % Number of beacons per robot
 numBeacons = 4;
+
+
+%% Demo runs.  Overwrites previous values if demo ~= 0, to easily cycle through different scenarios
+demo = 0;
+
+if demo == 1
+    deconfliction = 0;
+    nogoalBehavior = 0;
+    numBeacons = 0;
+elseif demo == 2
+    deconfliction = 2;
+    nogoalBehavior = 0;
+    numBeacons = 0;
+elseif demo == 3
+    deconfliction = 2;
+    nogoalBehavior = 2;
+    numBeacons = 4;
+elseif demo == 4
+    sensorRange = 10;
+    deconfliction = 2;
+    nogoalBehavior = 2;
+    numBeacons = 4;
+end
+
 
 %% Generate robot(s)
 x_agent = agentState;

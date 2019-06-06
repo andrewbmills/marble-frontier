@@ -49,8 +49,9 @@ while true
         break
     end
     if size(path,1) >= 1e5
-        error('no safe path to frontier')
-        break
+        disp('no safe path to frontier')
+        path = 0;
+        return
     end
 end
 % plot(path(:,1), path(:,2), 'r');

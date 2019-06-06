@@ -32,7 +32,7 @@ classdef Agent < handle
             obj.gridDims = gridDims;
             obj.tLook = 1; % seconds
             obj.sensor = [10; 2*pi];
-            obj.controlLims = [5; 180*pi/180; 0.1*9.81];
+            obj.controlLims = [5; 1800*pi/180; 0.1*9.81];
             obj.path = [state0(1), state0(2)];
             if strcmp(type, 'beacon')
                 obj.run = false;
@@ -120,7 +120,7 @@ classdef Agent < handle
             hold off
         end
         
-        function goal = deconflictGoal(obj, frontCost, idNext)
+        function [goal, idx] = deconflictGoal(obj, frontCost, idNext)
             %% Deconflict the goal point with all of the neighbor agents
             global deconfliction;
             global nogoalBehavior;
@@ -130,6 +130,7 @@ classdef Agent < handle
             if isempty(obj.neighbors)
                 [y_test, x_test] = ind2sub(size(obj.occGrid), idNext(1));
                 goal = [x_test, y_test];
+                idx = 1;
                 obj.cost = frontCost(idNext(1));
                 obj.goalType = 'explore';
             else
@@ -141,6 +142,7 @@ classdef Agent < handle
                     % Get the goal point
                     [y_test, x_test] = ind2sub(size(obj.occGrid), idNext(i));
                     goal = [x_test, y_test];
+                    idx = i;
                     obj.cost = frontCost(idNext(i));
                     obj.goalType = 'explore';
                     % Check the distance between our goal and each neighbors' goal
@@ -176,11 +178,12 @@ classdef Agent < handle
 
             % If we ran out of possible frontiers, set the frontier to the current position,
             % so that we keep checking every cycle until there is no more frontier
-            if i - 1 == 500 || frontCost(idNext(i)) == 1000000
+            if i - 1 == length(idNext) || frontCost(idNext(i)) == 1000000
                 if nogoalBehavior == 1
                     % Continue on to our first goal point
                     [y_test, x_test] = ind2sub(size(obj.occGrid), idNext(1));
                     goal = [x_test, y_test];
+                    idx = 1;
                     obj.cost = frontCost(idNext(1));
                     obj.goalType = 'follow';
                 elseif nogoalBehavior == 2
@@ -195,11 +198,13 @@ classdef Agent < handle
                         dist = sqrt(sum((obj.state(1:2) - neighbor.pos(1:2)) .^ 2));
                         if dist < closest && dist > sensorRange && length(neighbor.path) > 2
                             goal = [round(neighbor.pos(1)), round(neighbor.pos(2))];
+                            idx = 0;
                             closest = dist;
                         end
                     end
                 else
                     goal = [];
+                    idx = 0;
                     obj.cost = 0;
                     obj.goalType = 'wait';
                 end
@@ -241,7 +246,7 @@ classdef Agent < handle
             idNext = [anchorGoal; idNext];
 
             % Check all of the neighbors to decide which goal to explore
-            goal = obj.deconflictGoal(frontCost, idNext);
+            [goal, idx] = obj.deconflictGoal(frontCost, idNext);
 
             % If there's no goal (potentially because all of them are already taken by other agents), stay in place for now
             if isempty(goal)
@@ -251,6 +256,25 @@ classdef Agent < handle
 
             % Compute the path to the chosen frontier
             obj.path = findPathContinuous(reachGrid, goal, [obj.state(1), obj.state(2)]);
+
+            % TODO this is all a hack!
+            % If there's no path, try the next goal point
+            if obj.path == 0
+                idNext = idNext(idx+1:end);
+                [goal, ~] = obj.deconflictGoal(frontCost, idNext);
+                if isempty(goal)
+                    obj.path = [round(obj.state(1)), round(obj.state(2))];
+                    return
+                end
+
+                obj.path = findPathContinuous(reachGrid, goal, [obj.state(1), obj.state(2)]);
+
+                % If there's still not a path, teleport backwards
+                if obj.path == 0
+                    obj.state = obj.stateHistory(end-200,2:end)';
+                    obj.path = findPathContinuous(reachGrid, goal, [obj.state(1), obj.state(2)]);
+                end
+            end
 
             global gridPlots;
             if nargin == 4 && gridPlots
