@@ -406,7 +406,8 @@ bool Msfm3d::clusterFrontier(const bool print2File)
   // Initialize euclidean cluster extraction object
   pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
   ec.setClusterTolerance(1.5*voxel_size); // Clusters must be made of contiguous sections of frontier (within sqrt(2)*voxel_size of each other)
-  ec.setMinClusterSize(roundf(10.0/voxel_size)); // Cluster must be at least 15 voxels in size
+  // ec.setClusterTolerance(2.9*voxel_size);
+  ec.setMinClusterSize(roundf(5.0/voxel_size)); // Cluster must be at least 15 voxels in size
   // ec.setMaxClusterSize (30);
   ec.setSearchMethod(kdtree);
   ec.setInputCloud(frontierCloud);
@@ -1447,11 +1448,11 @@ bool updateFrontier(Msfm3d& planner){
             pass2++;
           }
         }
-        // // Eliminate frontiers with unseen top/bottom neighbors
-        // if ((!planner.esdf.seen[neighbor[4]] && i != neighbor[4]) || (!planner.esdf.seen[neighbor[5]] && i != neighbor[5])) {
-        //   frontier = 0;
-        //   pass3++;
-        // }
+        // Eliminate frontiers with unseen top/bottom neighbors
+        if ((!planner.esdf.seen[neighbor[4]] && i != neighbor[4]) || (!planner.esdf.seen[neighbor[5]] && i != neighbor[5])) {
+          frontier = 0;
+          pass3++;
+        }
       }
       else {
         // For the time being, exclude the top/bottom neighbor (last two neighbors)
@@ -2184,12 +2185,12 @@ int main(int argc, char **argv)
   n.param("global_planning/inflateWidth", inflateWidth, (float)0.6); // meters
 
   // if (planner.esdf_or_octomap) {
-  ROS_INFO("Subscribing to Occupancy Grid...");
-  ros::Subscriber sub1 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  // ROS_INFO("Subscribing to Occupancy Grid...");
+  // ros::Subscriber sub1 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
   // }
   // else {
-  // ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
-  // ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
+  ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
+  ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
   ros::Subscriber sub2 = n.subscribe("odometry", 1, &Msfm3d::callback_position, &planner);
