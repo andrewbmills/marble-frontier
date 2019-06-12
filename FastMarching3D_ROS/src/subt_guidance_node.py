@@ -13,39 +13,6 @@ from gazebo_msgs.msg import LinkStates
 from visualization_msgs.msg import Marker
 
 class guidance_controller:
-	# def getPosition(self, data): # Position subscriber callback function
-	# 	# Find the index of the link_state
-	# 	if (self.link_id == -1):
-	# 		i = 0
-	# 		for name in data.name[:]:
-	# 			if name == self.name + "::" + self.name + "/base_link":
-	# 				self.link_id = i
-	# 				print("link_id = %d" % self.link_id)
-	# 			i = i+1
-	# 	# Get the link state data
-	# 	if (self.link_id == -1):
-	# 		print('Could not find robot state information in /gazebo/link_states/')
-	# 	else:
-	# 		self.position = data.pose[self.link_id].position
-	# 		q = Quaternion()
-	# 		q = data.pose[self.link_id].orientation
-	# 		self.yaw = np.arctan2(2.0*(q.w*q.z + q.x*q.y), 1.0 - 2.0*(q.y*q.y + q.z*q.z))
-	# 		self.R = np.zeros((3,3))
-	# 		self.R[0,0] = q.w*q.w + q.x*q.x - q.y*q.y - q.z*q.z
-	# 		self.R[0,1] = 2.0*(q.x*q.y - q.w*q.z)
-	# 		self.R[0,2] = 2.0*(q.w*q.y + q.x*q.z)
-
-	# 		self.R[1,0] = 2.0*(q.x*q.y + q.w*q.z)
-	# 		self.R[1,1] = q.w*q.w - q.x*q.x + q.y*q.y - q.z*q.z
-	# 		self.R[1,2] = 2.0*(q.y*q.z - q.w*q.x)
-
-	# 		self.R[2,0] = 2.0*(q.x*q.z - q.w*q.y)
-	# 		self.R[2,1] = 2.0*(q.w*q.x + q.y*q.z)
-	# 		self.R[2,2] = q.w*q.w - q.x*q.x - q.y*q.y + q.z*q.z
-
-	# 		self.positionUpdated = 1
-	# 	return
-
 	def getPosition(self, data):
 		self.position = data.pose.pose.position
 		q = Quaternion()
@@ -124,6 +91,7 @@ class guidance_controller:
 		else:
 			if (self.vehicle_type == 'ground'):
 				p_L2, v_L2 = guidance.find_Lookahead_Discrete_2D(path[0:2,:], p_robot[0:2], self.speed*self.Tstar, 0, 0)
+				print("The L2 point is: [%0.2f, %0.2f]" % (p_L2[0], p_L2[1]))
 				# Update class members
 				self.L2.x = p_L2[0]
 				self.L2.y = p_L2[1]
@@ -168,7 +136,6 @@ class guidance_controller:
 		# Change what the vehicle does depending on the path orientation relative to the robot
 		dot_prod = np.dot(L2_vec[0:2], heading_inertial[0:2])/(np.linalg.norm(L2_vec[0:2])*np.linalg.norm(heading_inertial[0:2]))
 		print("The heading vector in 2D is: [%0.2f, %0.2f]" % (heading_inertial[0], heading_inertial[1]))
-		print("The L2 point is: [%0.2f, %0.2f]" % (p_L2[0], p_L2[1]))
 		print("The robot position is : [%0.2f, %0.2f]" % (p_robot[0], p_robot[1]))
 		print("The L2 vector in 2D is: [%0.2f, %0.2f]" % (L2_vec[0], L2_vec[1]))
 		print("The goal pose heading vector in 2D is: [%0.2f, %0.2f]" % (np.cos(self.goal_yaw), np.sin(self.goal_yaw)))

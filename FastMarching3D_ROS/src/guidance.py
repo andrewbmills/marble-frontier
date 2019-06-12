@@ -87,7 +87,7 @@ def find_Lookahead_Discrete_2D(path, p_AC, R, gamma_max, Mstar):
         b = 2*(d[0]*q[0] + d[1]*q[1])
         c = q[0]*q[0] + q[1]*q[1] - R*R
         discriminant = b*b - 4*a*c
-        if (discriminant < 0):
+        if (discriminant <= 0):
             # no intersection
             t_hat = -1
         else:
@@ -117,6 +117,8 @@ def find_Lookahead_Discrete_2D(path, p_AC, R, gamma_max, Mstar):
         i_cut = 1
         # print "There is no intersection."
     
+    # print("discriminant = %0.3f" % (discriminant))
+    # print("t_hat = %0.2f, p1 = [%0.2f, %0.2f], d = [%0.2f, %0.2f]" % (t_hat, p1[0], p1[1], d[0], d[1]))
 
     # Chop the reference path off to not include indices below the current while loop index
     return p_L2, v_L2
@@ -147,7 +149,7 @@ def find_Lookahead_Discrete_3D(path, p_AC, R, gamma_max, Mstar):
         b = 2*(d[0]*q[0] + d[1]*q[1] + d[2]*q[2])
         c = q[0]*q[0] + q[1]*q[1] + q[2]*q[2] - R*R
         discriminant = b*b - 4*a*c
-        if (discriminant < 0):
+        if (discriminant <= 0):
             # no intersection
             t_hat = -1
         else:
