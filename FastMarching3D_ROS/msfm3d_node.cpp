@@ -2105,6 +2105,10 @@ int main(int argc, char **argv)
   planner.speed = speed;
   planner.turnRate = turnRate;
 
+  // Replanning ticks
+  int replan_tick_limit;
+  n.param("global_planning/replan_ticks", replan_tick_limit, 15);
+
   // Clustering Parameters
   float cluster_radius, min_cluster_size;
   n.param("global_planning/cluster_radius", cluster_radius, (float)(1.5*voxel_size)); // voxels
@@ -2320,7 +2324,7 @@ int main(int argc, char **argv)
           }
 
           // Call msfm3d function
-          if (replan || replan_ticks >= 5) {
+          if (replan || replan_ticks >= replan_tick_limit) {
             ROS_INFO("At least 50 percent of the frontiers at the goal pose are no longer frontiers or 5 loops have occurred since last plan.  Replanning...");
             // Find goal poses from which to view the frontier
             planner.updateGoalPoses();

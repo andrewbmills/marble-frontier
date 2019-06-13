@@ -42,6 +42,9 @@
     <param name="cluster_radius" value="0.15" />
     <param name="min_cluster_size" value="30" />
 
+    <!-- Number of ticks before replanning -->
+    <param name="replan_ticks" value="15" />
+
     <!-- Location of the environment entrance. (Default is [0.0, 0.0, 0.0])  The robot will not explore area within entrance_radius meters of this point -->
     <param name="entrance_x" value="0.0" />
     <param name="entrance_y" value="0.0" />
