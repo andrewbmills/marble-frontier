@@ -248,6 +248,8 @@ class Msfm3d
       // Clustering/Filtering
       pcl::PointCloud<pcl::PointXYZ>::Ptr frontierCloud; // Frontier PCL
       std::vector<pcl::PointIndices> frontierClusterIndices;
+      float cluster_radius;
+      float min_cluster_size;
       // ROS Interfacing
       sensor_msgs::PointCloud2 frontiermsg;
       // Frontier Grouping
@@ -405,9 +407,9 @@ bool Msfm3d::clusterFrontier(const bool print2File)
 
   // Initialize euclidean cluster extraction object
   pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
-  ec.setClusterTolerance(1.5*voxel_size); // Clusters must be made of contiguous sections of frontier (within sqrt(2)*voxel_size of each other)
+  ec.setClusterTolerance(cluster_radius); // Clusters must be made of contiguous sections of frontier (within sqrt(2)*voxel_size of each other)
   // ec.setClusterTolerance(2.9*voxel_size);
-  ec.setMinClusterSize(roundf(5.0/voxel_size)); // Cluster must be at least 15 voxels in size
+  ec.setMinClusterSize(roundf(min_cluster_size)); // Cluster must be at least 15 voxels in size
   // ec.setMaxClusterSize (30);
   ec.setSearchMethod(kdtree);
   ec.setInputCloud(frontierCloud);
@@ -2102,6 +2104,13 @@ int main(int argc, char **argv)
   planner.speed = speed;
   planner.turnRate = turnRate;
 
+  // Clustering Parameters
+  float cluster_radius, min_cluster_size;
+  n.param("global_planning/cluster_radius", cluster_radius, (float)1.5); // voxels
+  n.param("global_planning/min_cluster_size", min_cluster_size, (float)(5.0/voxel_size)); // voxels
+  planner.cluster_radius = cluster_radius;
+  planner.min_cluster_size = min_cluster_size;
+
   // Goal Height fixing for air vehicle (For a quad with constrained AGL)
   bool fixGoalHeightAGL;
   float goalHeightAGL;
@@ -2185,12 +2194,12 @@ int main(int argc, char **argv)
   n.param("global_planning/inflateWidth", inflateWidth, (float)0.6); // meters
 
   // if (planner.esdf_or_octomap) {
-  // ROS_INFO("Subscribing to Occupancy Grid...");
-  // ros::Subscriber sub1 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  ROS_INFO("Subscribing to Occupancy Grid...");
+  ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
   // }
   // else {
-  ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
-  ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
+  // ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
+  // ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
   ros::Subscriber sub2 = n.subscribe("odometry", 1, &Msfm3d::callback_position, &planner);
@@ -2310,7 +2319,7 @@ int main(int argc, char **argv)
           }
 
           // Call msfm3d function
-          if (replan || replan_ticks >= 5) {
+          if (replan || replan_ticks >= 50) {
             ROS_INFO("At least 50 percent of the frontiers at the goal pose are no longer frontiers or 5 loops have occurred since last plan.  Replanning...");
             // Find goal poses from which to view the frontier
             planner.updateGoalPoses();

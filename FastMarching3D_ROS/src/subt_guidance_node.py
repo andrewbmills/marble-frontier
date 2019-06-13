@@ -243,12 +243,16 @@ class guidance_controller:
 		# self.vel_marker = Marker()
 		# self.vel_marker.type = 0
 
+		# Saturation for yaw rate
+		self.yaw_rate_max = 1.0
 
 	def start(self):
 		rate = rospy.Rate(10.0) # 10Hz
 		while not rospy.is_shutdown():
 			rate.sleep()
 			self.updateCommand()
+			if (np.abs(self.command.angular.z) > self.yaw_rate_max):
+				self.command.angular.z = np.sign(self.command.angular.z)*self.yaw_rate_max
 			self.pub1.publish(self.command)
 			self.publishLookahead()
 		return
