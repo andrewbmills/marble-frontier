@@ -4,11 +4,11 @@
   <!-- Robot namespace -->
   <!-- <arg name="machine" default="$(env ROS_HOSTNAME)"/> -->
 
-  <node pkg="msfm3d" type="msfm3d" name="msfm3d" output="screen">
+  <node pkg="msfm3d" type="msfm3d" name="global_planning" output="screen">
     <!-- Inputs (Subscribed Topic Names) -->
 
     <!-- <remap from="octomap_binary" to="octomap_full"/> -->
-    <remap from="odometry" to="X1/odometry"/>
+    <remap from="odometry" to="jackal_odom"/>
 
     <!-- Outputs (Published Topic Names) -->
 
@@ -19,11 +19,11 @@
     <remap from="goalFrustum" to="X1/goalFrustum"/>
     <remap from="inflatedOctomap" to="X1/inflatedOctomap"/>
     <remap from="artifact_list" to="X1/report_artifact"/>
-
+    <remap from="X1/voxblox_node/tsdf_pointcloud" to="X1/voxblox_node/esdf_pointcloud"/>
 
     <!-- Parameters -->
     <!-- Map Resolution -->
-    <param name="resolution" value="0.2"/>
+    <param name="resolution" value="0.1"/>
 
     <!-- The planner assumes the vehicle is an air vehicle.  If the vehicle is constrained to the ground (wheeled vehicle), set to true. -->
     <param name="isGroundVehicle" value="true"/>
@@ -38,15 +38,19 @@
     <param name="speed" value="1.0"/>
     <param name="turnRate" value="10.0"/>
 
+    <!-- Frontier Clustering parameters (in voxels) -->
+    <param name="cluster_radius" value="0.15" />
+    <param name="min_cluster_size" value="30" />
+
     <!-- Location of the environment entrance. (Default is [0.0, 0.0, 0.0])  The robot will not explore area within entrance_radius meters of this point -->
     <param name="entrance_x" value="0.0" />
     <param name="entrance_y" value="0.0" />
-    <param name="entrance_z" value="0.2" />
-    <param name="entrance_radius" value="15.0" />
+    <param name="entrance_z" value="0.3" />
+    <param name="entrance_radius" value="0.0" />
 
     <!-- Camera viewing parameters, angles in degrees, ranges in meters -->
-    <param name="cameraVerticalFoV" value="40.0"/>
-    <param name="cameraHorizontalFoV" value="60.0"/>
+    <param name="cameraVerticalFoV" value="50.0"/>
+    <param name="cameraHorizontalFoV" value="150.0"/>
     <param name="cameraMaxRange" value="2.5"/>
     <param name="cameraMinRange" value="0.5"/>
 
@@ -60,7 +64,7 @@
     <param name="updateRate" value="1.0"/>
 
     <!-- Inflated Obstacle width -->
-    <param name="inflateWidth" value="0.6"/>
+    <param name="inflateWidth" value="0.2"/>
 
     <!-- Vehicle Fence Volume Limits -->
     <!-- <param name="fenceOn" value="true"/>
@@ -73,10 +77,10 @@
 
     <!-- Fix vehicle goal height (in meters) above map ground level for a quad/ground vehicle -->
     <param name="fixGoalHeightAGL" value="false"/>
-    <param name="goalHeightAGL" value="0.64"/>
+    <param name="goalHeightAGL" value="0.4"/>
 
     <!-- Fix the delta z in voxels from the vehicle current height that are considered frontiers -->
-    <param name="dzFrontierVoxelWidth" value="0"/>
+    <param name="dzFrontierVoxelWidth" value="5"/>
 
   </node>
 
