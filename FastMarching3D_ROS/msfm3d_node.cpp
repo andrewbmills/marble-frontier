@@ -2320,7 +2320,7 @@ int main(int argc, char **argv)
           }
 
           // Call msfm3d function
-          if (replan || replan_ticks >= 50) {
+          if (replan || replan_ticks >= 5) {
             ROS_INFO("At least 50 percent of the frontiers at the goal pose are no longer frontiers or 5 loops have occurred since last plan.  Replanning...");
             // Find goal poses from which to view the frontier
             planner.updateGoalPoses();
