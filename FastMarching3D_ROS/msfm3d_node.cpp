@@ -2107,7 +2107,7 @@ int main(int argc, char **argv)
 
   // Clustering Parameters
   float cluster_radius, min_cluster_size;
-  n.param("global_planning/cluster_radius", cluster_radius, (float)1.5); // voxels
+  n.param("global_planning/cluster_radius", cluster_radius, (float)(1.5*voxel_size)); // voxels
   n.param("global_planning/min_cluster_size", min_cluster_size, (float)(5.0/voxel_size)); // voxels
   planner.cluster_radius = cluster_radius;
   planner.min_cluster_size = min_cluster_size;
