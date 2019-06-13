@@ -1659,7 +1659,8 @@ void infoGoalView(Msfm3d& planner, int viewIndices[5], double utility[5])
           float goal_yaw = std::atan2(2.0*(goal_q.w*goal_q.z + goal_q.x*goal_q.y), 1.0 - 2.0*(goal_q.y*goal_q.y + goal_q.z*goal_q.z)); // degrees
 
           // Add these angle differences to the cost_time
-          cost_time = cost_time + (std::abs(angle_diff((180.0/M_PI)*end_path_yaw, (180.0/M_PI)*goal_yaw)) + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)))/planner.turnRate;
+          // cost_time = cost_time + (std::abs(angle_diff((180.0/M_PI)*end_path_yaw, (180.0/M_PI)*goal_yaw)) + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)))/planner.turnRate;
+          cost_time = cost_time + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw))/planner.turnRate;
 
           // Calculate the actual utility
           current_utility = std::sqrt((double)(planner.goalViews[i].cloud.points.size())/cost_time); // frontier voxels/second
