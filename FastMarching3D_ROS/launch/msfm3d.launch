@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <launch>
   <!-- <include file="$(find arpg_husky)/launch/hosts.launch"/> -->
 
@@ -8,7 +9,7 @@
     <!-- Inputs (Subscribed Topic Names) -->
 
     <!-- <remap from="octomap_binary" to="octomap_full"/> -->
-    <remap from="odometry" to="jackal_odom"/>
+    <remap from="odometry" to="X1/odometry"/>
 
     <!-- Outputs (Published Topic Names) -->
 
@@ -23,13 +24,13 @@
 
     <!-- Parameters -->
     <!-- Map Resolution -->
-    <param name="resolution" value="0.1"/>
+    <param name="resolution" value="0.2"/>
 
     <!-- The planner assumes the vehicle is an air vehicle.  If the vehicle is constrained to the ground (wheeled vehicle), set to true. -->
     <param name="isGroundVehicle" value="true"/>
 
 	<!-- Whether or not you want to use an Occupancy Grid or an ESDF map type -->
-    <param name="useOctomap" value="true"/>
+    <param name="useOctomap" value="false"/>
 
     <!-- Name of the map world frame -->
     <param name="frame_id" type="string" value="world"/>
@@ -39,21 +40,21 @@
     <param name="turnRate" value="10.0"/>
 
     <!-- Frontier Clustering parameters (in voxels) -->
-    <param name="cluster_radius" value="0.15" />
-    <param name="min_cluster_size" value="30" />
+    <param name="cluster_radius" value="0.30" />
+    <param name="min_cluster_size" value="15" />
 
     <!-- Number of ticks before replanning -->
-    <param name="replan_ticks" value="15" />
+    <param name="replan_ticks" value="12" />
 
     <!-- Location of the environment entrance. (Default is [0.0, 0.0, 0.0])  The robot will not explore area within entrance_radius meters of this point -->
     <param name="entrance_x" value="0.0" />
     <param name="entrance_y" value="0.0" />
-    <param name="entrance_z" value="0.3" />
-    <param name="entrance_radius" value="0.0" />
+    <param name="entrance_z" value="0.6" />
+    <param name="entrance_radius" value="15.0" />
 
     <!-- Camera viewing parameters, angles in degrees, ranges in meters -->
-    <param name="cameraVerticalFoV" value="50.0"/>
-    <param name="cameraHorizontalFoV" value="150.0"/>
+    <param name="cameraVerticalFoV" value="45.0"/>
+    <param name="cameraHorizontalFoV" value="120.0"/>
     <param name="cameraMaxRange" value="2.5"/>
     <param name="cameraMinRange" value="0.5"/>
 
@@ -71,19 +72,19 @@
 
     <!-- Vehicle Fence Volume Limits -->
     <!-- <param name="fenceOn" value="true"/>
-    <param name="fence_xmin", value="-50.0"/>
-    <param name="fence_xmax", value="50.0"/>
-    <param name="fence_ymin", value="-50.0"/>
-    <param name="fence_ymax", value="50.0"/>
-    <param name="fence_zmin", value="-50.0"/>
-    <param name="fence_zmax", value="50.0"/> -->
+    <param name="fence_xmin" value="-1000.0"/>
+    <param name="fence_xmax" value="1000.0"/>
+    <param name="fence_ymin" value="-1000.0"/>
+    <param name="fence_ymax" value="1000.0"/>
+    <param name="fence_zmin" value="-50.0"/>
+    <param name="fence_zmax" value="2.5"/> -->
 
     <!-- Fix vehicle goal height (in meters) above map ground level for a quad/ground vehicle -->
-    <param name="fixGoalHeightAGL" value="false"/>
-    <param name="goalHeightAGL" value="0.4"/>
+    <param name="fixGoalHeightAGL" value="true"/>
+    <param name="goalHeightAGL" value="0.6"/>
 
     <!-- Fix the delta z in voxels from the vehicle current height that are considered frontiers -->
-    <param name="dzFrontierVoxelWidth" value="5"/>
+    <param name="dzFrontierVoxelWidth" value="-1"/>
 
   </node>
 

@@ -7,6 +7,7 @@ from geometry_msgs.msg import Twist
 from geometry_msgs.msg import Point
 from geometry_msgs.msg import Quaternion
 from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PointStamped
 from nav_msgs.msg import Path
 from nav_msgs.msg import Odometry
 from gazebo_msgs.msg import LinkStates
@@ -91,25 +92,28 @@ class guidance_controller:
 		else:
 			if (self.vehicle_type == 'ground'):
 				p_L2, v_L2 = guidance.find_Lookahead_Discrete_2D(path[0:2,:], p_robot[0:2], self.speed*self.Tstar, 0, 0)
+				
+				# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
+				if (np.linalg.norm(p_L2 - start[0:2]) <= 0.05 and np.linalg.norm(p_robot - goal) <= 0.9*self.speed*self.Tstar):
+					p_L2 = goal
+
 				print("The L2 point is: [%0.2f, %0.2f]" % (p_L2[0], p_L2[1]))
 				# Update class members
 				self.L2.x = p_L2[0]
 				self.L2.y = p_L2[1]
 				self.L2.z = p_robot[2]
 				L2_vec = p_L2 - p_robot[0:2]
-				# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
-				if (np.linalg.norm(p_L2 - start[0:2]) <= 0.05 and np.linalg.norm(p_robot - goal) <= 0.9*self.speed*self.Tstar):
-					p_L2 = goal
 			else:
 				p_L2, v_L2 = guidance.find_Lookahead_Discrete_3D(path, p_robot, self.speed*self.Tstar, 0, 0)
+				# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
+				if (np.linalg.norm(p_L2 - start) <= 0.05 and np.linalg.norm(p_robot - goal) <= 0.9*self.speed*self.Tstar):
+					p_L2 = goal
+
 				# Update class members
 				self.L2.x = p_L2[0]
 				self.L2.y = p_L2[1]
 				self.L2.z = p_L2[2]
-				L2_vec = p_L2 - p_robot[0:2]
-				# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
-				if (np.linalg.norm(p_L2 - start) <= 0.05 and np.linalg.norm(p_robot - goal) <= 0.9*self.speed*self.Tstar):
-					p_L2 = goal
+				L2_vec = p_L2 - p_robot[0:3]
 
 			# Edit later to use proportional control to just command to the goal point and the goal pose!
 
@@ -156,11 +160,11 @@ class guidance_controller:
 			self.command.linear.z = self.gain_z*error
 
 		if (self.vehicle_type == 'air'):
-			if (np.linalg.norm(p_L2 - goal) <= 0.2):
+			if (np.linalg.norm(p_L2 - goal) <= 0.6):
 				# Use proportional control to control to goal point
-				error = L2_vec[0]
+				error = L2_vec[0]*np.cos(self.yaw) + L2_vec[1]*np.sin(self.yaw)
 				self.command.linear.x = self.gain_z*error
-				error = L2_vec[1]
+				error = L2_vec[1]*np.cos(self.yaw) - L2_vec[0]*np.sin(self.yaw)
 				self.command.linear.y = self.gain_z*error
 				error = (np.pi/180.0)*guidance.angle_Diff((180.0/np.pi)*self.goal_yaw, (180.0/np.pi)*self.yaw)
 				self.command.angular.z = self.gain_yaw*error
@@ -170,6 +174,10 @@ class guidance_controller:
 			print("Yaw error of %0.2f deg." % ((180.0/np.pi)*error))
 			self.command.linear.x = 0.0;
 
+		# Set Lookahead point
+		self.lookahead_point.header.stamp = rospy.Time.now()
+		self.lookahead_point.point = L2
+
 		return
 
 	def __init__(self, name='X1', vehicle_type='ground', controller_type='L2', speed=1.0):
@@ -178,7 +186,7 @@ class guidance_controller:
 		self.vehicle_type = vehicle_type # vehicle type (ground vs air)
 		self.controller_type = controller_type # Type of guidance controller from guidance
 		self.speed = float(speed) # m/s
-		self.Tstar = 1.5 # seconds
+		self.Tstar = 1.0 # seconds
 
 		# Booleans for first subscription receive
 		self.positionUpdated = 0
@@ -200,6 +208,10 @@ class guidance_controller:
 		self.pub1 = rospy.Publisher(self.pubTopic1, Twist, queue_size=10)
 		self.pubTopic2 = name + '/lookahead_vec'
 		self.pub2 = rospy.Publisher(self.pubTopic2, Marker, queue_size=10)
+		self.pubTopic3 = 'lookahead_point'
+		self.pub3 = rospy.Publisher(self.pubTopic3, PointStamped, queue_size=10)
+		self.lookahead_point = PointStamped()
+		self.lookahead_point.header.frame_id = "map"
 
 		# Initialize twist object for publishing
 		self.command = Twist()
@@ -238,13 +250,13 @@ class guidance_controller:
 		self.gain_yaw = 0.2
 
 		# Altitude controller
-		self.gain_z = 0.3
+		self.gain_z = 0.5
 		# # Initialize velocity vector for publishing
 		# self.vel_marker = Marker()
 		# self.vel_marker.type = 0
 
 		# Saturation for yaw rate
-		self.yaw_rate_max = 1.0
+		self.yaw_rate_max = 0.3
 
 	def start(self):
 		rate = rospy.Rate(10.0) # 10Hz
@@ -255,6 +267,7 @@ class guidance_controller:
 				self.command.angular.z = np.sign(self.command.angular.z)*self.yaw_rate_max
 			self.pub1.publish(self.command)
 			self.publishLookahead()
+			self.pub3.publish(self.lookahead_point)
 		return
 
 

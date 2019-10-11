@@ -604,6 +604,7 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
         // std::cout << "Writing to file " << ss.str() << std::endl;
         writer.write<pcl::PointXYZ> (ss.str(), *cloud_cluster, false); //*
       }
+      
       groupCount++;
     }
     clusterCount++;
@@ -1497,6 +1498,11 @@ bool updateFrontier(Msfm3d& planner){
         frontier = 0;
       }
 
+      // Check if frontier is in fence
+      if (!(planner.inBoundary(point))) {
+        frontier = 0;
+      }
+
       // If the current voxel is a frontier, add the  current voxel location to the planner.frontier array
       if (frontier) {
         frontier = 0; // reset for next loop
@@ -2163,12 +2169,12 @@ int main(int argc, char **argv)
 
   // Hard coded pitch down by 15 degrees for the husky
   // if (planner.ground) {
-  //   planner.robot2camera.R.setZero();
-  //   planner.robot2camera.R(0,0) = std::cos((M_PI/180.0)*-15.0);
-  //   planner.robot2camera.R(0,2) = std::sin((M_PI/180.0)*-15.0);
-  //   planner.robot2camera.R(2,0) = -std::sin((M_PI/180.0)*-15.0);
-  //   planner.robot2camera.R(2,2) = std::cos((M_PI/180.0)*-15.0);
-  //   planner.robot2camera.R(1,1) = 1.0;
+    planner.robot2camera.R.setZero();
+    planner.robot2camera.R(0,0) = std::cos((M_PI/180.0)*15.0);
+    planner.robot2camera.R(0,2) = std::sin((M_PI/180.0)*15.0);
+    planner.robot2camera.R(2,0) = -std::sin((M_PI/180.0)*15.0);
+    planner.robot2camera.R(2,2) = std::cos((M_PI/180.0)*15.0);
+    planner.robot2camera.R(1,1) = 1.0;
   // }
 
   // planner.bubble_radius = 3.0;
@@ -2199,12 +2205,12 @@ int main(int argc, char **argv)
   n.param("global_planning/inflateWidth", inflateWidth, (float)0.6); // meters
 
   // if (planner.esdf_or_octomap) {
-  ROS_INFO("Subscribing to Occupancy Grid...");
-  ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  // ROS_INFO("Subscribing to Occupancy Grid...");
+  // ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
   // }
   // else {
-  // ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
-  // ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
+  ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
+  ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
   ros::Subscriber sub2 = n.subscribe("odometry", 1, &Msfm3d::callback_position, &planner);
