@@ -980,28 +980,6 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
   esdf.seen = NULL;
   esdf.seen = new bool [esdf.size[0]*esdf.size[1]*esdf.size[2]] { }; // Initialize all values to zero.
 
-  // Initialize the voxels within a vehicle volume around the robot the free.  They may become overwritten by occupied, but that's okay.
-  if (receivedPosition) {
-    float query_point[3];
-    int query_idx;
-    if (vehicleVolume.set) {
-      for(float dx = vehicleVolume.xmin; dx <= vehicleVolume.xmax; dx = dx + voxel_size) {
-        query_point[0] = position[0] + dx;
-        for(float dy = vehicleVolume.ymin; dx <= vehicleVolume.ymax; dy = dy + voxel_size) {
-          query_point[1] = position[1] + dy;
-          for(float dz = vehicleVolume.zmin; dz <= vehicleVolume.zmax; dz = dz + voxel_size) {
-            query_point[2] = position[2] + dz;
-            query_idx = xyz_index3(query_point);
-            if ((query_idx >= 0) && (query_idx < esdf.size[0]*esdf.size[1]*esdf.size[2])) { // Check for valid array indices
-              esdf.data[query_idx] = 1.0;
-              esdf.seen[query_idx] = true;
-            }
-          }
-        }
-      }
-    }
-  }
-
   // Loop through tree and extract occupancy info into esdf.data and seen/not into esdf.seen
   double size, value;
   float point[3], lower_corner[3];
@@ -1060,6 +1038,31 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
       }
     }
   }
+
+  // Initialize the voxels within a vehicle volume around the robot the free.
+  if (receivedPosition) {
+    float query_point[3];
+    int query_idx;
+    ROS_INFO("Clearing vehicle volume with limits [%0.2f, %0.2f; %0.2f, %0.2f; %0.2f, %0.2f].", vehicleVolume.xmin,
+      vehicleVolume.xmax, vehicleVolume.ymin, vehicleVolume.ymax, vehicleVolume.zmin, vehicleVolume.zmax);
+    if (vehicleVolume.set) {
+      for(float dx = vehicleVolume.xmin; dx <= vehicleVolume.xmax; dx = dx + voxel_size) {
+        query_point[0] = position[0] + dx;
+        for(float dy = vehicleVolume.ymin; dy <= vehicleVolume.ymax; dy = dy + voxel_size) {
+          query_point[1] = position[1] + dy;
+          for(float dz = vehicleVolume.zmin; dz <= vehicleVolume.zmax; dz = dz + voxel_size) {
+            query_point[2] = position[2] + dz;
+            query_idx = xyz_index3(query_point);
+            if ((query_idx >= 0) && (query_idx < esdf.size[0]*esdf.size[1]*esdf.size[2])) { // Check for valid array indices
+              esdf.data[query_idx] = 1.0;
+              esdf.seen[query_idx] = true;
+            }
+          }
+        }
+      }
+    }
+  }
+
 
   ROS_INFO("Octomap message received.  %d leaves labeled as occupied.  %d leaves labeled as free.", occCount, freeCount);
 }
@@ -2196,6 +2199,24 @@ int main(int argc, char **argv)
   planner.bounds.zmin = fence_z_min;
   planner.bounds.zmax = fence_z_max;
 
+  // Vehicle volume free boundaries
+  bool vehicleVolumeOn;
+  float vehicleVolumeXmin, vehicleVolumeXmax, vehicleVolumeYmin, vehicleVolumeYmax, vehicleVolumeZmin, vehicleVolumeZmax;
+  n.param("global_planning/vehicleVolumeOn", vehicleVolumeOn, false);
+  n.param("global_planning/vehicleVolumeXmin", vehicleVolumeXmin, (float)-0.50);
+  n.param("global_planning/vehicleVolumeXmax", vehicleVolumeXmax, (float)0.50);
+  n.param("global_planning/vehicleVolumeYmin", vehicleVolumeYmin, (float)-0.50);
+  n.param("global_planning/vehicleVolumeYmax", vehicleVolumeYmax, (float)0.50);
+  n.param("global_planning/vehicleVolumeZmin", vehicleVolumeZmin, (float)-0.50);
+  n.param("global_planning/vehicleVolumeZmax", vehicleVolumeZmax, (float)0.50);
+  planner.vehicleVolume.set = vehicleVolumeOn;
+  planner.vehicleVolume.xmin = vehicleVolumeXmin;
+  planner.vehicleVolume.xmax = vehicleVolumeXmax;
+  planner.vehicleVolume.ymin = vehicleVolumeYmin;
+  planner.vehicleVolume.ymax = vehicleVolumeYmax;
+  planner.vehicleVolume.zmin = vehicleVolumeZmin;
+  planner.vehicleVolume.zmax = vehicleVolumeZmax;
+
   // Get planner operating rate in Hz
   float updateRate;
   n.param("global_planning/updateRate", updateRate, (float)1.0); // Hz
@@ -2205,12 +2226,12 @@ int main(int argc, char **argv)
   n.param("global_planning/inflateWidth", inflateWidth, (float)0.6); // meters
 
   // if (planner.esdf_or_octomap) {
-  // ROS_INFO("Subscribing to Occupancy Grid...");
-  // ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  ROS_INFO("Subscribing to Occupancy Grid...");
+  ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
   // }
   // else {
-  ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
-  ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
+  // ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
+  // ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
   ros::Subscriber sub2 = n.subscribe("odometry", 1, &Msfm3d::callback_position, &planner);
