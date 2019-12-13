@@ -2227,7 +2227,7 @@ int main(int argc, char **argv)
 
   // if (planner.esdf_or_octomap) {
   ROS_INFO("Subscribing to Occupancy Grid...");
-  ros::Subscriber sub1 = n.subscribe("/octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  ros::Subscriber sub1 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
   // }
   // else {
   // ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
@@ -2258,7 +2258,7 @@ int main(int argc, char **argv)
   ros::Publisher pub3 = n.advertise<sensor_msgs::PointCloud2>("frontier", 5);
   ros::Publisher pub5 = n.advertise<visualization_msgs::Marker>("goalFrustum", 5);
   visualization_msgs::Marker cameraFrustum;
-  cameraFrustum.header.frame_id = "world";
+  cameraFrustum.header.frame_id = planner.frame;
   cameraFrustum.id = 0;
   cameraFrustum.scale.x = 1;
   cameraFrustum.scale.y = 1;

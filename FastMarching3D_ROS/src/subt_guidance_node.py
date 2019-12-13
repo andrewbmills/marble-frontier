@@ -94,7 +94,7 @@ class guidance_controller:
 				p_L2, v_L2 = guidance.find_Lookahead_Discrete_2D(path[0:2,:], p_robot[0:2], self.speed*self.Tstar, 0, 0)
 				
 				# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
-				if (np.linalg.norm(p_L2 - start[0:2]) <= 0.05 and np.linalg.norm(p_robot - goal) <= 0.9*self.speed*self.Tstar):
+				if (np.linalg.norm(p_robot - goal) <= self.speed*self.Tstar):
 					p_L2 = goal
 
 				print("The L2 point is: [%0.2f, %0.2f]" % (p_L2[0], p_L2[1]))
@@ -102,11 +102,11 @@ class guidance_controller:
 				self.L2.x = p_L2[0]
 				self.L2.y = p_L2[1]
 				self.L2.z = p_robot[2]
-				L2_vec = p_L2 - p_robot[0:2]
+				L2_vec = p_L2[0:2] - p_robot[0:2]
 			else:
 				p_L2, v_L2 = guidance.find_Lookahead_Discrete_3D(path, p_robot, self.speed*self.Tstar, 0, 0)
 				# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
-				if (np.linalg.norm(p_L2 - start) <= 0.05 and np.linalg.norm(p_robot - goal) <= 0.9*self.speed*self.Tstar):
+				if (np.linalg.norm(p_robot - goal) <= self.speed*self.Tstar):
 					p_L2 = goal
 
 				# Update class members
@@ -176,7 +176,7 @@ class guidance_controller:
 
 		# Set Lookahead point
 		self.lookahead_point.header.stamp = rospy.Time.now()
-		self.lookahead_point.point = L2
+		self.lookahead_point.point = self.L2
 
 		return
 
@@ -205,13 +205,14 @@ class guidance_controller:
 
 		# Initialize Publisher topics
 		self.pubTopic1 = name + '/cmd_vel'
+		# self.pubTopic1 = name + '/cmd_vel_guidance'
 		self.pub1 = rospy.Publisher(self.pubTopic1, Twist, queue_size=10)
 		self.pubTopic2 = name + '/lookahead_vec'
 		self.pub2 = rospy.Publisher(self.pubTopic2, Marker, queue_size=10)
-		self.pubTopic3 = 'lookahead_point'
+		self.pubTopic3 = name + '/lookahead_point'
 		self.pub3 = rospy.Publisher(self.pubTopic3, PointStamped, queue_size=10)
 		self.lookahead_point = PointStamped()
-		self.lookahead_point.header.frame_id = "map"
+		self.lookahead_point.header.frame_id = "world"
 
 		# Initialize twist object for publishing
 		self.command = Twist()

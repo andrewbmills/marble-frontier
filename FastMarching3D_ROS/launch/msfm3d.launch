@@ -30,7 +30,7 @@
     <param name="isGroundVehicle" value="true"/>
 
 	<!-- Whether or not you want to use an Occupancy Grid or an ESDF map type -->
-    <param name="useOctomap" value="true"/>
+    <param name="useOctomap" value="false"/>
 
     <!-- Name of the map world frame -->
     <param name="frame_id" type="string" value="world"/>
@@ -71,22 +71,22 @@
     <param name="inflateWidth" value="0.2"/>
 
     <!-- Vehicle Fence Volume Limits -->
-    <!-- <param name="fenceOn" value="true"/>
-    <param name="fence_xmin" value="-1000.0"/>
-    <param name="fence_xmax" value="1000.0"/>
-    <param name="fence_ymin" value="-1000.0"/>
-    <param name="fence_ymax" value="1000.0"/>
-    <param name="fence_zmin" value="-50.0"/>
-    <param name="fence_zmax" value="2.5"/> -->
+    <!-- <param name="fenceOn" value="true"/> -->
+    <!-- <param name="fence_xmin" value="-1000.0"/> -->
+    <!-- <param name="fence_xmax" value="1000.0"/> -->
+    <!-- <param name="fence_ymin" value="-1000.0"/> -->
+    <!-- <param name="fence_ymax" value="1000.0"/> -->
+    <!-- <param name="fence_zmin" value="-50.0"/> -->
+    <!-- <param name="fence_zmax" value="2.5"/> -->
 
     <!-- Vehicle Volume Extents -->
-    <param name="vehicleVolumeOn" value="true"/>
-    <param name="vehicleVolumeXmin" value="-0.5"/>
-    <param name="vehicleVolumeXmax" value="0.5"/>
-    <param name="vehicleVolumeYmin" value="-0.5"/>
-    <param name="vehicleVolumeYmax" value="0.5"/>
-    <param name="vehicleVolumeZmin" value="-0.5"/>
-    <param name="vehicleVolumeZmax" value="0.5"/>
+    <!-- <param name="vehicleVolumeOn" value="true"/> -->
+    <!-- <param name="vehicleVolumeXmin" value="-0.5"/> -->
+    <!-- <param name="vehicleVolumeXmax" value="0.5"/> -->
+    <!-- <param name="vehicleVolumeYmin" value="-0.5"/> -->
+    <!-- <param name="vehicleVolumeYmax" value="0.5"/> -->
+    <!-- <param name="vehicleVolumeZmin" value="-0.5"/> -->
+    <!-- <param name="vehicleVolumeZmax" value="0.5"/> -->
 
     <!-- Fix vehicle goal height (in meters) above map ground level for a quad/ground vehicle -->
     <param name="fixGoalHeightAGL" value="true"/>
