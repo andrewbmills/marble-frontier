@@ -113,7 +113,7 @@ class guidance_controller:
 				self.L2.x = p_L2[0]
 				self.L2.y = p_L2[1]
 				self.L2.z = p_L2[2]
-				L2_vec = p_L2 - p_robot[0:3]
+				L2_vec = p_L2[0:3] - p_robot[0:3]
 
 			# Edit later to use proportional control to just command to the goal point and the goal pose!
 
