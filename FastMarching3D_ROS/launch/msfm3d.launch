@@ -47,18 +47,22 @@
     <param name="replan_ticks" value="12" />
 
     <!-- Location of the environment entrance. (Default is [0.0, 0.0, 0.0])  The robot will not explore area within entrance_radius meters of this point -->
-    <param name="entrance_x" value="0.0" />
+    <param name="entrance_x" value="10.0" />
     <param name="entrance_y" value="0.0" />
     <param name="entrance_z" value="0.6" />
-    <param name="entrance_radius" value="0.0" />
+    <param name="entrance_radius" value="5.0" />
 
     <!-- Camera viewing parameters, angles in degrees, ranges in meters -->
-    <param name="cameraVerticalFoV" value="45.0"/>
+    <param name="cameraVerticalFoV" value="32.0"/>
     <param name="cameraHorizontalFoV" value="120.0"/>
-    <param name="cameraMaxRange" value="2.5"/>
+    <param name="cameraMaxRange" value="3.5"/>
     <param name="cameraMinRange" value="0.5"/>
+    <param name="robot2camera_roll" value="0.0"/>
+    <param name="robot2camera_pitch" value="0.0"/>
+    <param name="robot2camera_yaw" value="0.0"/>
+    <!--  -->
 
-    <!-- Quaternion for rotation from robot orientation to camera orientation (Default is identity rotation matrix) -->
+    <!-- roll, pitch, yaw for rotation from robot orientation to camera orientation (Default is identity rotation matrix) -->
     <!-- <param name="robot2camera_q_w" value="1.0"/>
     <param name="robot2camera_q_x" value="0.0"/>
     <param name="robot2camera_q_y" value="0.0"/>
@@ -71,13 +75,13 @@
     <param name="inflateWidth" value="0.2"/>
 
     <!-- Vehicle Fence Volume Limits -->
-    <!-- <param name="fenceOn" value="true"/> -->
-    <!-- <param name="fence_xmin" value="-1000.0"/> -->
-    <!-- <param name="fence_xmax" value="1000.0"/> -->
-    <!-- <param name="fence_ymin" value="-1000.0"/> -->
-    <!-- <param name="fence_ymax" value="1000.0"/> -->
-    <!-- <param name="fence_zmin" value="-50.0"/> -->
-    <!-- <param name="fence_zmax" value="2.5"/> -->
+    <param name="fenceOn" value="true"/>
+    <param name="fence_xmin" value="-1000.0"/>
+    <param name="fence_xmax" value="1000.0"/>
+    <param name="fence_ymin" value="-1000.0"/>
+    <param name="fence_ymax" value="1000.0"/>
+    <param name="fence_zmin" value="-50.0"/>
+    <param name="fence_zmax" value="2.5"/>
 
     <!-- Vehicle Volume Extents -->
     <!-- <param name="vehicleVolumeOn" value="true"/> -->
@@ -89,11 +93,19 @@
     <!-- <param name="vehicleVolumeZmax" value="0.5"/> -->
 
     <!-- Fix vehicle goal height (in meters) above map ground level for a quad/ground vehicle -->
-    <param name="fixGoalHeightAGL" value="true"/>
-    <param name="goalHeightAGL" value="0.6"/>
+    <param name="fixGoalHeightAGL" value="false"/>
+    <param name="goalHeightAGL" value="1.0"/>
 
     <!-- Fix the delta z in voxels from the vehicle current height that are considered frontiers -->
     <param name="dzFrontierVoxelWidth" value="-1"/>
+
+    <!-- Multi-agent Parameters -->
+    <param name="multiAgent" value="false"/>
+    <param name="agentCount" value="5"/>
+    <param name="goalViewSeparation" value = "5.0"/>
+
+    <!-- Cost Function -->
+    <!-- <param name="goalFunction" type="string" value="information"/> -->
 
   </node>
 

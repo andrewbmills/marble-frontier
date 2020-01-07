@@ -6,6 +6,7 @@
 // ROS libraries
 #include <ros/ros.h>
 #include <std_msgs/Bool.h>
+#include <std_msgs/Int32.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <geometry_msgs/PointStamped.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -263,6 +264,9 @@ class Msfm3d
     // Artifact detected flag
     bool artifactDetected = false;
 
+    // Number of neighbors to plan with
+    int numNeighbors = 0;
+
     // Sensor parameters
     SensorFoV camera;
     Pose robot2camera;
@@ -277,6 +281,7 @@ class Msfm3d
     void callback_Octomap_occupiedPCL(const sensor_msgs::PointCloud2 msg);
     void callback_position(const nav_msgs::Odometry msg); // Subscriber callback for robot position
     void callback_artifactDetected(const std_msgs::Bool msg);
+    void callback_numNeighbors(const std_msgs::Int32 msg);
     // void callback_artifactDetected(const marble_common::ArtifactArray msg);
     void parsePointCloud(); // Function to parse pointCloud2 into an esdf format that msfm3d can use
     int xyz_index3(const float point[3]);
@@ -294,6 +299,12 @@ class Msfm3d
     void inflateObstacles(const float radius, sensor_msgs::PointCloud2& inflatedOccupiedMsg);
     float heightAGL(const float point[3]);
 };
+
+void Msfm3d::callback_numNeighbors(const std_msgs::Int32 msg)
+{
+  numNeighbors = msg.data;
+  return;
+}
 
 // void Msfm3d::callback_artifactDetected(const marble_common::ArtifactArray msg)
 void Msfm3d::callback_artifactDetected(const std_msgs::Bool msg)
@@ -805,6 +816,9 @@ void Msfm3d::updateGoalPoses()
 
     // Cull the view frustum points with the pcl function
     // ROS_INFO("Frustum Culling...");
+    // TO-DO: Use a series of passthrough filters to restrict the x,y,z neighborhood (cropbox) and then compute 
+    // polar coords for each point to filter those within the sensor FoV.
+
     pcl::FrustumCulling<pcl::PointXYZ> fc;
     fc.setInputCloud(frontierCloud);
     fc.setVerticalFOV(camera.verticalFoV);
@@ -1567,15 +1581,17 @@ void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5])
   }
 }
 
-void closestGoalView(Msfm3d& planner, int viewIndices[5], double cost[5])
+void closestGoalView(Msfm3d& planner, int viewIndices*, double cost*, const int N, const float dMin)
 {
-  // findFrontier scans through the environment arrays and returns the 5 closest frontier locations in reachability distance.
+  // findFrontier scans through the environment arrays and returns the N closest frontier locations in reachability distance that are at least dMin apart.
   float point[3];
+  float query[3];
   int slot = 0;
   int idx; // index of the current view pose in the reach matrix
+  float d = 0.0; // distance from the 
 
   // Initialize cost list with large descending values.
-  for (int i=0; i<5; i++) {
+  for (int i=0; i<N; i++) {
     cost[i] = 1e6 - 100*i;
     viewIndices[i] = -1;
   }
@@ -1592,8 +1608,17 @@ void closestGoalView(Msfm3d& planner, int viewIndices[5], double cost[5])
     }
     if (planner.reach[idx] > (double)0.0) {
       // Put the new point in the correct slot
-      for (int j=0; j<5; j++) {
-        if (planner.reach[idx]<cost[j]) slot = j;
+      for (int j=0; j<N; j++) {
+        query[0] = planner.goalViews[viewIndices[j]].pose.position.x;
+        query[1] = planner.goalViews[viewIndices[j]].pose.position.y;
+        query[2] = planner.goalViews[viewIndices[j]].pose.position.z;
+        d = dist3(point, query);
+        if ((planner.reach[idx]<cost[j]) && (d<dMin)) {
+          cost[j] = planner.reach[idx];
+          viewIndices[j] = i;
+        } else if (planner.reach[idx]<cost[j]) {
+          slot = j;
+        }
       }
       for (int j=0; j<slot; j++) {
         cost[j] = cost[j+1];
@@ -1606,7 +1631,7 @@ void closestGoalView(Msfm3d& planner, int viewIndices[5], double cost[5])
   }
 }
 
-void infoGoalView(Msfm3d& planner, int viewIndices[5], double utility[5])
+void infoGoalView(Msfm3d& planner, int viewIndices*, double utility*, const int nAgents, const float dMin)
 {
    // infoGoalView finds the most "informative" View in the planner.goalViews vector.
   float point[3];
@@ -1622,7 +1647,7 @@ void infoGoalView(Msfm3d& planner, int viewIndices[5], double utility[5])
     viewIndices[i] = -1;
   }
 
-  // Find the 5 views with the greatest utility (frontier voxels/second) and arrange them in ascending order in utility[5]
+  // Find the N views with the greatest utility (frontier voxels/second) and arrange them in ascending order in utility
   for (int i=0; i<planner.goalViews.size(); i++) {
     point[0] = planner.goalViews[i].pose.position.x;
     point[1] = planner.goalViews[i].pose.position.y;
@@ -2057,6 +2082,7 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
             }
         }
         // Exit when nFront frontiers have been reached.
+        // TO-DO Change criteria to stop when the best num_Neighbor poses have been reached.
         if (frontCount >= nFront && !reachOrigin) break;
     }
     /* Free memory */
@@ -2158,27 +2184,34 @@ int main(int argc, char **argv)
   planner.camera.rMax = rMax;
   planner.camera.rMin = rMin;
 
-  // robot2camera quaternion
-  float q_w, q_x, q_y, q_z;
-  n.param("global_planning/robot2camera_q_w", q_w, (float)1.0);
-  n.param("global_planning/robot2camera_q_x", q_x, (float)0.0);
-  n.param("global_planning/robot2camera_q_y", q_y, (float)0.0);
-  n.param("global_planning/robot2camera_q_z", q_z, (float)0.0);
-  planner.robot2camera.q.w = q_w;
-  planner.robot2camera.q.x = q_x;
-  planner.robot2camera.q.y = q_y;
-  planner.robot2camera.q.z = q_z;
-  // planner.robot2camera.R = quaternion2RotationMatrix(planner.robot2camera.q);
-
-  // Hard coded pitch down by 15 degrees for the husky
-  // if (planner.ground) {
-    planner.robot2camera.R.setZero();
-    planner.robot2camera.R(0,0) = std::cos((M_PI/180.0)*15.0);
-    planner.robot2camera.R(0,2) = std::sin((M_PI/180.0)*15.0);
-    planner.robot2camera.R(2,0) = -std::sin((M_PI/180.0)*15.0);
-    planner.robot2camera.R(2,2) = std::cos((M_PI/180.0)*15.0);
-    planner.robot2camera.R(1,1) = 1.0;
-  // }
+  // robot2camera 3-2-1 rotation angles
+  float roll, pitch, yaw;
+  Eigen::Matrix3f R_roll, R_pitch, R_yaw;
+  n.param("global_planning/robot2camera_roll", roll, (float)0.0);
+  n.param("global_planning/robot2camera_pitch", pitch, (float)0.0);
+  n.param("global_planning/robot2camera_yaw", yaw, (float)0.0);
+  R_roll.setZero();
+  R_roll(0,0) = 1.0;
+  R_roll(1,1) = std::cos((M_PI/180.0)*roll);
+  R_roll(1,2) = -std::sin((M_PI/180.0)*roll);
+  R_roll(2,1) = std::sin((M_PI/180.0)*roll);
+  R_roll(2,2) = std::cos((M_PI/180.0)*roll);
+  R_pitch.setZero();
+  R_pitch(0,0) = std::cos((M_PI/180.0)*pitch);
+  R_pitch(0,2) = std::sin((M_PI/180.0)*pitch);
+  R_pitch(2,0) = -std::sin((M_PI/180.0)*pitch);
+  R_pitch(2,2) = std::cos((M_PI/180.0)*pitch);
+  R_pitch(1,1) = 1.0;
+  R_yaw.setZero();
+  R_yaw(0,0) = std::cos((M_PI/180.0)*yaw);
+  R_yaw(0,1) = -std::sin((M_PI/180.0)*yaw);
+  R_yaw(1,0) = std::sin((M_PI/180.0)*yaw);
+  R_yaw(1,1) = std::cos((M_PI/180.0)*yaw);
+  R_yaw(2,2) = 1.0;
+  planner.robot2camera.R = R_roll*R_pitch*R_yaw;
+  ROS_INFO("Camera rotation matrix: [%0.2f, %0.2f, %0.2f; %0.2f, %0.2f, %0.2f; %0.2f, %0.2f, %0.2f]", planner.robot2camera.R(0,0),
+    planner.robot2camera.R(0,1), planner.robot2camera.R(0,2), planner.robot2camera.R(1,0), planner.robot2camera.R(1,1), planner.robot2camera.R(1,2),
+    planner.robot2camera.R(2,0), planner.robot2camera.R(2,1), planner.robot2camera.R(2,2));
 
   // planner.bubble_radius = 3.0;
   // Set planner bounds so that the robot doesn't exit a defined volume
@@ -2225,19 +2258,30 @@ int main(int argc, char **argv)
   float inflateWidth;
   n.param("global_planning/inflateWidth", inflateWidth, (float)0.6); // meters
 
+  // Multi-agent parameters
+  bool multiAgentOn;
+  int agentCount;
+  float goalViewSeparation;
+  n.param("global_planning/multiAgent", multiAgentOn, false);
+  n.param("global_planning/agentCount", agentCount, 1);
+  n.param("global_planning/goalViewSeparation", goalViewSeparation, 5.0);
+
   // if (planner.esdf_or_octomap) {
   ROS_INFO("Subscribing to Occupancy Grid...");
-  ros::Subscriber sub1 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  ros::Subscriber sub0 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
   // }
   // else {
-  // ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
-  // ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
+  ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
+  ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
   ros::Subscriber sub2 = n.subscribe("odometry", 1, &Msfm3d::callback_position, &planner);
 
   ROS_INFO("Subscribing to artifact message...");
   ros::Subscriber sub3 = n.subscribe("artifact_list", 1, &Msfm3d::callback_artifactDetected, &planner);
+
+  ROS_INFO("Subcribing to neighbor count...");
+  ros::Subscriber sub4 = n.subscribe("num_Neighbor", 1, &Msfm3d::callback_numNeighbors, &planner);
 
   ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("nearest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
@@ -2284,8 +2328,9 @@ int main(int argc, char **argv)
   clock_t tStart;
   int npixels;
   int spins = 0;
-  int goalViewList[5] = {0, 0, 0, 0, 0};
-  double goalViewCost[5];
+  int goalViewList[agentCount];
+  for (int i=0; i<agentCount; i++) goalViewList[i] = 0;
+  double goalViewCost[agentCount];
   float frontierList[15];
   double frontierCost[5];
   float goal[3] = {0.0, 0.0, 0.0};
@@ -2352,15 +2397,16 @@ int main(int argc, char **argv)
 
           // Call msfm3d function
           if (replan || replan_ticks >= replan_tick_limit) {
-            ROS_INFO("At least 50 percent of the frontiers at the goal pose are no longer frontiers or 5 loops have occurred since last plan.  Replanning...");
+            ROS_INFO("At least 50 percent of the frontiers at the goal pose are no longer frontiers or %d loops have occurred since last plan.  Replanning...", (int)replan_tick_limit);
             // Find goal poses from which to view the frontier
             planner.updateGoalPoses();
 
             replan_ticks = 0;
             tStart = clock();
-            if ((int)planner.frontierCloud->points.size() > 2*(int)planner.frontierClusterIndices[0].indices.size()) {
+
+            if ((int)planner.frontierCloud->points.size() > (planner.numNeighbors+2)*(int)planner.frontierClusterIndices[0].indices.size()) {
               ROS_INFO("Reachability matrix calculating to %d closest frontier points...", 2*(int)planner.frontierClusterIndices[0].indices.size());
-              reach(planner, 0, 0, 2*(int)planner.frontierClusterIndices[0].indices.size(), false);
+              reach(planner, 0, 0, (planner.numNeighbors+2)*(int)planner.frontierClusterIndices[0].indices.size(), false);
             } else {
               ROS_INFO("Reachability matrix calculating to %d closest frontier points...", (int)planner.frontierCloud->points.size());
               reach(planner, 0, 0, (int)planner.frontierCloud->points.size(), false);
@@ -2369,8 +2415,13 @@ int main(int argc, char **argv)
             ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
 
             // Find goal views with an information-based optimization
-            // closestGoalView(planner, goalViewList, goalViewCost);
-            infoGoalView(planner, goalViewList, goalViewCost);
+            if (goalFunction == "information") {
+              infoGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation);
+            } else {
+              closestGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation);
+            }
+
+            // TO-DO Switch between this function and a multi-agent optimization that outputs the top N goal poses
 
             // If no reasonable goal views are found, expand search to all frontier cells to see if any goal view can be found
             if (goalViewCost[4] < 0.0) {
@@ -2429,8 +2480,7 @@ int main(int argc, char **argv)
               goalPose.pose.orientation.y = 0.0;
               goalPose.pose.orientation.z = 0.0;
               goalPose.pose.orientation.w = 1.0;
-            }
-            else {
+            } else {
               // Write a new frontier goal location for publishing
               frontierGoal.point.x = planner.goalViews[goalViewList[4]].pose.position.x;
               frontierGoal.point.y = planner.goalViews[goalViewList[4]].pose.position.y;
