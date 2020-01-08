@@ -19,9 +19,23 @@ find_package(catkin REQUIRED
     octomap_ros
     octomap_msgs
     cmake_modules
+    message_generation
+    message_runtime
 )
 
 add_definitions(${EIGEN_DEFINITIONS})
+
+add_message_files(
+  FILES
+  PathArray.msg
+)
+
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+  geometry_msgs
+  nav_msgs
+)
 
 catkin_package(
   INCLUDE_DIRS include

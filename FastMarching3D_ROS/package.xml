@@ -2,7 +2,7 @@
 	<name>msfm3d</name>
 	<version>0.1.0</version>version
 	<description>
-		This package subscribes to a robot pose and map (Octomap or Voxblox ESDF/TSDF) and outputs a frontie PointCloud, a goal pose, and a path to that pose.
+		This package subscribes to a robot pose and map (Octomap or Voxblox ESDF/TSDF) and outputs a frontier PointCloud, a goal pose, and a path to that pose.
 	</description>
 	<maintainer email="andmills17@gmail.com">Andrew B Mills</maintainer>
 
@@ -27,4 +27,6 @@
 	<depend>std_msgs</depend>
 	<depend>octomap_msgs</depend>
 	<depend>octomap</depend>
+	<build_depend>message_generation</build_depend>
+  	<exec_depend>message_runtime</exec_depend>
 </package>

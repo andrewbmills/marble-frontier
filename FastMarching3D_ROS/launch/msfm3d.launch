@@ -44,7 +44,9 @@
     <param name="min_cluster_size" value="50" />
 
     <!-- Number of ticks before replanning -->
-    <param name="replan_ticks" value="12" />
+    <param name="replan_ticks" value="1" />
+    <!-- Number of ticks before sampling new goal poses -->
+    <param name="goal_ticks" value="100" />
 
     <!-- Location of the environment entrance. (Default is [0.0, 0.0, 0.0])  The robot will not explore area within entrance_radius meters of this point -->
     <param name="entrance_x" value="10.0" />
@@ -69,7 +71,7 @@
     <param name="robot2camera_q_z" value="0.0"/> -->
 
     <!-- Update Rate, default is 1.0 Hz -->
-    <param name="updateRate" value="1.0"/>
+    <param name="updateRate" value="5.0"/>
 
     <!-- Inflated Obstacle width -->
     <param name="inflateWidth" value="0.2"/>
@@ -105,7 +107,7 @@
     <param name="goalViewSeparation" value = "5.0"/>
 
     <!-- Cost Function -->
-    <!-- <param name="goalFunction" type="string" value="information"/> -->
+    <param name="goalFunction" type="string" value="cost"/>
 
   </node>
 
