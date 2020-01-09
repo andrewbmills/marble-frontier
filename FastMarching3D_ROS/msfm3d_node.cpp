@@ -298,7 +298,7 @@ class Msfm3d
     void callback_Octomap_occupiedPCL(const sensor_msgs::PointCloud2 msg);
     void callback_position(const nav_msgs::Odometry msg); // Subscriber callback for robot position
     void callback_artifactDetected(const std_msgs::Bool msg);
-    void callback_numNeighbors(const std_msgs::Int32 msg);
+    void callback_numNeighbors(const std_msgs::Int8 msg);
     // void callback_artifactDetected(const marble_common::ArtifactArray msg);
     void parsePointCloud(); // Function to parse pointCloud2 into an esdf format that msfm3d can use
     int xyz_index3(const float point[3]);
@@ -2326,7 +2326,7 @@ int main(int argc, char **argv)
   ros::Subscriber sub3 = n.subscribe("artifact_list", 1, &Msfm3d::callback_artifactDetected, &planner);
 
   ROS_INFO("Subcribing to neighbor count...");
-  ros::Subscriber sub4 = n.subscribe("num_Neighbors", 1, &Msfm3d::callback_numNeighbors, &planner);
+  ros::Subscriber sub4 = n.subscribe("num_neighbors", 1, &Msfm3d::callback_numNeighbors, &planner);
 
   ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("nearest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
