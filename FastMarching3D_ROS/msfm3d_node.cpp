@@ -7,7 +7,7 @@
 // ROS libraries
 #include <ros/ros.h>
 #include <std_msgs/Bool.h>
-#include <std_msgs/Int32.h>
+#include <std_msgs/Int8.h>
 #include <std_msgs/Float32MultiArray.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <geometry_msgs/PointStamped.h>
@@ -317,7 +317,7 @@ class Msfm3d
     float heightAGL(const float point[3]);
 };
 
-void Msfm3d::callback_numNeighbors(const std_msgs::Int32 msg)
+void Msfm3d::callback_numNeighbors(const std_msgs::Int8 msg)
 {
   numNeighbors = msg.data;
   return;
@@ -2326,7 +2326,7 @@ int main(int argc, char **argv)
   ros::Subscriber sub3 = n.subscribe("artifact_list", 1, &Msfm3d::callback_artifactDetected, &planner);
 
   ROS_INFO("Subcribing to neighbor count...");
-  ros::Subscriber sub4 = n.subscribe("num_Neighbor", 1, &Msfm3d::callback_numNeighbors, &planner);
+  ros::Subscriber sub4 = n.subscribe("num_Neighbors", 1, &Msfm3d::callback_numNeighbors, &planner);
 
   ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("nearest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
