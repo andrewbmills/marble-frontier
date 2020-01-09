@@ -2317,7 +2317,7 @@ int main(int argc, char **argv)
   // }
   // else {
   ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
-  ros::Subscriber sub1 = n.subscribe("/X1/voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
+  ros::Subscriber sub1 = n.subscribe("voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
   // }
   ROS_INFO("Subscribing to robot state...");
   ros::Subscriber sub2 = n.subscribe("odometry", 1, &Msfm3d::callback_position, &planner);

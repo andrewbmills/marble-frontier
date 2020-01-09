@@ -20,7 +20,7 @@
     <remap from="goalFrustum" to="X1/goalFrustum"/>
     <remap from="inflatedOctomap" to="X1/inflatedOctomap"/>
     <remap from="artifact_list" to="X1/report_artifact"/>
-    <remap from="X1/voxblox_node/tsdf_pointcloud" to="X1/voxblox_node/esdf_pointcloud"/>
+    <remap from="voxblox_node/tsdf_pointcloud" to="X1/voxblox_node/esdf_pointcloud"/>
 
     <!-- Parameters -->
     <!-- Map Resolution -->
