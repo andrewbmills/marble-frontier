@@ -28,6 +28,8 @@ add_definitions(${EIGEN_DEFINITIONS})
 add_message_files(
   FILES
   PathArray.msg
+  Goal.msg
+  GoalArray.msg
 )
 
 generate_messages(
