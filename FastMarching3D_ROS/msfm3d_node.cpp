@@ -2514,13 +2514,13 @@ int main(int argc, char **argv)
                   msfm3d::Goal newGoalMsg;
                   // Write a new goal pose, path, and cost for publishing
                   goalPose.header.stamp = ros::Time::now();
-                  goalPose.pose.position.x = goal[0];
-                  goalPose.pose.position.y = goal[1];
-                  goalPose.pose.position.z = goal[2];
-                  goalPose.pose.orientation.x = planner.goalViews[goalViewList[0]].pose.q.x;
-                  goalPose.pose.orientation.y = planner.goalViews[goalViewList[0]].pose.q.y;
-                  goalPose.pose.orientation.z = planner.goalViews[goalViewList[0]].pose.q.z;
-                  goalPose.pose.orientation.w = planner.goalViews[goalViewList[0]].pose.q.w;
+                  goalPose.pose.position.x = query[0];
+                  goalPose.pose.position.y = query[1];
+                  goalPose.pose.position.z = query[2];
+                  goalPose.pose.orientation.x = planner.goalViews[goalViewList[i]].pose.q.x;
+                  goalPose.pose.orientation.y = planner.goalViews[goalViewList[i]].pose.q.y;
+                  goalPose.pose.orientation.z = planner.goalViews[goalViewList[i]].pose.q.z;
+                  goalPose.pose.orientation.w = planner.goalViews[goalViewList[i]].pose.q.w;
                   newGoalMsg.pose = goalPose;
                   newGoalMsg.path = planner.pathmsg;
                   newGoalMsg.cost.data = (float)goalViewCost[i];
