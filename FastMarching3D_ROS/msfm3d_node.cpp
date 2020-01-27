@@ -1553,7 +1553,7 @@ bool updateFrontier(Msfm3d& planner){
       }
     }
   }
-  ROS_INFO("%d points are free.  %d points are free and adjacent to unoccupied voxels.  %d points filtered for being too high/low.  %d points filtered for being adjacent to occupied voxels.  %d points at entrance.", pass1, pass2, pass3, pass4, pass5);
+  ROS_INFO("%d points are free.  %d points are free and adjacent to unseen voxels.  %d points filtered for being too high/low.  %d points filtered for being adjacent to occupied voxels.  %d points at entrance.", pass1, pass2, pass3, pass4, pass5);
   ROS_INFO("Frontier updated. %d voxels initially labeled as frontier.", frontierCount);
 
   if (frontierCount == 0) {
@@ -1613,6 +1613,7 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
   int slot = 0;
   int idx; // index of the current view pose in the reach matrix
   float d = 0.0; // distance between goal views
+  float vehicle_yaw = std::atan2(2.0*(planner.q.w*planner.q.z + planner.q.x*planner.q.y), 1.0 - 2.0*(planner.q.y*planner.q.y + planner.q.z*planner.q.z)); // rad
 
   // Initialize cost list with negative values.
   for (int i=0; i<N; i++) {
@@ -1634,8 +1635,19 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
     }
     if (planner.reach[idx] > (double)0.0) {
       // Put the new point in the costs and indices vector
-      costs.push_back(planner.reach[idx]);
-      indices.push_back(i);
+      if (planner.updatePath(point)) {
+        // Get the angle between the current robot pose and the path start
+        int j = min((int)planner.pathmsg.poses.size(), 50);
+        float start_path_vec[3] = {(float)(planner.pathmsg.poses[j].pose.position.x - planner.pathmsg.poses[0].pose.position.x),
+                                   (float)(planner.pathmsg.poses[j].pose.position.y - planner.pathmsg.poses[0].pose.position.y),
+                                   (float)(planner.pathmsg.poses[j].pose.position.z - planner.pathmsg.poses[0].pose.position.z)};
+        float start_path_yaw = std::atan2(start_path_vec[1], start_path_vec[0]); // rad
+        double cost;
+        cost = planner.reach[idx] + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw))/planner.turnRate;
+        // ROS_INFO("Vehicle yaw = %0.2f deg, Path yaw = %0.2f deg, cost = %0.2f, cost_turn = %0.2f", (180.0/M_PI)*vehicle_yaw, (180.0/M_PI)*start_path_yaw, planner.reach[idx], cost - planner.reach[idx]);
+        costs.push_back(cost);
+        indices.push_back(i);
+      }
     }
   }
 
@@ -1723,17 +1735,18 @@ void infoGoalView(Msfm3d& planner, int *viewIndices, double *utility, const int 
         // Calculate the feasability and path to arrive at the current goal view
         if (planner.updatePath(point)) {
           // Get the angle between the current robot pose and the path start
-          float start_path_vec[3] = {(float)(planner.pathmsg.poses[1].pose.position.x - planner.pathmsg.poses[0].pose.position.x),
-                                     (float)(planner.pathmsg.poses[1].pose.position.y - planner.pathmsg.poses[0].pose.position.y),
-                                     (float)(planner.pathmsg.poses[1].pose.position.z - planner.pathmsg.poses[0].pose.position.z)};
+          int j = min((int)planner.pathmsg.poses.size(), 10);
+          float start_path_vec[3] = {(float)(planner.pathmsg.poses[j].pose.position.x - planner.pathmsg.poses[0].pose.position.x),
+                                     (float)(planner.pathmsg.poses[j].pose.position.y - planner.pathmsg.poses[0].pose.position.y),
+                                     (float)(planner.pathmsg.poses[j].pose.position.z - planner.pathmsg.poses[0].pose.position.z)};
           float start_path_yaw = std::atan2(start_path_vec[1], start_path_vec[0]); // degrees
           float vehicle_yaw = std::atan2(2.0*(planner.q.w*planner.q.z + planner.q.x*planner.q.y), 1.0 - 2.0*(planner.q.y*planner.q.y + planner.q.z*planner.q.z)); // degrees
 
           // Get the angle between the path end and the goal pose
           int end_path_idx = (int)planner.pathmsg.poses.size()-1;
-          float end_path_vec[3] = {(float)(planner.pathmsg.poses[end_path_idx].pose.position.x - planner.pathmsg.poses[end_path_idx-1].pose.position.x),
-                                   (float)(planner.pathmsg.poses[end_path_idx].pose.position.y - planner.pathmsg.poses[end_path_idx-1].pose.position.y),
-                                   (float)(planner.pathmsg.poses[end_path_idx].pose.position.z - planner.pathmsg.poses[end_path_idx-1].pose.position.z)};;
+          float end_path_vec[3] = {(float)(planner.pathmsg.poses[end_path_idx].pose.position.x - planner.pathmsg.poses[end_path_idx-j+1].pose.position.x),
+                                   (float)(planner.pathmsg.poses[end_path_idx].pose.position.y - planner.pathmsg.poses[end_path_idx-j+1].pose.position.y),
+                                   (float)(planner.pathmsg.poses[end_path_idx].pose.position.z - planner.pathmsg.poses[end_path_idx-j+1].pose.position.z)};;
           float end_path_yaw = std::atan2(end_path_vec[1], end_path_vec[0]); // degrees
           Quaternion goal_q = planner.goalViews[i].pose.q;
           float goal_yaw = std::atan2(2.0*(goal_q.w*goal_q.z + goal_q.x*goal_q.y), 1.0 - 2.0*(goal_q.y*goal_q.y + goal_q.z*goal_q.z)); // degrees
@@ -2185,6 +2198,7 @@ int main(int argc, char **argv)
   n.param("global_planning/turnRate", turnRate, (float)5.0); // deg/s
   planner.speed = speed;
   planner.turnRate = turnRate;
+  ROS_INFO("Turn rate set to %0.2f deg/s", planner.turnRate);
 
   // Replanning ticks
   int replan_tick_limit;
@@ -2318,14 +2332,12 @@ int main(int argc, char **argv)
   n.param("global_planning/agentCount", agentCount, 5);
   n.param("global_planning/goalViewSeparation", goalViewSeparation, (float)5.0);
 
-  // if (planner.esdf_or_octomap) {
   ROS_INFO("Subscribing to Occupancy Grid...");
   ros::Subscriber sub0 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
-  // }
-  // else {
+
   ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
   ros::Subscriber sub1 = n.subscribe("voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
-  // }
+
   ROS_INFO("Subscribing to robot state...");
   ros::Subscriber sub2 = n.subscribe("odometry", 1, &Msfm3d::callback_position, &planner);
 
