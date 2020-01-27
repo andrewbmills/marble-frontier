@@ -1,0 +1,15 @@
+<launch>
+  <!-- Normal filter node -->
+  <arg name="vehicle" default="X1" />
+  <arg name="ns" default="/$(arg vehicle)" />
+
+  <node ns="$(arg ns)" pkg="traversability_mapping" type="normal_filter" name="normal_filter" output="screen">
+    <param name="radiusSearch" value="0.6"/>
+    <param name="rate" value="10.0"/>
+    <param name="resolution" value="0.2"/>
+    <!-- Threshold for traversability in degrees -->
+    <param name="normalThreshold" value="0.80"/>
+    <param name="radiusThreshold" value="6.0"/>
+  </node>
+
+</launch>
