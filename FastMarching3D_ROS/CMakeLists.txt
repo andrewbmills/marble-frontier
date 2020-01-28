@@ -27,7 +27,6 @@ add_definitions(${EIGEN_DEFINITIONS})
 
 add_message_files(
   FILES
-  PathArray.msg
   Goal.msg
   GoalArray.msg
 )
@@ -55,5 +54,10 @@ include_directories(
 
 add_executable(msfm3d msfm3d_node.cpp)
 target_link_libraries(msfm3d
+  ${catkin_LIBRARIES}
+)
+
+add_executable(costmap_generator src/costmap_generator.cpp)
+target_link_libraries(costmap_generator
   ${catkin_LIBRARIES}
 )

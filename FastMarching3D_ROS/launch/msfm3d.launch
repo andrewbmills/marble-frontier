@@ -1,26 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch>
-  <!-- <include file="$(find arpg_husky)/launch/hosts.launch"/> -->
 
-  <!-- Robot namespace -->
-  <!-- <arg name="machine" default="$(env ROS_HOSTNAME)"/> -->
+  <!-- <arg name="vehicle" default="$(env ROS_HOSTNAME)" /> -->
+  <arg name="vehicle" default="X1" />
+  <arg name="ns" default="/$(arg vehicle)" />
 
-  <node pkg="msfm3d" type="msfm3d" name="global_planning" output="screen">
+  <node ns="$(arg ns)" pkg="msfm3d" type="msfm3d" name="global_planning" output="screen">
     <!-- Inputs (Subscribed Topic Names) -->
 
-    <!-- <remap from="octomap_binary" to="octomap_full"/> -->
-    <remap from="odometry" to="X1/odometry"/>
+    <!-- <remap from="octomap_binary" to="traversability_map"/> -->
+    <!-- <remap from="odometry" to="odometry"/> -->
 
     <!-- Outputs (Published Topic Names) -->
 
-    <remap from="nearest_frontier" to="X1/nearest_frontier"/>
-    <remap from="frontier_goal_pose" to="X1/frontier_goal_pose"/>
-    <remap from="planned_path" to="X1/planned_path"/>
-    <remap from="frontier" to="X1/frontier"/>
-    <remap from="goalFrustum" to="X1/goalFrustum"/>
-    <remap from="inflated_octomap" to="X1/inflated_octomap"/>
-    <remap from="artifact_list" to="X1/report_artifact"/>
-    <remap from="voxblox_node/tsdf_pointcloud" to="X1/voxblox_node/esdf_pointcloud"/>
+    <!-- <remap from="nearest_frontier" to="nearest_frontier_2"/> -->
+    <!-- <remap from="frontier_goal_pose" to="frontier_goal_pose_2"/> -->
+    <!-- <remap from="planned_path" to="planned_path_2"/> -->
+    <!-- <remap from="frontier" to="frontier_2"/> -->
+    <!-- <remap from="goalFrustum" to="goalFrustum_2"/> -->
+    <!-- <remap from="inflated_octomap" to="inflated_octomap"/> -->
+    <remap from="artifact_list" to="report_artifact"/>
+    <remap from="voxblox_node/tsdf_pointcloud" to="cost_map"/>
+    <!-- <remap from="voxblox_node/tsdf_pointcloud" to="voxblox_node/esdf_pointcloud"/> -->
 
     <!-- Parameters -->
     <!-- Map Resolution -->
@@ -37,28 +38,28 @@
 
     <!-- Vehicle speed in m/s and turnRate in deg/s -->
     <param name="speed" value="1.0"/>
-    <param name="turnRate" value="10.0"/>
+    <param name="turnRate" value="3.0"/>
 
     <!-- Frontier Clustering parameters (in voxels) -->
     <param name="cluster_radius" value="0.30" />
     <param name="min_cluster_size" value="50" />
 
     <!-- Number of ticks before replanning -->
-    <param name="replan_ticks" value="1" />
+    <param name="replan_ticks" value="10" />
     <!-- Number of ticks before sampling new goal poses -->
     <param name="goal_ticks" value="100" />
 
     <!-- Location of the environment entrance. (Default is [0.0, 0.0, 0.0])  The robot will not explore area within entrance_radius meters of this point -->
-    <param name="entrance_x" value="14.0" />
+    <param name="entrance_x" value="-2.0" />
     <param name="entrance_y" value="0.0" />
     <param name="entrance_z" value="0.6" />
-    <param name="entrance_radius" value="5.0" />
+    <param name="entrance_radius" value="0.0" />
 
     <!-- Camera viewing parameters, angles in degrees, ranges in meters -->
-    <param name="cameraVerticalFoV" value="32.0"/>
+    <param name="cameraVerticalFoV" value="30.0"/>
     <param name="cameraHorizontalFoV" value="120.0"/>
-    <param name="cameraMaxRange" value="3.5"/>
-    <param name="cameraMinRange" value="0.5"/>
+    <param name="cameraMaxRange" value="3.0"/>
+    <param name="cameraMinRange" value="0.2"/>
     <param name="robot2camera_roll" value="0.0"/>
     <param name="robot2camera_pitch" value="0.0"/>
     <param name="robot2camera_yaw" value="0.0"/>
@@ -71,13 +72,13 @@
     <param name="robot2camera_q_z" value="0.0"/> -->
 
     <!-- Update Rate, default is 1.0 Hz -->
-    <param name="updateRate" value="5.0"/>
+    <param name="updateRate" value="1.0"/>
 
     <!-- Inflated Obstacle width -->
-    <param name="inflateWidth" value="0.2"/>
+    <param name="inflateWidth" value="0.0"/>
 
     <!-- Vehicle Fence Volume Limits -->
-    <param name="fenceOn" value="true"/>
+    <param name="fenceOn" value="false"/>
     <param name="fence_xmin" value="-1000.0"/>
     <param name="fence_xmax" value="1000.0"/>
     <param name="fence_ymin" value="-1000.0"/>
@@ -96,13 +97,13 @@
 
     <!-- Fix vehicle goal height (in meters) above map ground level for a quad/ground vehicle -->
     <param name="fixGoalHeightAGL" value="false"/>
-    <param name="goalHeightAGL" value="1.0"/>
+    <param name="goalHeightAGL" value="0.2"/>
 
     <!-- Fix the delta z in voxels from the vehicle current height that are considered frontiers -->
     <param name="dzFrontierVoxelWidth" value="-1"/>
 
     <!-- Multi-agent Parameters -->
-    <param name="agentCount" value="5"/>
+    <param name="agentCount" value="2"/>
     <param name="goalViewSeparation" value = "5.0"/>
 
     <!-- Cost Function -->

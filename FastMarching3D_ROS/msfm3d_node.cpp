@@ -252,6 +252,8 @@ class Msfm3d
     float origin[3]; // location in xyz coordinates where the robot entered the environment
     float entranceRadius; // radius around the origin where frontiers can't exist
 
+    float viewPoseObstacleDistance = 0.2; // view pose minimum distance from obstacles
+
     double * reach; // reachability grid (output from reach())
     sensor_msgs::PointCloud2 PC2msg;
     nav_msgs::Path pathmsg;
@@ -680,6 +682,8 @@ bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end) {
     }
   } else {
     // I don't have this built out yet
+
+    // Run the bresenham3d line tracing algorithm to find all the indices in between start and end
     // ROS_INFO("Occlusion detection is not defined for ESDF at the moment.  Use Octomap for pose sampling.  Returning True for all raycasts.");
     return true;
   }
@@ -743,33 +747,33 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, co
 
     // ROS_INFO("Checking if sampled point is reachable...");
     // See if sample is at an unreachable point (occupied or unseen)
-    if (esdf.data[sample_idx] <= 0.0) {
+    if (esdf.data[sample_idx] < viewPoseObstacleDistance) {
       continue;
     }
 
     // If the vehicle is a ground vehicle, move the sampled point vertically until it's wheel_bottom_dist off the ground
-    if (ground || fixGoalHeightAGL) {
-      // ROS_INFO("Sample point is at height %0.2f.", sample.z);
-      float height = heightAGL(sample_query);
-      if (!std::isnan(height)) {
-        sample.z = sample.z - (height - goalHeightAGL);
-      } else {
-        continue;
-      }
+    // if (ground || fixGoalHeightAGL) {
+    //   // ROS_INFO("Sample point is at height %0.2f.", sample.z);
+    //   float height = heightAGL(sample_query);
+    //   if (!std::isnan(height)) {
+    //     sample.z = sample.z - (height - goalHeightAGL);
+    //   } else {
+    //     continue;
+    //   }
 
-      // Check to make sure the centroid is within r_min to r_max
-      float r_new = std::sqrt((sample.x - centroid.x)*(sample.x - centroid.x) + (sample.y - centroid.y)*(sample.y - centroid.y) + (sample.z - centroid.z)*(sample.z - centroid.z));
-      // ROS_INFO("Sample point is now at height %0.2f.  This point is %0.2f meters from the sample source.", sample.z, r_new);
-      if (r_new < camera.rMin || r_new > camera.rMax) {
-        continue;
-      }
+    //   // Check to make sure the centroid is within r_min to r_max
+    //   float r_new = std::sqrt((sample.x - centroid.x)*(sample.x - centroid.x) + (sample.y - centroid.y)*(sample.y - centroid.y) + (sample.z - centroid.z)*(sample.z - centroid.z));
+    //   // ROS_INFO("Sample point is now at height %0.2f.  This point is %0.2f meters from the sample source.", sample.z, r_new);
+    //   if (r_new < camera.rMin || r_new > camera.rMax) {
+    //     continue;
+    //   }
 
-      // Check to make sure the centroid is still within the verticalFoV
-      if ((std::abs(sample.z - centroid.z)/r_new) > std::sin((M_PI/180.0)*camera.verticalFoV/2.0)) {
-        continue;
-      }
-      // ROS_INFO("Sample point is still within the verticalFoV.");
-    }
+    //   // Check to make sure the centroid is still within the verticalFoV
+    //   if ((std::abs(sample.z - centroid.z)/r_new) > std::sin((M_PI/180.0)*camera.verticalFoV/2.0)) {
+    //     continue;
+    //   }
+    //   // ROS_INFO("Sample point is still within the verticalFoV.");
+    // }
 
     // ROS_INFO("Checking if the point is occluded from viewing the centroid...");
     // Check for occlusion
@@ -1103,12 +1107,6 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
 
 
   ROS_INFO("Octomap message received.  %d leaves labeled as occupied.  %d leaves labeled as free.", occCount, freeCount);
-}
-
-void Msfm3d::callback_Octomap_freePCL(const sensor_msgs::PointCloud2 msg)
-{
-  pcl::PointCloud<pcl::PointXYZ> freeCloud;
-
 }
 
 void Msfm3d::callback(sensor_msgs::PointCloud2 msg)
