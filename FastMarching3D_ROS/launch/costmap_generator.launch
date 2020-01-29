@@ -17,7 +17,7 @@
   <node pkg="nodelet" type="nodelet" name="pcl_manager_costmap" args="manager" output="screen" />
 
   <!-- Run a passthrough filter to clean NaNs -->
-  <node ns="$(arg ns)" pkg="nodelet" type="nodelet" name="passthrough_costmap" args="load pcl/PassThrough pcl_manager_costmap" output="screen">
+  <node pkg="nodelet" type="nodelet" name="passthrough_costmap" args="load pcl/PassThrough pcl_manager_costmap" output="screen">
     <remap from="~input" to="cost_map" />
     <remap from="~output" to="cost_map_filtered" />
     <rosparam>

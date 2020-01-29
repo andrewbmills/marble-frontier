@@ -19,10 +19,10 @@
     <remap from="points" to="os1_cloud_node/points_filtered"/>
   </node>
 
-  <node ns="$(arg ns)" pkg="nodelet" type="nodelet" name="pcl_manager_traverse" args="manager" output="screen" />
+  <node pkg="nodelet" type="nodelet" name="pcl_manager_traverse" args="manager" output="screen" />
 
   <!-- Run a VoxelGrid filter to clean NaNs and downsample the data -->
-  <node ns="$(arg ns)" pkg="nodelet" type="nodelet" name="voxel_grid_traverse" args="load pcl/VoxelGrid pcl_manager_traverse" output="screen">
+  <node pkg="nodelet" type="nodelet" name="voxel_grid_traverse" args="load pcl/VoxelGrid pcl_manager_traverse" output="screen">
     <remap from="~input" to="os1_cloud_node/points" />
     <remap from="~output" to="os1_cloud_node/points_filtered"/>
     <rosparam>
