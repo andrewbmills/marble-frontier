@@ -1,15 +1,33 @@
 <launch>
   <!-- Normal filter node -->
-  <arg name="vehicle" default="X1" />
+  <arg name="vehicle" default="H03" />
   <arg name="ns" default="/$(arg vehicle)" />
 
   <node ns="$(arg ns)" pkg="traversability_mapping" type="normal_filter" name="normal_filter" output="screen">
-    <param name="radiusSearch" value="0.6"/>
-    <param name="rate" value="10.0"/>
+    <param name="radiusSearch" value="0.2"/>
+    <param name="rate" value="5.0"/>
     <param name="resolution" value="0.2"/>
     <!-- Threshold for traversability in degrees -->
     <param name="normalThreshold" value="0.80"/>
-    <param name="radiusThreshold" value="6.0"/>
+    <param name="radiusThreshold" value="4.5"/>
+    <param name="fixedFrame" type="string" value="map"/>
+
+    <remap from="points" to="os1_cloud_node/points_filtered"/>
+  </node>
+
+  <node ns="$(arg ns)" pkg="nodelet" type="nodelet" name="pcl_manager" args="manager" output="screen" />
+
+  <!-- Run a VoxelGrid filter to clean NaNs and downsample the data -->
+  <node ns="$(arg ns)" pkg="nodelet" type="nodelet" name="voxel_grid" args="load pcl/VoxelGrid pcl_manager" output="screen">
+    <remap from="~input" to="os1_cloud_node/points" />
+    <remap from="~output" to="os1_cloud_node/points_filtered"/>
+    <rosparam>
+      filter_field_name: z
+      filter_limit_min: -1.0
+      filter_limit_max: 0.2
+      filter_limit_negative: False
+      leaf_size: 0.1
+    </rosparam>
   </node>
 
 </launch>

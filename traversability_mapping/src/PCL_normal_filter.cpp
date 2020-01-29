@@ -9,6 +9,7 @@
 #include <pcl/point_types.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/features/normal_3d_omp.h>
+#include <pcl/filters/crop_box.h>
 // Octomap libaries
 #include <octomap/octomap.h>
 #include <octomap/ColorOcTree.h>
@@ -66,29 +67,45 @@ void PC2_normal_filter::callback_cloud(const sensor_msgs::PointCloud2ConstPtr& m
   // ROS_INFO("PC2 recieved.  Calculating normals...");
 
   // Convert from ROS PC2 msg to PCL object
+  pcl::PointCloud<pcl::PointXYZ>::Ptr msgCloud(new pcl::PointCloud<pcl::PointXYZ>);
   pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud(new pcl::PointCloud<pcl::PointXYZ>);
-  pcl::fromROSMsg(*msg, *inputCloud);
+  // ROS_INFO("Converting ROS message into PointCloud object...");
+  pcl::fromROSMsg(*msg, *msgCloud);
+  // ROS_INFO("Conversion done!");
+
+  // for (int i=0; i<50; i++) {
+    // ROS_INFO("Lidar detection @ (%0.1f, %0.1f, %0.1f)", inputCloud->points[i].x, inputCloud->points[i].y, inputCloud->points[i].z);
+  // }
+
+  // Run cropbox filter to minimize compute
+  pcl::CropBox<pcl::PointXYZ> cb;
+  cb.setMin(Eigen::Vector4f(-rFilter, -rFilter, -rFilter, 1.0));
+  cb.setMax(Eigen::Vector4f(rFilter, rFilter, rFilter, 1.0));
+  cb.setInputCloud(msgCloud);
+  cb.filter(*inputCloud);
 
   // Initialize output PCL objects
   pcl::PointCloud<pcl::PointXYZINormal>::Ptr normalCloud(new pcl::PointCloud<pcl::PointXYZINormal>);
   pcl::PointCloud<pcl::PointXYZI>::Ptr filteredCloudHit(new pcl::PointCloud<pcl::PointXYZI>);
   pcl::PointCloud<pcl::PointXYZI>::Ptr filteredCloudMiss(new pcl::PointCloud<pcl::PointXYZI>);
-
-  // Kdtree for normal estimation
-  // pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::Kdtree<pcl::PointXYZ>());
-  // pcl::KdTreeFLANN<pcl::PointXYZ>::Ptr tree (new pcl::KdTreeFLANN<pcl::PointXYZ>);
-  // tree->setInputCloud(inputCloud);
+  pcl::PointCloud<pcl::PointXYZI>::Ptr filteredCloudMissOutput(new pcl::PointCloud<pcl::PointXYZI>);
 
   // Create the filtering object
   pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::PointXYZINormal> ne;
   ne.setInputCloud(inputCloud);
-  // ne.setSearchMethod(tree);
+  // ne.setInputCloud(inputCloud);
+
+  // KdTree
+  pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ> ());
+  ne.setSearchMethod(tree);
 
   // Radius search param
   ne.setRadiusSearch(radiusSearch);
 
   // Run Filter
+  ROS_INFO("Running normals filter...");
   ne.compute(*normalCloud);
+  ROS_INFO("Normals filter success!");
 
   // Prepare outputCloud with xyz coordinates of normals
   pcl::PointXYZI query;
@@ -108,6 +125,11 @@ void PC2_normal_filter::callback_cloud(const sensor_msgs::PointCloud2ConstPtr& m
         filteredCloudHit->points.push_back(query);
       } else {
         filteredCloudMiss->points.push_back(query);
+        filteredCloudMissOutput->points.push_back(query);
+      }
+    } else {
+      if (normalCloud->points[i].normal_z < z_nFilter) {
+        filteredCloudMissOutput->points.push_back(query);
       }
     }
   }
