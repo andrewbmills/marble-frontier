@@ -252,7 +252,7 @@ class Msfm3d
     float origin[3]; // location in xyz coordinates where the robot entered the environment
     float entranceRadius; // radius around the origin where frontiers can't exist
 
-    float viewPoseObstacleDistance = 0.2; // view pose minimum distance from obstacles
+    float viewPoseObstacleDistance = 0.01; // view pose minimum distance from obstacles
 
     double * reach; // reachability grid (output from reach())
     sensor_msgs::PointCloud2 PC2msg;
@@ -974,18 +974,28 @@ void Msfm3d::callback_position(const nav_msgs::Odometry msg)
 void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
 {
   ROS_INFO("Getting OctoMap message...");
-  if (!receivedMap) receivedMap = 1;
-  if (!updatedMap) updatedMap = 1;
+  
 
   // Free/Allocate the tree memory
   // ROS_INFO("Converting Octomap msg to AbstractOcTree...");
   // octomap::AbstractOcTree* abstree = new octomap::AbstractOcTree(msg->resolution);
   // abstree = octomap_msgs::binaryMsgToMap(*msg); // OcTree object for storing Octomap data.
   // ROS_INFO("Octomap converted to AbstractOcTree.");
+
+  // Check if the message is empty (skip callback if it is)
+  if (msg->data.size() == 0) {
+    ROS_INFO("Octomap message is of length 0");
+    return;
+  }
+
+  if (!receivedMap) receivedMap = 1;
+  if (!updatedMap) updatedMap = 1;
+
   delete mytree;
   mytree = new octomap::OcTree(msg->resolution);
   mytree = (octomap::OcTree*)octomap_msgs::binaryMsgToMap(*msg);
   ROS_INFO("AbstractOcTree cast into OcTree.");
+
 
   ROS_INFO("Parsing Octomap...");
   // Make sure the tree is at the same resolution as the esdf we're creating.  If it's not, change the resolution.
@@ -1112,6 +1122,10 @@ void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
 void Msfm3d::callback(sensor_msgs::PointCloud2 msg)
 {
   ROS_INFO("Getting ESDF PointCloud2...");
+  if (msg.data.size() == 0) {
+    ROS_INFO("Input PointCloud2 message is empty.");
+    return;
+  }
   if (!receivedMap) receivedMap = 1;
   PC2msg = msg;
   ROS_INFO("ESDF PointCloud2 received!");
@@ -2329,6 +2343,9 @@ int main(int argc, char **argv)
   n.param("global_planning/multiAgent", multiAgentOn, false);
   n.param("global_planning/agentCount", agentCount, 5);
   n.param("global_planning/goalViewSeparation", goalViewSeparation, (float)5.0);
+
+  // View pose minimum obstacle distance
+  n.param("global_planning/viewPoseObstacleDistance", planner.viewPoseObstacleDistance, (float)0.01);
 
   ROS_INFO("Subscribing to Occupancy Grid...");
   ros::Subscriber sub0 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);

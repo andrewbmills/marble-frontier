@@ -1,11 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch>
 
-  <!-- <arg name="vehicle" default="$(env ROS_HOSTNAME)" /> -->
-  <arg name="vehicle" default="X1" />
-  <arg name="ns" default="/$(arg vehicle)" />
-
-  <node ns="$(arg ns)" pkg="msfm3d" type="msfm3d" name="global_planning" output="screen">
+  <node pkg="msfm3d" type="msfm3d" name="global_planning">
     <!-- Inputs (Subscribed Topic Names) -->
 
     <!-- <remap from="octomap_binary" to="traversability_map"/> -->
@@ -108,6 +104,9 @@
 
     <!-- Cost Function -->
     <param name="goalFunction" type="string" value="cost"/>
+
+    <!-- Minimum obstacle proximity for view poses -->
+    <param name="viewPoseObstacleDistance" value="0.1"/>
 
   </node>
 

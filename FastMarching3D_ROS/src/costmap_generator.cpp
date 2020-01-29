@@ -76,6 +76,9 @@ class Costmap_fuser
     float untraversableDistance = 0.01;
     float octomapFreeDistance = 3.0*voxelSize;
 
+    // Only publish map once it's been populated
+    bool pubMap = false;
+
     // Method Definitions
     void callback_cloud(const sensor_msgs::PointCloud2ConstPtr& msg);
     void callback_octomap(const octomap_msgs::Octomap::ConstPtr msg);
@@ -86,6 +89,7 @@ class Costmap_fuser
 void Costmap_fuser::callback_octomap(const octomap_msgs::Octomap::ConstPtr msg)
 {
   ROS_INFO("Occupancy octomap callback called");
+  if (msg->data.size() == 0) return;
   delete occupancyTree;
   occupancyTree = new octomap::OcTree(msg->resolution);
   occupancyTree = (octomap::OcTree*)octomap_msgs::binaryMsgToMap(*msg);
@@ -98,6 +102,7 @@ void Costmap_fuser::callback_octomap(const octomap_msgs::Octomap::ConstPtr msg)
 void Costmap_fuser::callback_traverse(const octomap_msgs::Octomap::ConstPtr msg)
 {
   ROS_INFO("Traversability octomap callback called");
+  if (msg->data.size() == 0) return;
   delete traverseTree;
   traverseTree = new octomap::OcTree(msg->resolution);
   traverseTree = (octomap::OcTree*)octomap_msgs::binaryMsgToMap(*msg);
@@ -110,6 +115,7 @@ void Costmap_fuser::callback_traverse(const octomap_msgs::Octomap::ConstPtr msg)
 void Costmap_fuser::callback_cloud(const sensor_msgs::PointCloud2ConstPtr& msg)
 {
   ROS_INFO("ESDF callback called");
+  if (msg->data.size() == 0) return;
   // Convert from ROS PC2 msg to PCL object
   pcl::PointCloud<pcl::PointXYZI>::Ptr ESDFCloud(new pcl::PointCloud<pcl::PointXYZI>);
   pcl::fromROSMsg(*msg, *esdfCloud);
@@ -378,6 +384,8 @@ void Costmap_fuser::fuse_maps()
   pcl::toROSMsg(*outputCloud, fusedMsg);
   fusedMsg.header.stamp = ros::Time();
   fusedMsg.header.frame_id = fixedFrameId;
+  pubMap = true;
+  return;
 }
 
 int main(int argc, char **argv)
@@ -413,7 +421,7 @@ int main(int argc, char **argv)
     r.sleep(); // Node sleeps to update at a rate as close as possible to the updateRate parameter
     ros::spinOnce(); // All subscriber callbacks are called here.
     mapFuser.fuse_maps();
-    pub1.publish(mapFuser.fusedMsg);
+    if (mapFuser.pubMap) pub1.publish(mapFuser.fusedMsg);
   }
 
   return 0;
