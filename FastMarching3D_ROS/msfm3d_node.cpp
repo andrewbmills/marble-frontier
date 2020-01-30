@@ -1312,11 +1312,11 @@ bool Msfm3d::updatePath(const float goal[3])
   // If the goal point isn't in the reachable map, return false
   int goal_idx = xyz_index3(goal);
   if (goal_idx < 0 || goal_idx > npixels){
-    ROS_WARN("Goal point is not reachable.");
+    ROS_INFO("Goal point is not reachable.");
     return false;
   }
   if (reach[goal_idx] <= 0.0 || reach[goal_idx] >= 1e6) {
-    ROS_WARN("Goal point is either too far away or is blocked by an obstacle.");
+    ROS_INFO("Goal point is either too far away or is blocked by an obstacle.");
     return false;
   }
 
@@ -1398,7 +1398,7 @@ bool Msfm3d::updatePath(const float goal[3])
 
   // Check if the path made it back to the vehicle
   if (dist_robot2path > 2.0*voxel_size) {
-    ROS_WARN("Path did not make it back to the robot.  Select a different goal point.");
+    ROS_INFO("Path did not make it back to the robot.  Select a different goal point.");
     return false;
   }
 
@@ -1633,6 +1633,8 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
     viewIndices[i] = -1;
   }
 
+  if (planner.goalViews.size() == 0) return;
+
   ROS_INFO("Finding the closest viewpoint to see frontiers.");
   // Store costs and their indices in a vector
   std::vector<double> costs;
@@ -1716,6 +1718,8 @@ void infoGoalView(Msfm3d& planner, int *viewIndices, double *utility, const int 
     utility[i] = -5+i;
     viewIndices[i] = -1;
   }
+
+  if (planner.goalViews.size() == 0) return;
 
   // Find the N views with the greatest utility (frontier voxels/second) and arrange them in ascending order in utility
   for (int i=0; i<planner.goalViews.size(); i++) {
