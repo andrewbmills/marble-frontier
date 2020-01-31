@@ -4,17 +4,14 @@
 -->
 <launch>
   <!-- Normal filter node -->
-  <arg name="vehicle" default="H03" />
-  <arg name="ns" default="/$(arg vehicle)" />
-
-  <node ns="$(arg ns)" pkg="traversability_mapping" type="normal_filter" name="normal_filter" output="screen">
+  <node pkg="traversability_mapping" type="normal_filter" name="normal_filter" output="screen">
     <param name="radiusSearch" value="0.2"/>
     <param name="rate" value="5.0"/>
     <param name="resolution" value="0.2"/>
     <!-- Threshold for traversability in degrees -->
     <param name="normalThreshold" value="0.80"/>
     <param name="radiusThreshold" value="4.5"/>
-    <param name="fixedFrame" type="string" value="map"/>
+    <param name="fixedFrame" type="string" value="world"/>
 
     <remap from="points" to="os1_cloud_node/points_filtered"/>
   </node>

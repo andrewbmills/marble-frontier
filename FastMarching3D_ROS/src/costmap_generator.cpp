@@ -307,11 +307,11 @@ void Costmap_fuser::fuse_maps()
                 fusedMap[idx] = value;
               } else {
                 // ROS_INFO("Voxel is not traversable.");
-                fusedMap[idx] = untraversableDistance;
+                fusedMap[idx] = std::min(untraversableDistance, value);
               }
             } else {
               // ROS_INFO("Voxel is not in traversability map.");
-              fusedMap[idx] = untraversableDistance;
+              fusedMap[idx] = std::min(untraversableDistance, value);
             }
           } else {
             // ROS_INFO("Traversability map hasn't been subscribed to.  Voxel assumed traversable.");
@@ -348,11 +348,11 @@ void Costmap_fuser::fuse_maps()
                       fusedMap[idx] = value;
                     } else {
                       // ROS_INFO("Voxel is not traversable.");
-                      fusedMap[idx] = untraversableDistance;
+                      fusedMap[idx] = std::min(untraversableDistance, value);
                     }
                   } else {
                     // ROS_INFO("Voxel is not in traversability map.");
-                    fusedMap[idx] = untraversableDistance;
+                    fusedMap[idx] = std::min(untraversableDistance, value);
                   }
                 } else {
                   // ROS_INFO("Traversability map hasn't been subscribed to.  Voxel assumed traversable.");
