@@ -1,9 +1,9 @@
 <launch>
   <!-- Normal filter node -->
-  <arg name="vehicle" default="H03" />
-  <arg name="ns" default="/$(arg vehicle)" />
+  <!-- <arg name="vehicle" default="H03" /> -->
+  <!-- <arg name="ns" default="/$(arg vehicle)" /> -->
 
-  <node ns="$(arg ns)" pkg="traversability_mapping" type="normal_filter" name="normal_filter" output="screen">
+  <node pkg="traversability_mapping" type="normal_filter" name="normal_filter">
     <param name="radiusSearch" value="0.2"/>
     <param name="rate" value="5.0"/>
     <param name="resolution" value="0.2"/>
@@ -15,10 +15,10 @@
     <remap from="points" to="os1_cloud_node/points_filtered"/>
   </node>
 
-  <node ns="$(arg ns)" pkg="nodelet" type="nodelet" name="pcl_manager" args="manager" output="screen" />
+  <node pkg="nodelet" type="nodelet" name="pcl_manager2" args="manager" output="screen" />
 
   <!-- Run a VoxelGrid filter to clean NaNs and downsample the data -->
-  <node ns="$(arg ns)" pkg="nodelet" type="nodelet" name="voxel_grid" args="load pcl/VoxelGrid pcl_manager" output="screen">
+  <node pkg="nodelet" type="nodelet" name="voxel_grid" args="load pcl/VoxelGrid pcl_manager2" output="screen">
     <remap from="~input" to="os1_cloud_node/points" />
     <remap from="~output" to="os1_cloud_node/points_filtered"/>
     <rosparam>

@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- 
+<!--
   Example launch file for a costmap fusion node
 -->
 <launch>
-  <arg name="vehicle" default="X1" />
-  <arg name="ns" default="/$(arg vehicle)" />
+  <!-- <arg name="vehicle" default="X1" /> -->
+  <!-- <arg name="ns" default="/$(arg vehicle)" /> -->
 
-  <node ns="$(arg ns)" pkg="msfm3d" type="costmap_generator" name="costmap_generator" output="screen">
+  <node pkg="msfm3d" type="costmap_generator" name="costmap_generator" output="screen">
     <param name="fixedFrame" type="string" value="world"/>
     <param name="rate" value="5.0"/>
     <param name="resolution" value="0.2"/>
@@ -17,10 +17,10 @@
     <!-- <remap from="traversability_map" to="traversability_map"/> -->
   </node>
 
-  <!-- <node pkg="nodelet" type="nodelet" name="pcl_manager_costmap" args="manager" output="screen" /> -->
+  <node pkg="nodelet" type="nodelet" name="pcl_manager_costmap" args="manager" output="screen" />
 
   <!-- Run a passthrough filter to clean NaNs -->
-  <node ns="$(arg ns)" pkg="nodelet" type="nodelet" name="passthrough1" args="load pcl/PassThrough pcl_manager" output="screen">
+  <node pkg="nodelet" type="nodelet" name="passthrough1" args="load pcl/PassThrough pcl_manager_costmap" output="screen">
     <remap from="~input" to="cost_map" />
     <remap from="~output" to="cost_map_filtered" />
     <rosparam>

@@ -57,6 +57,7 @@ class PC2_normal_filter
       tf::TransformListener tfListener;
 
       octomap_msgs::Octomap octomapMsg;
+      bool pubMap = false;
 
     // Method Definitions
     void callback_cloud(const sensor_msgs::PointCloud2ConstPtr& msg);
@@ -176,7 +177,7 @@ void PC2_normal_filter::callback_cloud(const sensor_msgs::PointCloud2ConstPtr& m
   // Get transform from world to PointCloud
   tf::StampedTransform transform;
   try {
-    tfListener.lookupTransform(fixedFrameId, msg->header.frame_id,  
+    tfListener.lookupTransform(fixedFrameId, msg->header.frame_id,
                              msg->header.stamp, transform);
   }
   catch (tf::TransformException ex) {
@@ -221,7 +222,7 @@ void PC2_normal_filter::callback_cloud(const sensor_msgs::PointCloud2ConstPtr& m
   octomap_msgs::binaryMapToMsg(*mytree, octomapMsg);
   octomapMsg.header.frame_id = fixedFrameId;
   octomapMsg.header.stamp = msg->header.stamp;
-
+  pubMap = true;
   return;
 }
 
@@ -272,7 +273,7 @@ int main(int argc, char **argv)
     pub1.publish(PC2_filter.normalsMsg);
     pub2.publish(PC2_filter.filteredHitMsg);
     pub3.publish(PC2_filter.filteredMissMsg);
-    pub4.publish(PC2_filter.octomapMsg);
+    if (PC2_filter.pubMap) pub4.publish(PC2_filter.octomapMsg);
   }
 
   return 0;

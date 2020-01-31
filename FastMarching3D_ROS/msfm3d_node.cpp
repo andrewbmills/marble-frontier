@@ -158,7 +158,7 @@ struct View {
 
 //     int xyz_index3(const float xyz[3]);
 //     void index3_xyz(const int index, float xyz[3]);
-//     void expand(const float limits[6]); // 
+//     void expand(const float limits[6]); //
 // }
 
 // void Frontier::index3_xyz(const int index, float xyz[3])
@@ -252,7 +252,7 @@ class Msfm3d
     float origin[3]; // location in xyz coordinates where the robot entered the environment
     float entranceRadius; // radius around the origin where frontiers can't exist
 
-    float viewPoseObstacleDistance = 0.2; // view pose minimum distance from obstacles
+    float viewPoseObstacleDistance = 0.1; // view pose minimum distance from obstacles
 
     double * reach; // reachability grid (output from reach())
     sensor_msgs::PointCloud2 PC2msg;
@@ -262,7 +262,7 @@ class Msfm3d
 
     // Frontier and frontier filter parameters
     // std::vector<bool> frontier;
-    // float 
+    // float
     bool * frontier;
     bool * entrance;
     int frontier_size = 0;
@@ -641,7 +641,7 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
         // std::cout << "Writing to file " << ss.str() << std::endl;
         writer.write<pcl::PointXYZ> (ss.str(), *cloud_cluster, false); //*
       }
-      
+
       groupCount++;
     }
     clusterCount++;
@@ -844,7 +844,7 @@ void Msfm3d::updateGoalPoses()
 
     // Cull the view frustum points with the pcl function
     // ROS_INFO("Frustum Culling...");
-    // TO-DO: Use a series of passthrough filters to restrict the x,y,z neighborhood (cropbox) and then compute 
+    // TO-DO: Use a series of passthrough filters to restrict the x,y,z neighborhood (cropbox) and then compute
     // polar coords for each point to filter those within the sensor FoV.
 
     pcl::FrustumCulling<pcl::PointXYZ> fc;
@@ -963,7 +963,7 @@ void Msfm3d::callback_position(const nav_msgs::Odometry msg)
   if (!receivedPosition) receivedPosition = 1;
   position[0] = msg.pose.pose.position.x;
   position[1] = msg.pose.pose.position.y;
-  position[2] = msg.pose.pose.position.z;
+  position[2] = msg.pose.pose.position.z + 0.4;
   q.x = msg.pose.pose.orientation.x;
   q.y = msg.pose.pose.orientation.y;
   q.z = msg.pose.pose.orientation.z;
@@ -1298,11 +1298,11 @@ bool Msfm3d::updatePath(const float goal[3])
   // If the goal point isn't in the reachable map, return false
   int goal_idx = xyz_index3(goal);
   if (goal_idx < 0 || goal_idx > npixels){
-    ROS_WARN("Goal point is not reachable.");
+    ROS_INFO("Goal point is not reachable.");
     return false;
   }
   if (reach[goal_idx] <= 0.0 || reach[goal_idx] >= 1e6) {
-    ROS_WARN("Goal point is either too far away or is blocked by an obstacle.");
+    ROS_INFO("Goal point is either too far away or is blocked by an obstacle.");
     return false;
   }
 
@@ -1384,7 +1384,7 @@ bool Msfm3d::updatePath(const float goal[3])
 
   // Check if the path made it back to the vehicle
   if (dist_robot2path > 2.0*voxel_size) {
-    ROS_WARN("Path did not make it back to the robot.  Select a different goal point.");
+    ROS_INFO("Path did not make it back to the robot.  Select a different goal point.");
     return false;
   }
 

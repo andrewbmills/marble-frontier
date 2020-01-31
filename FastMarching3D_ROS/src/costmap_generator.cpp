@@ -76,6 +76,8 @@ class Costmap_fuser
     float untraversableDistance = 0.01;
     float octomapFreeDistance = 3.0*voxelSize;
 
+    bool pubMap = false;
+
     // Method Definitions
     void callback_cloud(const sensor_msgs::PointCloud2ConstPtr& msg);
     void callback_octomap(const octomap_msgs::Octomap::ConstPtr msg);
@@ -378,6 +380,7 @@ void Costmap_fuser::fuse_maps()
   pcl::toROSMsg(*outputCloud, fusedMsg);
   fusedMsg.header.stamp = ros::Time();
   fusedMsg.header.frame_id = fixedFrameId;
+  pubMap = true;
 }
 
 int main(int argc, char **argv)
@@ -413,7 +416,7 @@ int main(int argc, char **argv)
     r.sleep(); // Node sleeps to update at a rate as close as possible to the updateRate parameter
     ros::spinOnce(); // All subscriber callbacks are called here.
     mapFuser.fuse_maps();
-    pub1.publish(mapFuser.fusedMsg);
+    if (mapFuser.pubMap) pub1.publish(mapFuser.fusedMsg);
   }
 
   return 0;
