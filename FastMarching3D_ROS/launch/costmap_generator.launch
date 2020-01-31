@@ -7,7 +7,7 @@
     <param name="fixedFrame" type="string" value="map"/>
     <param name="rate" value="5.0"/>
     <param name="resolution" value="0.2"/>
-    <param name="untraversableDistance" value="0.002"/>
+    <param name="untraversableDistance" value="0.01"/>
 
     <remap from="esdf" to="voxblox_node/esdf_pointcloud"/>
     <!-- <remap from="octomap_binary" to="octomap_binary"/> -->
