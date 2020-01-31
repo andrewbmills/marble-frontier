@@ -18,12 +18,10 @@ find_package(catkin REQUIRED
 )
 
 catkin_package(
-  INCLUDE_DIRS include
   CATKIN_DEPENDS std_msgs
 )
 
 include_directories(
-    "${PROJECT_SOURCE_DIR}/include/"
     "${PROJECT_SOURCE_DIR}/src/"
     ${catkin_INCLUDE_DIRS}
 )

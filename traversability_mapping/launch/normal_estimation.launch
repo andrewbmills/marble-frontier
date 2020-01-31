@@ -1,8 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Example launch file for a traversability Octomap estimator
+-->
 <launch>
-  <!-- Normal filter node -->
-  <!-- <arg name="vehicle" default="H03" /> -->
-  <!-- <arg name="ns" default="/$(arg vehicle)" /> -->
-
   <node pkg="traversability_mapping" type="normal_filter" name="normal_filter">
     <param name="radiusSearch" value="0.2"/>
     <param name="rate" value="5.0"/>
@@ -15,10 +15,10 @@
     <remap from="points" to="os1_cloud_node/points_filtered"/>
   </node>
 
-  <node pkg="nodelet" type="nodelet" name="pcl_manager2" args="manager" output="screen" />
+  <node pkg="nodelet" type="nodelet" name="pcl_manager_traverse" args="manager" output="screen" />
 
   <!-- Run a VoxelGrid filter to clean NaNs and downsample the data -->
-  <node pkg="nodelet" type="nodelet" name="voxel_grid" args="load pcl/VoxelGrid pcl_manager2" output="screen">
+  <node pkg="nodelet" type="nodelet" name="voxel_grid_traverse" args="load pcl/VoxelGrid pcl_manager_traverse" output="screen">
     <remap from="~input" to="os1_cloud_node/points" />
     <remap from="~output" to="os1_cloud_node/points_filtered"/>
     <rosparam>

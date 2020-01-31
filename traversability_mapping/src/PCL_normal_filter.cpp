@@ -65,6 +65,7 @@ class PC2_normal_filter
 
 void PC2_normal_filter::callback_cloud(const sensor_msgs::PointCloud2ConstPtr& msg)
 {
+  if (msg->data.size() == 0) return;
   // ROS_INFO("PC2 recieved.  Calculating normals...");
 
   // Convert from ROS PC2 msg to PCL object

@@ -92,7 +92,7 @@ class guidance_controller:
 		else:
 			if (self.vehicle_type == 'ground'):
 				p_L2, v_L2 = guidance.find_Lookahead_Discrete_2D(path[0:2,:], p_robot[0:2], self.speed*self.Tstar, 0, 0)
-				
+
 				# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
 				if (np.linalg.norm(p_robot - goal) <= self.speed*self.Tstar):
 					p_L2 = goal
