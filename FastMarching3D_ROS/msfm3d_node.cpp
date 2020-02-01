@@ -34,6 +34,7 @@
 #include <pcl/filters/conditional_removal.h>
 #include <pcl/filters/frustum_culling.h>
 #include <pcl/features/normal_3d.h>
+#include <pcl/features/normal_3d_omp.h>
 #include <pcl/kdtree/kdtree.h>
 #include <pcl/segmentation/extract_clusters.h>
 //pcl ROS
@@ -251,6 +252,7 @@ class Msfm3d
     float bubble_radius = 1.0; // map voxel size, and bubble radius
     float origin[3]; // location in xyz coordinates where the robot entered the environment
     float entranceRadius; // radius around the origin where frontiers can't exist
+    float inflateWidth = 0.0;
 
     float viewPoseObstacleDistance = 0.01; // view pose minimum distance from obstacles
 
@@ -272,6 +274,7 @@ class Msfm3d
       std::vector<pcl::PointIndices> frontierClusterIndices;
       float cluster_radius;
       float min_cluster_size;
+      float normalThresholdZ;
       // ROS Interfacing
       sensor_msgs::PointCloud2 frontiermsg;
       // Frontier Grouping
@@ -316,6 +319,7 @@ class Msfm3d
     bool updatePath(const float goal[3]); // Updates the path vector from the goal frontier point to the robot location
     void updateFrontierMsg(); // Updates the frontiermsg MarkerArray with the frontier matrix for publishing
     bool clusterFrontier(const bool print2File); // Clusters the frontier pointCloud with euclidean distance within a radius
+    bool normalFrontierFilter(); // Filters frontiers based on they're local normal value
     bool inBoundary(const float point[3]); // Checks if a point is inside the planner boundaries
     // bool collisionCheck(const float point[3]); // Checks if the robot being at the current point (given vehicleVolume) intersects with the obstacle environment (esdf)
     void greedyGrouping(const float r, const bool print2File);
@@ -505,6 +509,54 @@ bool Msfm3d::clusterFrontier(const bool print2File)
     ec.setSearchMethod(kdtree);
     ec.setInputCloud(frontierCloud);
     ec.extract(frontierClusterIndices);
+    return 1;
+  }
+}
+
+bool Msfm3d::normalFrontierFilter()
+{
+  // Create cloud pointer to store the removed points
+  pcl::PointCloud<pcl::PointXYZ>::Ptr removed_points(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::PointCloud<pcl::PointXYZINormal>::Ptr normalCloud(new pcl::PointCloud<pcl::PointXYZINormal>);
+  pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+
+  // Creating the KdTree object for the search method of the extraction
+  pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree(new pcl::search::KdTree<pcl::PointXYZ>);
+  kdtree->setInputCloud(frontierCloud);
+
+  // Clear previous frontierClusterIndices
+  frontierClusterIndices.clear();
+
+  // Initialize euclidean cluster extraction object
+  pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::PointXYZINormal> ne;
+  ne.setSearchMethod(kdtree);
+  ne.setInputCloud(frontierCloud);
+  ne.setRadiusSearch(2.1*voxel_size);
+  ne.compute(*normalCloud);
+
+  float query[3];
+  int idx;
+  frontierCloud->clear();
+  for (pcl::PointCloud<pcl::PointXYZINormal>::iterator it=normalCloud->begin(); it!=normalCloud->end(); ++it) {
+    float query[3] = {it->x, it->y, it->z};
+    pcl::PointXYZ point;
+    point.x = it->x;
+    point.y = it->y;
+    point.z = it->z;
+    idx = xyz_index3(query);
+    if (std::abs(it->normal_z) >= normalThresholdZ) {
+      frontier[idx] = 0;
+    } else {
+      frontierCloud->points.push_back(point);
+    }
+  }
+
+  // Filter frontierCloud to keep only the inliers
+  ROS_INFO("Frontier cloud after normal filtering has %d points.", (int)frontierCloud->points.size());
+
+  if ((int)frontierCloud->points.size() < 1) {
+    return 0;
+  } else {
     return 1;
   }
 }
@@ -1218,7 +1270,7 @@ void Msfm3d::parsePointCloud()
             query_point[2] = position[2] + dz;
             query_idx = xyz_index3(query_point);
             if ((query_idx >= 0) && (query_idx < esdf.size[0]*esdf.size[1]*esdf.size[2])) { // Check for valid array indices
-              if (esdf.data[query_idx] < 0.6) esdf.data[query_idx] = 0.6;
+              if (esdf.data[query_idx] < 1.0) esdf.data[query_idx] = 1.0 + inflateWidth;
               esdf.seen[query_idx] = true;
             }
           }
@@ -1596,6 +1648,9 @@ bool updateFrontier(Msfm3d& planner){
   if (frontierCount == 0) {
     return false;
   }
+
+  // Filter frontiers based upon normal vectors
+  // if (!planner.normalFrontierFilter()) return false;
 
   // Cluster the frontier into euclidean distance groups
   if (planner.clusterFrontier(false)) {
@@ -2268,6 +2323,7 @@ int main(int argc, char **argv)
   float cluster_radius, min_cluster_size;
   n.param("global_planning/cluster_radius", cluster_radius, (float)(1.5*voxel_size)); // voxels
   n.param("global_planning/min_cluster_size", min_cluster_size, (float)(5.0/voxel_size)); // voxels
+  n.param("global_planning/normalThresholdZ", planner.normalThresholdZ, (float)1.1); 
   planner.cluster_radius = cluster_radius;
   planner.min_cluster_size = min_cluster_size;
 
@@ -2376,7 +2432,8 @@ int main(int argc, char **argv)
 
   // Width to inflate obstacles for path planning
   float inflateWidth;
-  n.param("global_planning/inflateWidth", inflateWidth, (float)0.6); // meters
+  n.param("global_planning/inflateWidth", inflateWidth, (float)0.0); // meters
+  planner.inflateWidth = inflateWidth;
 
   // Closest goal or max utility
   std::string goalFunction;
@@ -2519,7 +2576,7 @@ int main(int argc, char **argv)
           }
 
           // Inflate the obstacle map to avoid collisions
-          if (planner.updatedMap && planner.esdf_or_octomap) {
+          if (planner.updatedMap) {
             planner.inflateObstacles(inflateWidth, inflatedOccupiedMsg);
             planner.updatedMap = 0;
           }

@@ -44,6 +44,7 @@
     <!-- Frontier Clustering parameters (in voxels) -->
     <param name="cluster_radius" value="0.30" />
     <param name="min_cluster_size" value="150" />
+    <param name="normalThresholdZ" value="-0.1" />
 
     <!-- Number of ticks before replanning -->
     <param name="replan_ticks" value="10" />
@@ -63,7 +64,7 @@
     <!-- Camera viewing parameters, angles in degrees, ranges in meters -->
     <param name="cameraVerticalFoV" value="25.0"/>
     <param name="cameraHorizontalFoV" value="120.0"/>
-    <param name="cameraMaxRange" value="3.0"/>
+    <param name="cameraMaxRange" value="4.0"/>
     <param name="cameraMinRange" value="0.5"/>
     <param name="robot2camera_roll" value="0.0"/>
     <param name="robot2camera_pitch" value="0.0"/>
@@ -80,7 +81,7 @@
     <param name="updateRate" value="1.0"/>
 
     <!-- Inflated Obstacle width -->
-    <param name="inflateWidth" value="0.0"/>
+    <param name="inflateWidth" value="2.5"/>
 
     <!-- Vehicle Fence Volume Limits -->
     <param name="fenceOn" value="true"/>
@@ -115,7 +116,7 @@
     <param name="goalFunction" type="string" value="cost"/>
 
     <!-- 5*(tanh(ESDF - e) + 1)/2.0 is used on each ESDF voxel so convert accordingly-->
-    <param name="viewPoseObstacleDistance" value="2.0"/>
+    <param name="viewPoseObstacleDistance" value="3.0"/>
 
   </node>
 
