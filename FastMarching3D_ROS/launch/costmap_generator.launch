@@ -8,7 +8,7 @@
     <param name="rate" value="5.0"/>
     <param name="resolution" value="0.2"/>
     <param name="untraversableDistance" value="0.01"/>
-    <param name="octomapFreeDistance" value="0.05"/>
+    <param name="octomapFreeDistance" value="0.802"/>
 
     <remap from="esdf" to="voxblox_node/esdf_pointcloud"/>
     <!-- <remap from="octomap_binary" to="octomap_binary"/> -->
