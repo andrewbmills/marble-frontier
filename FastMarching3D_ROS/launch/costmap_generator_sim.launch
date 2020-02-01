@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  Example launch file for a costmap fusion node
+-->
+<launch>
+
+  <node pkg="msfm3d" type="costmap_generator" name="costmap_generator">
+    <param name="fixedFrame" type="string" value="world"/>
+    <param name="rate" value="5.0"/>
+    <param name="resolution" value="0.2"/>
+    <param name="untraversableDistance" value="0.05"/>
+
+    <remap from="esdf" to="voxblox_node/esdf_pointcloud"/>
+    <remap from="octomap_binary" to="octomap_binary"/>
+    <remap from="traversability_map" to="traversability_map_local"/>
+  </node>
+
+  <node pkg="nodelet" type="nodelet" name="pcl_manager_costmap" args="manager" output="screen" />
+
+  <!-- Run a passthrough filter to clean NaNs -->
+  <node pkg="nodelet" type="nodelet" name="passthrough_costmap" args="load pcl/PassThrough pcl_manager_costmap" output="screen">
+    <remap from="~input" to="cost_map" />
+    <remap from="~output" to="cost_map_filtered" />
+    <rosparam>
+      filter_field_name: intensity
+      filter_limit_min: 0.06
+      filter_limit_max: 100.0
+      filter_limit_negative: False
+    </rosparam>
+  </node>
+</launch>

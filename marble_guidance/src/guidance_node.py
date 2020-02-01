@@ -10,7 +10,6 @@ from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import PointStamped
 from nav_msgs.msg import Path
 from nav_msgs.msg import Odometry
-from gazebo_msgs.msg import LinkStates
 from visualization_msgs.msg import Marker
 
 class guidance_controller:

@@ -1,19 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
+<!-- 
   Example launch file for a bezier path fitting and following guidance controller
 -->
 <launch>
 
-  <node pkg="marble_guidance" type="guidance_node.py" name="guidance_controller" output="screen">
-
   <node pkg="marble_guidance" type="guidance_node.py" name="guidance_controller">
-    <param name="vehicle_type" type="string" value="ground" />
+    <param name="vehicle_type" type="string" value="air" />
     <param name="fixed_frame" type="string" value="map" />
     <param name="speed" value="1.0" />
     <param name="Tstar" value="1.0" />
 
     <!-- data source to integrate (PointCloud2) -->
-    <remap from="odometry" to="odometry_map" />
+    <remap from="odometry" to="odometry" />
     <remap from="path" to="planned_path"/>
     <remap from="goal_pose" to="frontier_goal_pose"/>
     <remap from="cmd_vel" to="cmd_vel_guidance"/>

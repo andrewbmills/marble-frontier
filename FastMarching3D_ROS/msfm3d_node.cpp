@@ -34,6 +34,7 @@
 #include <pcl/filters/conditional_removal.h>
 #include <pcl/filters/frustum_culling.h>
 #include <pcl/features/normal_3d.h>
+#include <pcl/features/normal_3d_omp.h>
 #include <pcl/kdtree/kdtree.h>
 #include <pcl/segmentation/extract_clusters.h>
 //pcl ROS
@@ -251,6 +252,7 @@ class Msfm3d
     float bubble_radius = 1.0; // map voxel size, and bubble radius
     float origin[3]; // location in xyz coordinates where the robot entered the environment
     float entranceRadius; // radius around the origin where frontiers can't exist
+    float inflateWidth = 0.0;
 
     float viewPoseObstacleDistance = 0.001; // view pose minimum distance from obstacles
 
@@ -272,6 +274,7 @@ class Msfm3d
       std::vector<pcl::PointIndices> frontierClusterIndices;
       float cluster_radius;
       float min_cluster_size;
+      float normalThresholdZ;
       // ROS Interfacing
       sensor_msgs::PointCloud2 frontiermsg;
       // Frontier Grouping
@@ -316,6 +319,7 @@ class Msfm3d
     bool updatePath(const float goal[3]); // Updates the path vector from the goal frontier point to the robot location
     void updateFrontierMsg(); // Updates the frontiermsg MarkerArray with the frontier matrix for publishing
     bool clusterFrontier(const bool print2File); // Clusters the frontier pointCloud with euclidean distance within a radius
+    bool normalFrontierFilter(); // Filters frontiers based on they're local normal value
     bool inBoundary(const float point[3]); // Checks if a point is inside the planner boundaries
     // bool collisionCheck(const float point[3]); // Checks if the robot being at the current point (given vehicleVolume) intersects with the obstacle environment (esdf)
     void greedyGrouping(const float r, const bool print2File);
@@ -392,7 +396,7 @@ float Msfm3d::heightAGL(const float point[3])
     if (query_idx < 0 || query_idx >= npixels) { // If the query location is at the z limit of the map, then it is the bottom of the map.
       return dz;
     } else {
-      if (!esdf.seen[query_idx] || (esdf.data[query_idx] <= 0.01)) { // If the query location is unseen or occupied, then it is the bottom of the local map
+      if (!esdf.seen[query_idx] || (esdf.data[query_idx] <= 0.001)) { // If the query location is unseen or occupied, then it is the bottom of the local map
       // if (!esdf.seen[query_idx]) {
         return dz;
       }
@@ -505,6 +509,54 @@ bool Msfm3d::clusterFrontier(const bool print2File)
     ec.setSearchMethod(kdtree);
     ec.setInputCloud(frontierCloud);
     ec.extract(frontierClusterIndices);
+    return 1;
+  }
+}
+
+bool Msfm3d::normalFrontierFilter()
+{
+  // Create cloud pointer to store the removed points
+  pcl::PointCloud<pcl::PointXYZ>::Ptr removed_points(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::PointCloud<pcl::PointXYZINormal>::Ptr normalCloud(new pcl::PointCloud<pcl::PointXYZINormal>);
+  pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+
+  // Creating the KdTree object for the search method of the extraction
+  pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree(new pcl::search::KdTree<pcl::PointXYZ>);
+  kdtree->setInputCloud(frontierCloud);
+
+  // Clear previous frontierClusterIndices
+  frontierClusterIndices.clear();
+
+  // Initialize euclidean cluster extraction object
+  pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::PointXYZINormal> ne;
+  ne.setSearchMethod(kdtree);
+  ne.setInputCloud(frontierCloud);
+  ne.setRadiusSearch(2.1*voxel_size);
+  ne.compute(*normalCloud);
+
+  float query[3];
+  int idx;
+  frontierCloud->clear();
+  for (pcl::PointCloud<pcl::PointXYZINormal>::iterator it=normalCloud->begin(); it!=normalCloud->end(); ++it) {
+    float query[3] = {it->x, it->y, it->z};
+    pcl::PointXYZ point;
+    point.x = it->x;
+    point.y = it->y;
+    point.z = it->z;
+    idx = xyz_index3(query);
+    if (std::abs(it->normal_z) >= normalThresholdZ) {
+      frontier[idx] = 0;
+    } else {
+      frontierCloud->points.push_back(point);
+    }
+  }
+
+  // Filter frontierCloud to keep only the inliers
+  ROS_INFO("Frontier cloud after normal filtering has %d points.", (int)frontierCloud->points.size());
+
+  if ((int)frontierCloud->points.size() < 1) {
+    return 0;
+  } else {
     return 1;
   }
 }
@@ -747,6 +799,7 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, co
 
     // ROS_INFO("Checking if sampled point is reachable...");
     // See if sample is at an unreachable point (occupied or unseen)
+    // if ((esdf.data[sample_idx] < viewPoseObstacleDistance && (i < 0.4*sampleLimit)) || esdf.data[sample_idx] <= 0.0) {
     if (esdf.data[sample_idx] < viewPoseObstacleDistance) {
       continue;
     }
@@ -1193,13 +1246,37 @@ void Msfm3d::parsePointCloud()
     if (index > (esdf.size[0]*esdf.size[1]*esdf.size[2])) ROS_INFO("WARNING: Parsing index is greater than array sizes!");
     // Use the hyperbolic tan function from the btraj paper
     // esdf = v_max*(tanh(d - e) + 1)/2
-    if (xyzis[i+3] >= 0.0) {
-      esdf.data[index] = (double)(5.0*(tanh(xyzis[i+3] - exp(1.0)) + 1.0)/2.0);
+    if (xyzis[i+3] > 0.0) {
+      // esdf.data[index] = (double)(5.0*(tanh(xyzis[i+3] - exp(1.0)) + 1.0)/2.0);
+      esdf.data[index] = (double)xyzis[i+3];
     }
     else {
       esdf.data[index] = (double)(0.0);
     }
     esdf.seen[index] = (xyzis[i+4]>0.0);
+  }
+
+  if (receivedPosition) {
+    float query_point[3];
+    int query_idx;
+    ROS_INFO("Clearing vehicle volume with limits [%0.2f, %0.2f; %0.2f, %0.2f; %0.2f, %0.2f].", vehicleVolume.xmin,
+      vehicleVolume.xmax, vehicleVolume.ymin, vehicleVolume.ymax, vehicleVolume.zmin, vehicleVolume.zmax);
+    if (vehicleVolume.set) {
+      for(float dx = vehicleVolume.xmin; dx <= vehicleVolume.xmax; dx = dx + voxel_size) {
+        query_point[0] = position[0] + dx;
+        for(float dy = vehicleVolume.ymin; dy <= vehicleVolume.ymax; dy = dy + voxel_size) {
+          query_point[1] = position[1] + dy;
+          for(float dz = vehicleVolume.zmin; dz <= vehicleVolume.zmax; dz = dz + voxel_size) {
+            query_point[2] = position[2] + dz;
+            query_idx = xyz_index3(query_point);
+            if ((query_idx >= 0) && (query_idx < esdf.size[0]*esdf.size[1]*esdf.size[2])) { // Check for valid array indices
+              if (esdf.data[query_idx] < 1.0) esdf.data[query_idx] = 1.0 + inflateWidth;
+              esdf.seen[query_idx] = true;
+            }
+          }
+        }
+      }
+    }
   }
 
   // Free xyzis holder array memory
@@ -1315,13 +1392,13 @@ bool Msfm3d::updatePath(const float goal[3])
     ROS_INFO("Goal point is not reachable.");
     return false;
   }
-  if (reach[goal_idx] <= 0.0 || reach[goal_idx] >= 1e6) {
+  if (reach[goal_idx] <= 0.0 || reach[goal_idx] >= 1e12) {
     ROS_INFO("Goal point is either too far away or is blocked by an obstacle.");
     return false;
   }
 
   // 3D Interpolation intermediate values from https://en.wikipedia.org/wiki/Trilinear_interpolation
-  float step = voxel_size/2.0;
+  float step = voxel_size/4.0;
 
   // Path message for ROS
   nav_msgs::Path newpathmsg;
@@ -1335,7 +1412,7 @@ bool Msfm3d::updatePath(const float goal[3])
   }
 
   // Run loop until the path is within a voxel of the robot.
-  while ((dist_robot2path > 2.0*voxel_size) && (path.size() < 30000) && grad_norm >= 0.00001) {
+  while ((dist_robot2path > 3.0*voxel_size) && (path.size() < 100000) && grad_norm >= 0.00001) {
   	// Find the current point's grid indices and it's 6 neighbor voxel indices.
   	idx = xyz_index3(point);
     neighbor[0] = idx - 1; // i-1
@@ -1397,7 +1474,7 @@ bool Msfm3d::updatePath(const float goal[3])
   }
 
   // Check if the path made it back to the vehicle
-  if (dist_robot2path > 2.0*voxel_size) {
+  if (dist_robot2path > 3.0*voxel_size) {
     ROS_INFO("Path did not make it back to the robot.  Select a different goal point.");
     return false;
   }
@@ -1512,8 +1589,8 @@ bool updateFrontier(Msfm3d& planner){
       }
       else {
         // For the time being, exclude the top/bottom neighbor (last two neighbors)
-        // for (int j=0; j<6; j++) {
-        for (int j=0; j<4; j++) {
+        for (int j=0; j<6; j++) {
+        // for (int j=0; j<4; j++) {
           if (!planner.esdf.seen[neighbor[j]]  && !(i == neighbor[j])) {
             frontier = 1;
           }
@@ -1534,13 +1611,13 @@ bool updateFrontier(Msfm3d& planner){
           }
         }
 
-        // Eliminate frontiers that are adjacent to occupied cells
-        for (int j=0; j<6; j++) {
-          if (planner.esdf.data[neighbor[j]] < (0.01) && planner.esdf.seen[neighbor[j]]) {
-            pass4++;
-            frontier = 0;
-          }
-        }
+        // // Eliminate frontiers that are adjacent to occupied cells
+        // for (int j=0; j<6; j++) {
+        //   if (planner.esdf.data[neighbor[j]] < (0.0217) && planner.esdf.seen[neighbor[j]]) {
+        //     pass4++;
+        //     frontier = 0;
+        //   }
+        // }
       }
 
       // Check if the voxel is at the entrance
@@ -1572,6 +1649,9 @@ bool updateFrontier(Msfm3d& planner){
     return false;
   }
 
+  // Filter frontiers based upon normal vectors
+  // if (!planner.normalFrontierFilter()) return false;
+
   // Cluster the frontier into euclidean distance groups
   if (planner.clusterFrontier(false)) {
     // Group frontier within each cluster with greedy algorithm
@@ -1594,7 +1674,7 @@ void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5])
   // Main
   for (int i=0; i<npixels; i++){
     // Check if the voxel has been seen, is unoccupied and it costs less to reach it than the 5 cheapest voxels
-    if (planner.esdf.seen[i] && (planner.reach[i]<cost[0]) && (planner.esdf.data[i]>0 && planner.reach[i] > (double)0.0)){
+    if (planner.esdf.seen[i] && (planner.reach[i]<cost[0]) && (planner.esdf.data[i]>0.0 && planner.reach[i] > (double)0.0)){
       // // Check if the voxel is a frontier by querying adjacent voxels
       planner.index3_xyz(i, point);
 
@@ -1617,7 +1697,7 @@ void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5])
   }
 }
 
-void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int N, const float dMin)
+void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int N, const float dMin, const float dAgentMin)
 {
   // findFrontier scans through the environment arrays and returns the N closest frontier locations in reachability distance that are at least dMin apart.
   float point[3];
@@ -1644,6 +1724,9 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
     point[1] = planner.goalViews[i].pose.position.y;
     point[2] = planner.goalViews[i].pose.position.z;
     idx = planner.xyz_index3(point);
+    if (dist3(planner.position, point) <= dAgentMin) {
+      continue;
+    }
     if ((idx < 0) || (idx > planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2])) {
       continue;
     }
@@ -1703,7 +1786,7 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
   }
 }
 
-void infoGoalView(Msfm3d& planner, int *viewIndices, double *utility, const int nAgents, const float dMin)
+void infoGoalView(Msfm3d& planner, int *viewIndices, double *utility, const int nAgents, const float dMin, const float dAgentMin)
 {
    // infoGoalView finds the most "informative" View in the planner.goalViews vector.
   float point[3];
@@ -1727,6 +1810,12 @@ void infoGoalView(Msfm3d& planner, int *viewIndices, double *utility, const int 
     point[1] = planner.goalViews[i].pose.position.y;
     point[2] = planner.goalViews[i].pose.position.z;
     idx = planner.xyz_index3(point);
+
+    // Check if the robot's position is within a radius of the goal view
+    if (dist3(planner.position, point) <= dAgentMin) {
+      continue;
+    }
+
     // Check to see if the goal view has a cost to travel to it (if not we can't generate a path anyways)
     if (planner.reach[idx] > (double)0.0) {
 
@@ -1812,7 +1901,7 @@ void findEntrance(Msfm3d& planner, float entranceList[15], double cost[5])
   // Main
   for (int i=0; i<npixels; i++){
     // Check if the voxel has been seen, is unoccupied and it costs less to reach it than the 5 cheapest voxels
-    if (planner.esdf.seen[i] && (planner.reach[i]<cost[0]) && (planner.esdf.data[i]>0 && planner.reach[i] > (double)0.0)){
+    if (planner.esdf.seen[i] && (planner.reach[i]<cost[0]) && (planner.esdf.data[i]>0.0 && planner.reach[i] > (double)0.0)){
       // // Check if the voxel is a frontier by querying adjacent voxels
       planner.index3_xyz(i, point);
 
@@ -2221,11 +2310,20 @@ int main(int argc, char **argv)
   n.param("global_planning/replan_ticks", replan_tick_limit, 15);
   int goal_tick_limit;
   n.param("global_planning/goal_ticks", goal_tick_limit, 100);
+  std::string replanTrigger;
+  n.param<std::string>("global_planning/replanTrigger", replanTrigger, "frontier");
+
+  // Minimum distance for a goal pose away from current position
+  float minGoalDist;
+  n.param("global_planning/minGoalDist", minGoalDist, (float)0.0);
+  float goalArrivalDist;
+  n.param("global_planning/goalArrivalDist", goalArrivalDist, (float)0.8);
 
   // Clustering Parameters
   float cluster_radius, min_cluster_size;
   n.param("global_planning/cluster_radius", cluster_radius, (float)(1.5*voxel_size)); // voxels
   n.param("global_planning/min_cluster_size", min_cluster_size, (float)(5.0/voxel_size)); // voxels
+  n.param("global_planning/normalThresholdZ", planner.normalThresholdZ, (float)1.1); 
   planner.cluster_radius = cluster_radius;
   planner.min_cluster_size = min_cluster_size;
 
@@ -2235,7 +2333,7 @@ int main(int argc, char **argv)
   int dzFrontierVoxelWidth;
   n.param("global_planning/fixGoalHeightAGL", fixGoalHeightAGL, false);
   n.param("global_planning/goalHeightAGL", goalHeightAGL, (float)0.64);
-  n.param("global_planning/dzFrontierVoxelWidth", dzFrontierVoxelWidth, 0);
+  n.param("global_planning/dzFrontierVoxelWidth", dzFrontierVoxelWidth, -1);
   planner.fixGoalHeightAGL = fixGoalHeightAGL;
   planner.goalHeightAGL = goalHeightAGL;
   planner.dzFrontierVoxelWidth = dzFrontierVoxelWidth;
@@ -2334,7 +2432,8 @@ int main(int argc, char **argv)
 
   // Width to inflate obstacles for path planning
   float inflateWidth;
-  n.param("global_planning/inflateWidth", inflateWidth, (float)0.6); // meters
+  n.param("global_planning/inflateWidth", inflateWidth, (float)0.0); // meters
+  planner.inflateWidth = inflateWidth;
 
   // Closest goal or max utility
   std::string goalFunction;
@@ -2449,12 +2548,14 @@ int main(int argc, char **argv)
           pub3.publish(planner.frontiermsg);
           ROS_INFO("Frontier published!");
 
-          // Check to make sure that at least 50% of the viewed frontier voxels are still frontiers, if not, resample goal poses.
+          // Replan if you're within a radius of the goal point
+
+          // Check to make sure that at least 50% of the viewed frontier voxels are still frontiers, if not, resample goal poses, if in frontier_replan mode.
           int stillFrontierCount = 0;
           bool replan = 0;
           if ((int)planner.goalViews.size() == 0 || goalViewCost[0] < 0.0) {
             replan = 1;
-          } else {
+          } else if (replanTrigger == "frontier") {
             int viewableFrontierCount = (int)planner.goalViews[goalViewList[0]].cloud.size();
             for (int i = 0; i < viewableFrontierCount; i++) {
               pcl::PointXYZ _query = planner.goalViews[goalViewList[0]].cloud.points[i];
@@ -2467,10 +2568,15 @@ int main(int argc, char **argv)
             if (((float)stillFrontierCount)/((float)viewableFrontierCount)<= 0.5) {
               replan = 1;
             }
+          } else if (replanTrigger == "distance") {
+            float _query[3] = {planner.goalViews[goalViewList[0]].pose.position.x, planner.goalViews[goalViewList[0]].pose.position.y, planner.goalViews[goalViewList[0]].pose.position.z};
+            if (dist3(planner.position, _query) < goalArrivalDist) {
+              replan = 1;
+            }
           }
 
           // Inflate the obstacle map to avoid collisions
-          if (planner.updatedMap && planner.esdf_or_octomap) {
+          if (planner.updatedMap) {
             planner.inflateObstacles(inflateWidth, inflatedOccupiedMsg);
             planner.updatedMap = 0;
           }
@@ -2489,29 +2595,37 @@ int main(int argc, char **argv)
             replan = 1;
           }
 
-          // Call reach function if the robot needs to replan
-          if (replan || ((replan_ticks % replan_tick_limit) == 0)) {
-            ROS_INFO("At least 50 percent of the frontiers at the goal pose are no longer frontiers or %d loops have occurred since last plan.  Replanning...", (int)(replan_ticks % replan_tick_limit));
-            tStart = clock();
+          // The robot might have moved or the goal poses may have been updated, so you need to recalculate the reachability grid
+          tStart = clock();
 
-            if ((int)planner.frontierCloud->points.size() > (planner.numNeighbors+2)*(int)planner.frontierClusterIndices[0].indices.size()) {
-              ROS_INFO("Reachability matrix calculating to %d closest frontier points...", 2*(int)planner.frontierClusterIndices[0].indices.size());
-              reach(planner, 0, 0, (planner.numNeighbors+2)*(int)planner.frontierClusterIndices[0].indices.size(), false);
-            } else {
-              ROS_INFO("Reachability matrix calculating to %d closest frontier points...", (int)planner.frontierCloud->points.size());
-              reach(planner, 0, 0, (int)planner.frontierCloud->points.size(), false);
+          if ((int)planner.frontierCloud->points.size() > (planner.numNeighbors+2)*(int)planner.frontierClusterIndices[0].indices.size()) {
+            ROS_INFO("Reachability matrix calculating to %d closest frontier points...", 2*(int)planner.frontierClusterIndices[0].indices.size());
+            reach(planner, 0, 0, (planner.numNeighbors+2)*(int)planner.frontierClusterIndices[0].indices.size(), false);
+          } else {
+            ROS_INFO("Reachability matrix calculating to %d closest frontier points...", (int)planner.frontierCloud->points.size());
+            reach(planner, 0, 0, (int)planner.frontierCloud->points.size(), false);
+          }
+
+          ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+
+          // Replan if the point is no longer reachable
+          if (!replan) {
+            float _query[3] = {planner.goalViews[goalViewList[0]].pose.position.x, planner.goalViews[goalViewList[0]].pose.position.y, planner.goalViews[goalViewList[0]].pose.position.z};
+            if (!planner.updatePath(_query)) {
+              ROS_INFO("Current goal point is unreachable, replanning...");
+              replan = 1;
             }
+          }
 
-            ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
-
+          // Find the best goal pose if the replan trigger has been toggled
+          if (replan || ((replan_ticks % replan_tick_limit) == 0)) {
+            // ROS_INFO("At least 50 percent of the frontiers at the goal pose are no longer frontiers or %d loops have occurred since last plan.  Replanning...", (int)(replan_ticks % replan_tick_limit));
             // Find goal views with an information-based optimization
             if (goalFunction == "information") {
-              infoGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation);
+              infoGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation, minGoalDist);
             } else {
-              closestGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation);
+              closestGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation, minGoalDist);
             }
-
-            // TO-DO Switch between this function and a multi-agent optimization that outputs the top N goal poses
 
             // If no reasonable goal views are found, expand search to all frontier cells to see if any goal view can be found
             if (goalViewCost[0] < 0.0) {
@@ -2519,49 +2633,56 @@ int main(int argc, char **argv)
               ROS_INFO("Reachability matrix calculating to %d closest frontier points...", (int)planner.frontierCloud->points.size());
               reach(planner, 0, 0, (int)planner.frontierCloud->points.size(), false);
               if (goalFunction == "information") {
-                infoGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation);
+                infoGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation, minGoalDist);
               } else {
-                closestGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation);
+                closestGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation, minGoalDist);
               }
             }
 
             // Output status for debugging
-            if (goalFunction == "information") {
-              for (int i=0; i<agentCount; i++) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, utility: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
-                planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
-            } else {
-              for (int i=0; i<agentCount; i++) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, cost: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
-                planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
-            }
-
-            // If using multi-agent, publish a goal decision matrix, goalArray, and the corresponding pathArray msg
-            int rows = 0;
-            msfm3d::GoalArray newGoalArrayMsg;
-            for (int i=0; i<agentCount; i++) {
-              if (goalViewCost[i]>=0.0) {
-                pcl::PointXYZ _query = planner.goalViews[goalViewList[i]].pose.position; // pcl::PointXYZ
-                float query[3] = {_query.x, _query.y, _query.z}; // float[3]
-                if (planner.updatePath(query)) {
-                  msfm3d::Goal newGoalMsg;
-                  // Write a new goal pose, path, and cost for publishing
-                  goalPose.header.stamp = ros::Time::now();
-                  goalPose.pose.position.x = query[0];
-                  goalPose.pose.position.y = query[1];
-                  goalPose.pose.position.z = query[2];
-                  goalPose.pose.orientation.x = planner.goalViews[goalViewList[i]].pose.q.x;
-                  goalPose.pose.orientation.y = planner.goalViews[goalViewList[i]].pose.q.y;
-                  goalPose.pose.orientation.z = planner.goalViews[goalViewList[i]].pose.q.z;
-                  goalPose.pose.orientation.w = planner.goalViews[goalViewList[i]].pose.q.w;
-                  newGoalMsg.pose = goalPose;
-                  newGoalMsg.path = planner.pathmsg;
-                  newGoalMsg.cost.data = (float)goalViewCost[i];
-                  newGoalArrayMsg.goals.push_back(newGoalMsg);
-                  newGoalArrayMsg.costHome.data = (float)costHome;
+            if (planner.goalViews.size() > 0) { // Check to make sure there are at least enough goal poses for the number of robots
+              if (goalFunction == "information") {
+                for (int i=0; i<agentCount; i++) {
+                  if (goalViewCost[i] >= 0.0) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, utility: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
+                    planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
+                } 
+              } else {
+                for (int i=0; i<agentCount; i++) {
+                  if (goalViewCost[i] >= 0.0) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, cost: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
+                    planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
                 }
               }
+            
+
+              // If using multi-agent, publish a goal decision matrix, goalArray, and the corresponding pathArray msg
+              int rows = 0;
+              msfm3d::GoalArray newGoalArrayMsg;
+              for (int i=0; i<agentCount; i++) {
+                if (goalViewCost[i]>=0.0) {
+                  pcl::PointXYZ _query = planner.goalViews[goalViewList[i]].pose.position; // pcl::PointXYZ
+                  float query[3] = {_query.x, _query.y, _query.z}; // float[3]
+                  if (planner.updatePath(query)) {
+                    msfm3d::Goal newGoalMsg;
+                    // Write a new goal pose, path, and cost for publishing
+                    goalPose.header.stamp = ros::Time::now();
+                    goalPose.pose.position.x = query[0];
+                    goalPose.pose.position.y = query[1];
+                    goalPose.pose.position.z = query[2];
+                    goalPose.pose.orientation.x = planner.goalViews[goalViewList[i]].pose.q.x;
+                    goalPose.pose.orientation.y = planner.goalViews[goalViewList[i]].pose.q.y;
+                    goalPose.pose.orientation.z = planner.goalViews[goalViewList[i]].pose.q.z;
+                    goalPose.pose.orientation.w = planner.goalViews[goalViewList[i]].pose.q.w;
+                    newGoalMsg.pose = goalPose;
+                    newGoalMsg.path = planner.pathmsg;
+                    newGoalMsg.cost.data = (float)goalViewCost[i];
+                    newGoalArrayMsg.goals.push_back(newGoalMsg);
+                    newGoalArrayMsg.costHome.data = (float)costHome;
+                  }
+                }
+              }
+              goalArrayMsg = newGoalArrayMsg;
+              pub7.publish(goalArrayMsg);
             }
-            goalArrayMsg = newGoalArrayMsg;
-            pub7.publish(goalArrayMsg);
           }
           // Store goal location for publishing
           if ((goalViewCost[0] < 0.0) || planner.artifactDetected) {

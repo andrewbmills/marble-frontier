@@ -1,26 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  Example launch file for a traversability Octomap estimator
--->
 <launch>
+
   <node pkg="traversability_mapping" type="normal_filter" name="normal_filter">
     <param name="radiusSearch" value="0.2"/>
     <param name="rate" value="5.0"/>
     <param name="resolution" value="0.2"/>
     <!-- Threshold for traversability in degrees -->
-    <param name="normalThreshold" value="0.80"/>
-    <param name="radiusThreshold" value="4.5"/>
+    <param name="normalThreshold" value="0.9"/>
+    <param name="radiusThreshold" value="6.0"/>
     <param name="fixedFrame" type="string" value="world"/>
 
     <remap from="points" to="os1_cloud_node/points_filtered"/>
+    <remap from="traversability_map" to="traversability_map_local"/>
   </node>
 
-  <node pkg="nodelet" type="nodelet" name="pcl_manager_traverse" args="manager" output="screen" />
+  <!-- <node pkg="nodelet" type="nodelet" name="pcl_manager_traverse" args="manager" output="screen" /> -->
 
   <!-- Run a VoxelGrid filter to clean NaNs and downsample the data -->
-  <node pkg="nodelet" type="nodelet" name="voxel_grid_traverse" args="load pcl/VoxelGrid pcl_manager_traverse" output="screen">
-    <remap from="~input" to="os1_cloud_node/points" />
-    <remap from="~output" to="os1_cloud_node/points_filtered"/>
+  <!-- <node pkg="nodelet" type="nodelet" name="voxel_grid_traverse" args="load pcl/VoxelGrid pcl_manager_traverse" output="screen">
+    <remap from="~input" to="points" />
+    <remap from="~output" to="points_traverse"/>
     <rosparam>
       filter_field_name: z
       filter_limit_min: -1.0
@@ -28,6 +27,6 @@
       filter_limit_negative: False
       leaf_size: 0.1
     </rosparam>
-  </node>
+  </node> -->
 
 </launch>

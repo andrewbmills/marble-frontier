@@ -202,11 +202,12 @@ void PC2_normal_filter::callback_cloud(const sensor_msgs::PointCloud2ConstPtr& m
     query.x = transformedCloudHit->points[i].x;
     query.y = transformedCloudHit->points[i].y;
     query.z = transformedCloudHit->points[i].z;
-    mytree->updateNode((double)query.x, (double)query.y, (double)(query.z - mytree->getResolution()), (float)0.41);
-    mytree->updateNode((double)query.x, (double)query.y, (double)query.z, (float)-0.85);
+    // mytree->updateNode((double)query.x, (double)query.y, (double)(query.z - mytree->getResolution()), (float)0.41);
+    mytree->updateNode((double)query.x, (double)query.y, (double)query.z, (float)0.41);
     mytree->updateNode((double)query.x, (double)query.y, (double)(query.z + mytree->getResolution()), (float)-0.85);
     mytree->updateNode((double)query.x, (double)query.y, (double)(query.z + 2.0*mytree->getResolution()), (float)-0.85);
     mytree->updateNode((double)query.x, (double)query.y, (double)(query.z + 3.0*mytree->getResolution()), (float)-0.85);
+    // mytree->updateNode((double)query.x, (double)query.y, (double)(query.z + 4.0*mytree->getResolution()), (float)-0.85);
   }
 
   for (int i=0; i<transformedCloudMiss->points.size(); i++) {
@@ -217,6 +218,7 @@ void PC2_normal_filter::callback_cloud(const sensor_msgs::PointCloud2ConstPtr& m
     mytree->updateNode((double)query.x, (double)query.y, (double)(query.z + mytree->getResolution()), (float)0.41);
     mytree->updateNode((double)query.x, (double)query.y, (double)(query.z + 2.0*mytree->getResolution()), (float)0.41);
     mytree->updateNode((double)query.x, (double)query.y, (double)(query.z + 3.0*mytree->getResolution()), (float)0.41);
+    // mytree->updateNode((double)query.x, (double)query.y, (double)(query.z + 4.0*mytree->getResolution()), (float)0.41);
   }
 
   // Update octomapMsg for publishing
