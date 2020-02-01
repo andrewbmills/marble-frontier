@@ -2,7 +2,7 @@
 <launch>
   <arg name="ground_vehicle" default="true" />
 
-  <node pkg="msfm3d" type="msfm3d" name="global_planning">
+  <node pkg="msfm3d" type="msfm3d" name="global_planning" output="screen">
     <!-- Inputs (Subscribed Topic Names) -->
 
     <remap from="octomap_binary" to="octomap_binary_crap"/>
@@ -17,8 +17,8 @@
     <!-- <remap from="goalFrustum" to="goalFrustum_2"/> -->
     <!-- <remap from="inflated_octomap" to="inflated_octomap"/> -->
     <remap from="artifact_list" to="report_artifact"/>
-    <remap from="voxblox_node/tsdf_pointcloud" to="voxblox_node/esdf_pointcloud"/>
-    <!-- <remap from="voxblox_node/tsdf_pointcloud" to="cost_map"/> -->
+    <!-- <remap from="voxblox_node/tsdf_pointcloud" to="voxblox_node/esdf_pointcloud"/> -->
+    <remap from="voxblox_node/tsdf_pointcloud" to="cost_map"/>
 
     <!-- Parameters -->
     <!-- Map Resolution -->
@@ -39,7 +39,7 @@
 
     <!-- Vehicle speed in m/s and turnRate in deg/s -->
     <param name="speed" value="1.0"/>
-    <param name="turnRate" value="0.5"/>
+    <param name="turnRate" value="0.02"/>
 
     <!-- Frontier Clustering parameters (in voxels) -->
     <param name="cluster_radius" value="0.30" />
@@ -114,7 +114,7 @@
     <param name="goalFunction" type="string" value="cost"/>
 
     <!-- 5*(tanh(ESDF - e) + 1)/2.0 is used on each ESDF voxel so convert accordingly-->
-    <param name="viewPoseObstacleDistance" value="0.55"/>
+    <param name="viewPoseObstacleDistance" value="0.3"/>
 
   </node>
 

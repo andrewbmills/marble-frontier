@@ -282,7 +282,7 @@ void Costmap_fuser::fuse_maps()
       double size = it.getSize();
       // ROS_INFO("Reading data at node (%0.1f, %0.1f, %0.1f)", (double)it.getX(), (double)it.getY(), (double)it.getZ());
       float value;
-      if (it->getValue() > 0) {
+      if (it->getOccupancy() >= 0.3) {
         value = 0.0;
         // ROS_INFO("Node occupied");
       } else {
@@ -409,6 +409,7 @@ int main(int argc, char **argv)
 
   // ESDF value to use for untraversable voxels
   n.param("costmap_generator/untraversableDistance", mapFuser.untraversableDistance, (float)0.01);
+  n.param("costmap_generator/octomapFreeDistance", mapFuser.octomapFreeDistance, (float)0.6);
 
   // Declare and read in the node update rate from the launch file parameters
   double updateRate;

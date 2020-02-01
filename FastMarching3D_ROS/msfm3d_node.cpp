@@ -1581,7 +1581,7 @@ bool updateFrontier(Msfm3d& planner){
             pass2++;
           }
         }
-        // Eliminate frontiers with unseen top/bottom neighbors
+        // // Eliminate frontiers with unseen top/bottom neighbors
         if ((!planner.esdf.seen[neighbor[4]] && i != neighbor[4]) || (!planner.esdf.seen[neighbor[5]] && i != neighbor[5])) {
           frontier = 0;
           pass3++;
@@ -1604,12 +1604,12 @@ bool updateFrontier(Msfm3d& planner){
         // if (!planner.esdf.seen[neighbor[5]]) frontier = 0;
 
         // Only consider frontiers close in z-coordinate (temporary hack)
-        if (planner.dzFrontierVoxelWidth > 0) {
-          if (abs(planner.position[2] - point[2]) >= planner.dzFrontierVoxelWidth*planner.voxel_size) {
-            pass3++;
-            frontier = 0;
-          }
-        }
+        // if (planner.dzFrontierVoxelWidth > 0) {
+        //   if (abs(planner.position[2] - point[2]) >= planner.dzFrontierVoxelWidth*planner.voxel_size) {
+        //     pass3++;
+        //     frontier = 0;
+        //   }
+        // }
 
         // // Eliminate frontiers that are adjacent to occupied cells
         // for (int j=0; j<6; j++) {
@@ -2323,7 +2323,7 @@ int main(int argc, char **argv)
   float cluster_radius, min_cluster_size;
   n.param("global_planning/cluster_radius", cluster_radius, (float)(1.5*voxel_size)); // voxels
   n.param("global_planning/min_cluster_size", min_cluster_size, (float)(5.0/voxel_size)); // voxels
-  n.param("global_planning/normalThresholdZ", planner.normalThresholdZ, (float)1.1); 
+  n.param("global_planning/normalThresholdZ", planner.normalThresholdZ, (float)1.1);
   planner.cluster_radius = cluster_radius;
   planner.min_cluster_size = min_cluster_size;
 
@@ -2645,14 +2645,14 @@ int main(int argc, char **argv)
                 for (int i=0; i<agentCount; i++) {
                   if (goalViewCost[i] >= 0.0) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, utility: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
                     planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
-                } 
+                }
               } else {
                 for (int i=0; i<agentCount; i++) {
                   if (goalViewCost[i] >= 0.0) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, cost: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
                     planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
                 }
               }
-            
+
 
               // If using multi-agent, publish a goal decision matrix, goalArray, and the corresponding pathArray msg
               int rows = 0;
