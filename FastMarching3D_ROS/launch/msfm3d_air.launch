@@ -29,7 +29,7 @@
 
     <!-- If the vehicle is an air vehicle, the following params should be set -->
     <param name="minGoalDist" value="1.8" />
-    <param name="goalArrivalDist" value="1.7" />
+    <param name="goalArrivalDist" value="1.0" />
 
 	 <!-- Whether or not you want to use an Occupancy Grid or an ESDF map type -->
     <param name="useOctomap" value="false"/>
@@ -43,7 +43,7 @@
 
     <!-- Frontier Clustering parameters (in voxels) -->
     <param name="cluster_radius" value="0.30" />
-    <param name="min_cluster_size" value="150" />
+    <param name="min_cluster_size" value="100" />
 
     <!-- Number of ticks before replanning -->
     <param name="replan_ticks" value="10" />
@@ -64,11 +64,10 @@
     <param name="cameraVerticalFoV" value="25.0"/>
     <param name="cameraHorizontalFoV" value="120.0"/>
     <param name="cameraMaxRange" value="3.5"/>
-    <param name="cameraMinRange" value="1.0"/>
+    <param name="cameraMinRange" value="1.5"/>
     <param name="robot2camera_roll" value="0.0"/>
     <param name="robot2camera_pitch" value="0.0"/>
     <param name="robot2camera_yaw" value="0.0"/>
-    <!--  -->
 
     <!-- roll, pitch, yaw for rotation from robot orientation to camera orientation (Default is identity rotation matrix) -->
     <!-- <param name="robot2camera_q_w" value="1.0"/>
@@ -80,11 +79,11 @@
     <param name="updateRate" value="1.0"/>
 
     <!-- Inflated Obstacle width -->
-    <param name="inflateWidth" value="0.0"/>
+    <param name="inflateWidth" value="1.4"/>
 
     <!-- Vehicle Fence Volume Limits -->
     <param name="fenceOn" value="true"/>
-    <param name="fence_xmin" value="-1000.0"/>
+    <param name="fence_xmin" value="1.0"/>
     <param name="fence_xmax" value="1000.0"/>
     <param name="fence_ymin" value="-1000.0"/>
     <param name="fence_ymax" value="1000.0"/>
@@ -92,13 +91,13 @@
     <param name="fence_zmax" value="3.0"/>
 
     <!-- Vehicle Volume Extents -->
-    <!-- <param name="vehicleVolumeOn" value="true"/>
-    <param name="vehicleVolumeXmin" value="-0.6"/>
-    <param name="vehicleVolumeXmax" value="0.6"/>
-    <param name="vehicleVolumeYmin" value="-0.6"/>
-    <param name="vehicleVolumeYmax" value="0.6"/>
-    <param name="vehicleVolumeZmin" value="-0.2"/>
-    <param name="vehicleVolumeZmax" value="0.2"/> -->
+    <param name="vehicleVolumeOn" value="true"/>
+    <param name="vehicleVolumeXmin" value="-0.4"/>
+    <param name="vehicleVolumeXmax" value="0.4"/>
+    <param name="vehicleVolumeYmin" value="-0.4"/>
+    <param name="vehicleVolumeYmax" value="0.4"/>
+    <param name="vehicleVolumeZmin" value="-0.4"/>
+    <param name="vehicleVolumeZmax" value="0.4"/>
 
     <!-- Fix vehicle goal height (in meters) above map ground level for a quad/ground vehicle -->
     <param name="fixGoalHeightAGL" value="false"/>
@@ -115,7 +114,7 @@
     <param name="goalFunction" type="string" value="cost"/>
 
     <!-- 5*(tanh(ESDF - e) + 1)/2.0 is used on each ESDF voxel so convert accordingly-->
-    <param name="viewPoseObstacleDistance" value="2.5"/>
+    <param name="viewPoseObstacleDistance" value="2.0"/>
 
   </node>
 
