@@ -2582,6 +2582,12 @@ int main(int argc, char **argv)
           if (planner.updatedMap) {
             planner.inflateObstacles(inflateWidth, inflatedOccupiedMsg);
             planner.updatedMap = 0;
+            // Check if the goal pose is now occupied or too close to a an obstacle
+            float _query[3] = {planner.goalViews[goalViewList[0]].pose.position.x, planner.goalViews[goalViewList[0]].pose.position.y, planner.goalViews[goalViewList[0]].pose.position.z};
+            int idx = planner.xyz_index3(_query);
+            if ((idx < 0) || (idx >= planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2])) {
+              if (planner.esdf.data[idx] < (planner.viewPoseObstacleDistance)) replan = 1;
+            }
           }
 
           if (planner.esdf_or_octomap) {
