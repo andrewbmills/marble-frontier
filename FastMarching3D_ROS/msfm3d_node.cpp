@@ -240,7 +240,7 @@ class Msfm3d
 
     // Vehicle linear and angular velocities
     float speed = 1.0; // m/s
-    float turnRate = 5.0; // deg/s
+    float turnPenalty = 0.2; // Weight to place on an initial heading error
 
     // Environment/Sensor parameters
     std::string frame = "world";
@@ -1348,11 +1348,11 @@ void Msfm3d::inflateObstacles(const float radius, sensor_msgs::PointCloud2& infl
       float newDistance = esdf.data[i] - (double)radius;
       if (newDistance < 0.0) {
         esdf.data[i] = 0.0;
+        pointsInflated++;
       }
       else {
         esdf.data[i] = newDistance;
       } // Just subtract the value for an esdf since the distance is included.
-      pointsInflated++;
     }
   }
   // Convert PointCloud to ROS msg
@@ -1743,7 +1743,7 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
                                    (float)(planner.pathmsg.poses[j].pose.position.z - planner.pathmsg.poses[0].pose.position.z)};
         float start_path_yaw = std::atan2(start_path_vec[1], start_path_vec[0]); // rad
         double cost;
-        cost = planner.reach[idx] + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw))/planner.turnRate;
+        cost = planner.reach[idx]*(1.0 + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)/360.0)*planner.turnPenalty);
         // ROS_INFO("Vehicle yaw = %0.2f deg, Path yaw = %0.2f deg, cost = %0.2f, cost_turn = %0.2f", (180.0/M_PI)*vehicle_yaw, (180.0/M_PI)*start_path_yaw, planner.reach[idx], cost - planner.reach[idx]);
         costs.push_back(cost);
         indices.push_back(i);
@@ -1861,7 +1861,7 @@ void infoGoalView(Msfm3d& planner, int *viewIndices, double *utility, const int 
 
           // Add these angle differences to the cost_time
           // cost_time = cost_time + (std::abs(angle_diff((180.0/M_PI)*end_path_yaw, (180.0/M_PI)*goal_yaw)) + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)))/planner.turnRate;
-          cost_time = cost_time + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw))/planner.turnRate;
+          cost_time = cost_time*(1.0 + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)/360.0)*planner.turnPenalty);
 
           // Calculate the actual utility
           current_utility = std::sqrt((double)(planner.goalViews[i].cloud.points.size())/cost_time); // frontier voxels/second
@@ -2300,13 +2300,13 @@ int main(int argc, char **argv)
   planner.esdf_or_octomap = esdf_or_octomap;
   planner.frame = global_frame;
 
-  // Vehicle speed and turnRate
-  float speed, turnRate;
+  // Vehicle speed and turnPenalty
+  float speed, turnPenalty;
   n.param("global_planning/speed", speed, (float)1.0); // m/s
-  n.param("global_planning/turnRate", turnRate, (float)5.0); // deg/s
+  n.param("global_planning/turnPenalty", turnPenalty, (float)5.0); // deg/s
   planner.speed = speed;
-  planner.turnRate = turnRate;
-  ROS_INFO("Turn rate set to %0.2f deg/s", planner.turnRate);
+  planner.turnPenalty = turnPenalty;
+  ROS_INFO("Turn penalty set to %0.1f %", planner.turnPenalty*100.0);
 
   // Replanning ticks
   int replan_tick_limit;
@@ -2583,10 +2583,12 @@ int main(int argc, char **argv)
             planner.inflateObstacles(inflateWidth, inflatedOccupiedMsg);
             planner.updatedMap = 0;
             // Check if the goal pose is now occupied or too close to a an obstacle
-            float _query[3] = {planner.goalViews[goalViewList[0]].pose.position.x, planner.goalViews[goalViewList[0]].pose.position.y, planner.goalViews[goalViewList[0]].pose.position.z};
-            int idx = planner.xyz_index3(_query);
-            if ((idx < 0) || (idx >= planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2])) {
-              if (planner.esdf.data[idx] < (planner.viewPoseObstacleDistance)) replan = 1;
+            if (!replan) {
+              float _query[3] = {planner.goalViews[goalViewList[0]].pose.position.x, planner.goalViews[goalViewList[0]].pose.position.y, planner.goalViews[goalViewList[0]].pose.position.z};
+              int idx = planner.xyz_index3(_query);
+              if ((idx < 0) || (idx >= planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2])) {
+                if (planner.esdf.data[idx] < (planner.viewPoseObstacleDistance)) replan = 1;
+              }
             }
           }
 
