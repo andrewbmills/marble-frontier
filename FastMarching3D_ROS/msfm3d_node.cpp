@@ -516,9 +516,9 @@ bool Msfm3d::clusterFrontier(const bool print2File)
 bool Msfm3d::normalFrontierFilter()
 {
   // Create cloud pointer to store the removed points
-  pcl::PointCloud<pcl::PointXYZ>::Ptr removed_points(new pcl::PointCloud<pcl::PointXYZ>);
   pcl::PointCloud<pcl::PointXYZINormal>::Ptr normalCloud(new pcl::PointCloud<pcl::PointXYZINormal>);
-  pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+  pcl::PointCloud<pcl::PointXYZ>::Ptr frontierCloudPreFilter(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::copyPointCloud(*frontierCloud, *frontierCloudPreFilter);
 
   // Creating the KdTree object for the search method of the extraction
   pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree(new pcl::search::KdTree<pcl::PointXYZ>);
@@ -537,17 +537,13 @@ bool Msfm3d::normalFrontierFilter()
   float query[3];
   int idx;
   frontierCloud->clear();
-  for (pcl::PointCloud<pcl::PointXYZINormal>::iterator it=normalCloud->begin(); it!=normalCloud->end(); ++it) {
-    float query[3] = {it->x, it->y, it->z};
-    pcl::PointXYZ point;
-    point.x = it->x;
-    point.y = it->y;
-    point.z = it->z;
+  for (int i=0; i<normalCloud->points.size(); i++) {
+    float query[3] = {frontierCloudPreFilter->points[i].x, frontierCloudPreFilter->points[i].y, frontierCloudPreFilter->points[i].z};
     idx = xyz_index3(query);
-    if (std::abs(it->normal_z) >= normalThresholdZ) {
+    if (std::abs(normalCloud->points[i].normal_z) >= normalThresholdZ) {
       frontier[idx] = 0;
     } else {
-      frontierCloud->points.push_back(point);
+      frontierCloud->points.push_back(frontierCloudPreFilter->points[i]);
     }
   }
 
@@ -1180,6 +1176,7 @@ void Msfm3d::callback(sensor_msgs::PointCloud2 msg)
     return;
   }
   if (!receivedMap) receivedMap = 1;
+  if (!updatedMap) updatedMap = 1;
   PC2msg = msg;
   ROS_INFO("ESDF PointCloud2 received!");
 }
@@ -1348,7 +1345,13 @@ void Msfm3d::inflateObstacles(const float radius, sensor_msgs::PointCloud2& infl
         }
       }
     } else if (esdf.seen[i]) {
-      esdf.data[i] = esdf.data[i] - (double)radius; // Just subtract the value for an esdf since the distance is included.
+      float newDistance = esdf.data[i] - (double)radius;
+      if (newDistance < 0.0) {
+        esdf.data[i] = 0.0;
+      }
+      else {
+        esdf.data[i] = newDistance;
+      } // Just subtract the value for an esdf since the distance is included.
       pointsInflated++;
     }
   }
@@ -1650,7 +1653,7 @@ bool updateFrontier(Msfm3d& planner){
   }
 
   // Filter frontiers based upon normal vectors
-  // if (!planner.normalFrontierFilter()) return false;
+  if (!planner.normalFrontierFilter()) return false;
 
   // Cluster the frontier into euclidean distance groups
   if (planner.clusterFrontier(false)) {
