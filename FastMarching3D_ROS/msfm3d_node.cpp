@@ -2778,7 +2778,12 @@ int main(int argc, char **argv)
           if (!(planner.updatePath(goal))) {
             ROS_WARN("Couldn't find feasible path to goal.  Publishing previous path");
           }
-          nav_msgs::Path newPath = planner.pathmsg;
+
+          if (isGroundVehicle) {
+            nav_msgs::Path newPath = planner.pathmsg;
+          } else if (replan) {
+            nav_msgs::Path newPath = planner.pathmsg;
+          }
           pub2.publish(newPath);
           ROS_INFO("Path to goal published!");
           goalFound = 0;
