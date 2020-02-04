@@ -2550,6 +2550,7 @@ int main(int argc, char **argv)
   int replan_ticks = 0;
   double costHome = -1.0;
   int goalIndex = 0;
+  nav_msgs::Path newPath;
 
   ROS_INFO("Starting planner...");
   r.sleep();
@@ -2780,9 +2781,9 @@ int main(int argc, char **argv)
           }
 
           if (isGroundVehicle) {
-            nav_msgs::Path newPath = planner.pathmsg;
+            newPath = planner.pathmsg;
           } else if (replan) {
-            nav_msgs::Path newPath = planner.pathmsg;
+            newPath = planner.pathmsg;
           }
           pub2.publish(newPath);
           ROS_INFO("Path to goal published!");
