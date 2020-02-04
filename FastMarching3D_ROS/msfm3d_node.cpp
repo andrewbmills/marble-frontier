@@ -1609,19 +1609,11 @@ bool updateFrontier(Msfm3d& planner){
             pass2++;
           }
         }
-<<<<<<< HEAD
         // Eliminate frontiers with unseen top/bottom neighbors
         // if ((!planner.esdf.seen[neighbor[4]] && i != neighbor[4]) || (!planner.esdf.seen[neighbor[5]] && i != neighbor[5])) {
         //   frontier = 0;
         //   pass3++;
         // }
-=======
-        // // Eliminate frontiers with unseen top/bottom neighbors
-        if ((!planner.esdf.seen[neighbor[4]] && i != neighbor[4]) || (!planner.esdf.seen[neighbor[5]] && i != neighbor[5])) {
-          frontier = 0;
-          pass3++;
-        }
->>>>>>> b327ca7b7c04eacfa581df5c1bb8a3d035196997
       }
       else {
         // For the time being, exclude the top/bottom neighbor (last two neighbors)
