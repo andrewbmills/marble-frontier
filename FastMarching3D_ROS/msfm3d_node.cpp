@@ -160,7 +160,7 @@ struct View {
 
 //     int xyz_index3(const float xyz[3]);
 //     void index3_xyz(const int index, float xyz[3]);
-//     void expand(const float limits[6]); // 
+//     void expand(const float limits[6]); //
 // }
 
 // void Frontier::index3_xyz(const int index, float xyz[3])
@@ -255,7 +255,7 @@ class Msfm3d
     float entranceRadius; // radius around the origin where frontiers can't exist
     float inflateWidth = 0.0;
 
-    float viewPoseObstacleDistance = 0.01; // view pose minimum distance from obstacles
+    float viewPoseObstacleDistance = 0.001; // view pose minimum distance from obstacles
 
     double * reach; // reachability grid (output from reach())
     sensor_msgs::PointCloud2 PC2msg;
@@ -265,7 +265,7 @@ class Msfm3d
 
     // Frontier and frontier filter parameters
     // std::vector<bool> frontier;
-    // float 
+    // float
     bool * frontier;
     bool * entrance;
     int frontier_size = 0;
@@ -690,7 +690,7 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
         // std::cout << "Writing to file " << ss.str() << std::endl;
         writer.write<pcl::PointXYZ> (ss.str(), *cloud_cluster, false); //*
       }
-      
+
       groupCount++;
     }
     clusterCount++;
@@ -918,7 +918,7 @@ void Msfm3d::updateGoalPoses()
 
     // Cull the view frustum points with the pcl function
     // ROS_INFO("Frustum Culling...");
-    // TO-DO: Use a series of passthrough filters to restrict the x,y,z neighborhood (cropbox) and then compute 
+    // TO-DO: Use a series of passthrough filters to restrict the x,y,z neighborhood (cropbox) and then compute
     // polar coords for each point to filter those within the sensor FoV.
 
     pcl::FrustumCulling<pcl::PointXYZ> fc;
@@ -1048,7 +1048,7 @@ void Msfm3d::callback_position(const nav_msgs::Odometry msg)
 void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
 {
   ROS_INFO("Getting OctoMap message...");
-  
+
 
   // Free/Allocate the tree memory
   // ROS_INFO("Converting Octomap msg to AbstractOcTree...");
@@ -1609,11 +1609,19 @@ bool updateFrontier(Msfm3d& planner){
             pass2++;
           }
         }
+<<<<<<< HEAD
         // Eliminate frontiers with unseen top/bottom neighbors
         // if ((!planner.esdf.seen[neighbor[4]] && i != neighbor[4]) || (!planner.esdf.seen[neighbor[5]] && i != neighbor[5])) {
         //   frontier = 0;
         //   pass3++;
         // }
+=======
+        // // Eliminate frontiers with unseen top/bottom neighbors
+        if ((!planner.esdf.seen[neighbor[4]] && i != neighbor[4]) || (!planner.esdf.seen[neighbor[5]] && i != neighbor[5])) {
+          frontier = 0;
+          pass3++;
+        }
+>>>>>>> b327ca7b7c04eacfa581df5c1bb8a3d035196997
       }
       else {
         // For the time being, exclude the top/bottom neighbor (last two neighbors)
@@ -1632,12 +1640,12 @@ bool updateFrontier(Msfm3d& planner){
         // if (!planner.esdf.seen[neighbor[5]]) frontier = 0;
 
         // Only consider frontiers close in z-coordinate (temporary hack)
-        if (planner.dzFrontierVoxelWidth > 0) {
-          if (abs(planner.position[2] - point[2]) >= planner.dzFrontierVoxelWidth*planner.voxel_size) {
-            pass3++;
-            frontier = 0;
-          }
-        }
+        // if (planner.dzFrontierVoxelWidth > 0) {
+        //   if (abs(planner.position[2] - point[2]) >= planner.dzFrontierVoxelWidth*planner.voxel_size) {
+        //     pass3++;
+        //     frontier = 0;
+        //   }
+        // }
 
         // // Eliminate frontiers that are adjacent to occupied cells
         // for (int j=0; j<6; j++) {
@@ -2351,7 +2359,7 @@ int main(int argc, char **argv)
   float cluster_radius, min_cluster_size;
   n.param("global_planning/cluster_radius", cluster_radius, (float)(1.5*voxel_size)); // voxels
   n.param("global_planning/min_cluster_size", min_cluster_size, (float)(5.0/voxel_size)); // voxels
-  n.param("global_planning/normalThresholdZ", planner.normalThresholdZ, (float)1.1); 
+  n.param("global_planning/normalThresholdZ", planner.normalThresholdZ, (float)1.1);
   planner.cluster_radius = cluster_radius;
   planner.min_cluster_size = min_cluster_size;
 
@@ -2681,14 +2689,14 @@ int main(int argc, char **argv)
                 for (int i=0; i<agentCount; i++) {
                   if (goalViewCost[i] >= 0.0) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, utility: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
                     planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
-                } 
+                }
               } else {
                 for (int i=0; i<agentCount; i++) {
                   if (goalViewCost[i] >= 0.0) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, cost: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
                     planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
                 }
               }
-            
+
 
               // If using multi-agent, publish a goal decision matrix, goalArray, and the corresponding pathArray msg
               int rows = 0;

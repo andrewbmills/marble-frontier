@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- 
+<!--
   Example launch file for a traversability Octomap estimator
 -->
 <launch>
-  <!-- Normal filter node -->
-  <node pkg="traversability_mapping" type="normal_filter" name="normal_filter" output="screen">
+  <node pkg="traversability_mapping" type="normal_filter" name="normal_filter">
     <param name="radiusSearch" value="0.2"/>
     <param name="rate" value="5.0"/>
     <param name="resolution" value="0.2"/>

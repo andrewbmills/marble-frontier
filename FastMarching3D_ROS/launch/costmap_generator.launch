@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- 
+<!--
   Example launch file for a costmap fusion node
 -->
 <launch>
   <node pkg="msfm3d" type="costmap_generator" name="costmap_generator">
-    <param name="fixedFrame" type="string" value="map"/>
+    <param name="fixedFrame" type="string" value="world"/>
     <param name="rate" value="5.0"/>
     <param name="resolution" value="0.2"/>
     <param name="untraversableDistance" value="0.01"/>
+    <param name="octomapFreeDistance" value="0.05"/>
 
     <remap from="esdf" to="voxblox_node/esdf_pointcloud"/>
     <!-- <remap from="octomap_binary" to="octomap_binary"/> -->

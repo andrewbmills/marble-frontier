@@ -178,7 +178,7 @@ void PC2_normal_filter::callback_cloud(const sensor_msgs::PointCloud2ConstPtr& m
   // Get transform from world to PointCloud
   tf::StampedTransform transform;
   try {
-    tfListener.lookupTransform(fixedFrameId, msg->header.frame_id,  
+    tfListener.lookupTransform(fixedFrameId, msg->header.frame_id,
                              msg->header.stamp, transform);
   }
   catch (tf::TransformException ex) {

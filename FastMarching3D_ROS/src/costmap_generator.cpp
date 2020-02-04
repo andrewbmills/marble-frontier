@@ -282,7 +282,7 @@ void Costmap_fuser::fuse_maps()
       double size = it.getSize();
       // ROS_INFO("Reading data at node (%0.1f, %0.1f, %0.1f)", (double)it.getX(), (double)it.getY(), (double)it.getZ());
       float value;
-      if (it->getOccupancy() > 0.3) {
+      if (it->getOccupancy() >= 0.3) {
         value = 0.0;
         // ROS_INFO("Node occupied");
       } else {

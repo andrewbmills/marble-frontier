@@ -37,7 +37,7 @@ class LinkStateToOdometry:
 			self.pub2.publish(self.Pose)
 		return
 
-	def __init__(self, topic_name="odometry", robot_name="B01", fixed_frame="world", child_frame="base_link"):
+	def __init__(self, topic_name="odometry", robot_name="B01", fixed_frame="map", child_frame="base_link"):
 		
 		node_name = topic_name + "_" + robot_name + "_publisher"
 		rospy.init_node(node_name)
