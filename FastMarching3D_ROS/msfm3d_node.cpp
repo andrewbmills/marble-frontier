@@ -41,6 +41,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 // Custom libraries
 #include "msfm3d.c"
+#include "bresenham3d.cpp"
 
 template <typename T>
 std::vector<size_t> sort_indexes(const std::vector<T> &v) {
@@ -240,7 +241,7 @@ class Msfm3d
 
     // Vehicle linear and angular velocities
     float speed = 1.0; // m/s
-    float turnRate = 5.0; // deg/s
+    float turnPenalty = 0.2; // Weight to place on an initial heading error
 
     // Environment/Sensor parameters
     std::string frame = "world";
@@ -516,9 +517,9 @@ bool Msfm3d::clusterFrontier(const bool print2File)
 bool Msfm3d::normalFrontierFilter()
 {
   // Create cloud pointer to store the removed points
-  pcl::PointCloud<pcl::PointXYZ>::Ptr removed_points(new pcl::PointCloud<pcl::PointXYZ>);
   pcl::PointCloud<pcl::PointXYZINormal>::Ptr normalCloud(new pcl::PointCloud<pcl::PointXYZINormal>);
-  pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+  pcl::PointCloud<pcl::PointXYZ>::Ptr frontierCloudPreFilter(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::copyPointCloud(*frontierCloud, *frontierCloudPreFilter);
 
   // Creating the KdTree object for the search method of the extraction
   pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree(new pcl::search::KdTree<pcl::PointXYZ>);
@@ -537,17 +538,13 @@ bool Msfm3d::normalFrontierFilter()
   float query[3];
   int idx;
   frontierCloud->clear();
-  for (pcl::PointCloud<pcl::PointXYZINormal>::iterator it=normalCloud->begin(); it!=normalCloud->end(); ++it) {
-    float query[3] = {it->x, it->y, it->z};
-    pcl::PointXYZ point;
-    point.x = it->x;
-    point.y = it->y;
-    point.z = it->z;
+  for (int i=0; i<normalCloud->points.size(); i++) {
+    float query[3] = {frontierCloudPreFilter->points[i].x, frontierCloudPreFilter->points[i].y, frontierCloudPreFilter->points[i].z};
     idx = xyz_index3(query);
-    if (std::abs(it->normal_z) >= normalThresholdZ) {
+    if (std::abs(normalCloud->points[i].normal_z) >= normalThresholdZ) {
       frontier[idx] = 0;
     } else {
-      frontierCloud->points.push_back(point);
+      frontierCloud->points.push_back(frontierCloudPreFilter->points[i]);
     }
   }
 
@@ -733,10 +730,34 @@ bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end) {
       return true;
     }
   } else {
-    // I don't have this built out yet
+    int id_start[3];
+    int id_end[3];
+    id_start[0] = roundf((start.x - esdf.min[0])/voxel_size);
+    id_start[1] = roundf((start.y - esdf.min[1])/voxel_size);
+    id_start[2] = roundf((start.z - esdf.min[2])/voxel_size);
+    id_end[0] = roundf((end.x - esdf.min[0])/voxel_size);
+    id_end[1] = roundf((end.y - esdf.min[1])/voxel_size);
+    id_end[2] = roundf((end.z - esdf.min[2])/voxel_size);
 
     // Run the bresenham3d line tracing algorithm to find all the indices in between start and end
-    // ROS_INFO("Occlusion detection is not defined for ESDF at the moment.  Use Octomap for pose sampling.  Returning True for all raycasts.");
+    // std::vector<int> voxels = Bresenham3D(1, 1, 1, 6, 1, 1);
+    std::vector<int> voxels = Bresenham3D(id_start[0], id_start[1], id_start[2], id_end[0], id_end[1], id_end[2]);
+    // ROS_INFO("A %d voxel long ray cast through the following voxels:", voxels.size()/3);
+    for (int i=0; i<voxels.size(); i+=3) {
+      // ROS_INFO("(%d, %d, %d)", voxels[i], voxels[i+1], voxels[i+2]);
+      float query[3];
+      query[0] = voxels[i]*voxel_size + esdf.min[0];
+      query[1] = voxels[i+1]*voxel_size + esdf.min[1];
+      query[2] = voxels[i+2]*voxel_size + esdf.min[2];
+      int idx = xyz_index3(query);
+      if ((idx >= 0) || (idx < (esdf.size[0]*esdf.size[1]*esdf.size[2]))) {
+        if (esdf.data[idx] <= 1e-6) {
+          return false;
+        }
+      } else {
+        return false;
+      }
+    }
     return true;
   }
 }
@@ -1180,6 +1201,7 @@ void Msfm3d::callback(sensor_msgs::PointCloud2 msg)
     return;
   }
   if (!receivedMap) receivedMap = 1;
+  if (!updatedMap) updatedMap = 1;
   PC2msg = msg;
   ROS_INFO("ESDF PointCloud2 received!");
 }
@@ -1348,8 +1370,14 @@ void Msfm3d::inflateObstacles(const float radius, sensor_msgs::PointCloud2& infl
         }
       }
     } else if (esdf.seen[i]) {
-      esdf.data[i] = esdf.data[i] - (double)radius; // Just subtract the value for an esdf since the distance is included.
-      pointsInflated++;
+      float newDistance = esdf.data[i] - (double)radius;
+      if (newDistance < 0.0) {
+        esdf.data[i] = 0.0;
+        pointsInflated++;
+      }
+      else {
+        esdf.data[i] = newDistance;
+      } // Just subtract the value for an esdf since the distance is included.
     }
   }
   // Convert PointCloud to ROS msg
@@ -1581,11 +1609,11 @@ bool updateFrontier(Msfm3d& planner){
             pass2++;
           }
         }
-        // // Eliminate frontiers with unseen top/bottom neighbors
-        if ((!planner.esdf.seen[neighbor[4]] && i != neighbor[4]) || (!planner.esdf.seen[neighbor[5]] && i != neighbor[5])) {
-          frontier = 0;
-          pass3++;
-        }
+        // Eliminate frontiers with unseen top/bottom neighbors
+        // if ((!planner.esdf.seen[neighbor[4]] && i != neighbor[4]) || (!planner.esdf.seen[neighbor[5]] && i != neighbor[5])) {
+        //   frontier = 0;
+        //   pass3++;
+        // }
       }
       else {
         // For the time being, exclude the top/bottom neighbor (last two neighbors)
@@ -1650,7 +1678,7 @@ bool updateFrontier(Msfm3d& planner){
   }
 
   // Filter frontiers based upon normal vectors
-  // if (!planner.normalFrontierFilter()) return false;
+  if (!planner.normalFrontierFilter()) return false;
 
   // Cluster the frontier into euclidean distance groups
   if (planner.clusterFrontier(false)) {
@@ -1740,7 +1768,7 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
                                    (float)(planner.pathmsg.poses[j].pose.position.z - planner.pathmsg.poses[0].pose.position.z)};
         float start_path_yaw = std::atan2(start_path_vec[1], start_path_vec[0]); // rad
         double cost;
-        cost = planner.reach[idx] + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw))/planner.turnRate;
+        cost = planner.reach[idx]*(1.0 + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)/180.0)*planner.turnPenalty);
         // ROS_INFO("Vehicle yaw = %0.2f deg, Path yaw = %0.2f deg, cost = %0.2f, cost_turn = %0.2f", (180.0/M_PI)*vehicle_yaw, (180.0/M_PI)*start_path_yaw, planner.reach[idx], cost - planner.reach[idx]);
         costs.push_back(cost);
         indices.push_back(i);
@@ -1858,7 +1886,7 @@ void infoGoalView(Msfm3d& planner, int *viewIndices, double *utility, const int 
 
           // Add these angle differences to the cost_time
           // cost_time = cost_time + (std::abs(angle_diff((180.0/M_PI)*end_path_yaw, (180.0/M_PI)*goal_yaw)) + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)))/planner.turnRate;
-          cost_time = cost_time + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw))/planner.turnRate;
+          cost_time = cost_time*(1.0 + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)/180.0)*planner.turnPenalty);
 
           // Calculate the actual utility
           current_utility = std::sqrt((double)(planner.goalViews[i].cloud.points.size())/cost_time); // frontier voxels/second
@@ -2297,13 +2325,13 @@ int main(int argc, char **argv)
   planner.esdf_or_octomap = esdf_or_octomap;
   planner.frame = global_frame;
 
-  // Vehicle speed and turnRate
-  float speed, turnRate;
+  // Vehicle speed and turnPenalty
+  float speed, turnPenalty;
   n.param("global_planning/speed", speed, (float)1.0); // m/s
-  n.param("global_planning/turnRate", turnRate, (float)5.0); // deg/s
+  n.param("global_planning/turnPenalty", turnPenalty, (float)5.0); // deg/s
   planner.speed = speed;
-  planner.turnRate = turnRate;
-  ROS_INFO("Turn rate set to %0.2f deg/s", planner.turnRate);
+  planner.turnPenalty = turnPenalty;
+  ROS_INFO("Turn penalty set to %0.1f percent", planner.turnPenalty*100.0);
 
   // Replanning ticks
   int replan_tick_limit;
@@ -2522,6 +2550,7 @@ int main(int argc, char **argv)
   int replan_ticks = 0;
   double costHome = -1.0;
   int goalIndex = 0;
+  nav_msgs::Path newPath;
 
   ROS_INFO("Starting planner...");
   r.sleep();
@@ -2579,6 +2608,14 @@ int main(int argc, char **argv)
           if (planner.updatedMap) {
             planner.inflateObstacles(inflateWidth, inflatedOccupiedMsg);
             planner.updatedMap = 0;
+            // Check if the goal pose is now occupied or too close to a an obstacle
+            if (!replan) {
+              float _query[3] = {planner.goalViews[goalViewList[0]].pose.position.x, planner.goalViews[goalViewList[0]].pose.position.y, planner.goalViews[goalViewList[0]].pose.position.z};
+              int idx = planner.xyz_index3(_query);
+              if ((idx < 0) || (idx >= planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2])) {
+                if (planner.esdf.data[idx] < (planner.viewPoseObstacleDistance)) replan = 1;
+              }
+            }
           }
 
           if (planner.esdf_or_octomap) {
@@ -2742,7 +2779,12 @@ int main(int argc, char **argv)
           if (!(planner.updatePath(goal))) {
             ROS_WARN("Couldn't find feasible path to goal.  Publishing previous path");
           }
-          nav_msgs::Path newPath = planner.pathmsg;
+
+          if (planner.ground) {
+            newPath = planner.pathmsg;
+          } else if (replan) {
+            newPath = planner.pathmsg;
+          }
           pub2.publish(newPath);
           ROS_INFO("Path to goal published!");
           goalFound = 0;

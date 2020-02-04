@@ -409,7 +409,7 @@ int main(int argc, char **argv)
 
   // ESDF value to use for untraversable voxels
   n.param("costmap_generator/untraversableDistance", mapFuser.untraversableDistance, (float)0.01);
-  n.param("costmap_generator/octomapFreeDistance", mapFuser.octomapFreeDistance, (float)0.6);
+  n.param("costmap_generator/octomapFreeDistance", mapFuser.octomapFreeDistance, (float)(3.0*voxelSize));
 
   // Declare and read in the node update rate from the launch file parameters
   double updateRate;

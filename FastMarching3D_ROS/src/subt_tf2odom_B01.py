@@ -6,7 +6,6 @@ import rospy
 import tf
 from nav_msgs.msg import *
 from geometry_msgs.msg import *
-# from gazebo_msgs.srv import GetLinkState
 
 class LinkStateToOdometry:
 	def getTransform(self): # Position subscriber callback function
