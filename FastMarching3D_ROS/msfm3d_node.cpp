@@ -41,6 +41,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 // Custom libraries
 #include "msfm3d.c"
+#include "bresenham3d.cpp"
 
 template <typename T>
 std::vector<size_t> sort_indexes(const std::vector<T> &v) {
@@ -729,10 +730,34 @@ bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end) {
       return true;
     }
   } else {
-    // I don't have this built out yet
+    int id_start[3];
+    int id_end[3];
+    id_start[0] = roundf((start.x - esdf.min[0])/voxel_size);
+    id_start[1] = roundf((start.y - esdf.min[1])/voxel_size);
+    id_start[2] = roundf((start.z - esdf.min[2])/voxel_size);
+    id_end[0] = roundf((end.x - esdf.min[0])/voxel_size);
+    id_end[1] = roundf((end.y - esdf.min[1])/voxel_size);
+    id_end[2] = roundf((end.z - esdf.min[2])/voxel_size);
 
     // Run the bresenham3d line tracing algorithm to find all the indices in between start and end
-    // ROS_INFO("Occlusion detection is not defined for ESDF at the moment.  Use Octomap for pose sampling.  Returning True for all raycasts.");
+    // std::vector<int> voxels = Bresenham3D(1, 1, 1, 6, 1, 1);
+    std::vector<int> voxels = Bresenham3D(id_start[0], id_start[1], id_start[2], id_end[0], id_end[1], id_end[2]);
+    // ROS_INFO("A %d voxel long ray cast through the following voxels:", voxels.size()/3);
+    for (int i=0; i<voxels.size(); i+=3) {
+      // ROS_INFO("(%d, %d, %d)", voxels[i], voxels[i+1], voxels[i+2]);
+      float query[3];
+      query[0] = voxels[i]*voxel_size + esdf.min[0];
+      query[1] = voxels[i+1]*voxel_size + esdf.min[1];
+      query[2] = voxels[i+2]*voxel_size + esdf.min[2];
+      int idx = xyz_index3(query);
+      if ((idx >= 0) || (idx < (esdf.size[0]*esdf.size[1]*esdf.size[2]))) {
+        if (esdf.data[idx] <= 1e-6) {
+          return false;
+        }
+      } else {
+        return false;
+      }
+    }
     return true;
   }
 }
@@ -1585,10 +1610,10 @@ bool updateFrontier(Msfm3d& planner){
           }
         }
         // Eliminate frontiers with unseen top/bottom neighbors
-        if ((!planner.esdf.seen[neighbor[4]] && i != neighbor[4]) || (!planner.esdf.seen[neighbor[5]] && i != neighbor[5])) {
-          frontier = 0;
-          pass3++;
-        }
+        // if ((!planner.esdf.seen[neighbor[4]] && i != neighbor[4]) || (!planner.esdf.seen[neighbor[5]] && i != neighbor[5])) {
+        //   frontier = 0;
+        //   pass3++;
+        // }
       }
       else {
         // For the time being, exclude the top/bottom neighbor (last two neighbors)
@@ -1743,7 +1768,7 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
                                    (float)(planner.pathmsg.poses[j].pose.position.z - planner.pathmsg.poses[0].pose.position.z)};
         float start_path_yaw = std::atan2(start_path_vec[1], start_path_vec[0]); // rad
         double cost;
-        cost = planner.reach[idx]*(1.0 + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)/360.0)*planner.turnPenalty);
+        cost = planner.reach[idx]*(1.0 + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)/180.0)*planner.turnPenalty);
         // ROS_INFO("Vehicle yaw = %0.2f deg, Path yaw = %0.2f deg, cost = %0.2f, cost_turn = %0.2f", (180.0/M_PI)*vehicle_yaw, (180.0/M_PI)*start_path_yaw, planner.reach[idx], cost - planner.reach[idx]);
         costs.push_back(cost);
         indices.push_back(i);
@@ -1861,7 +1886,7 @@ void infoGoalView(Msfm3d& planner, int *viewIndices, double *utility, const int 
 
           // Add these angle differences to the cost_time
           // cost_time = cost_time + (std::abs(angle_diff((180.0/M_PI)*end_path_yaw, (180.0/M_PI)*goal_yaw)) + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)))/planner.turnRate;
-          cost_time = cost_time*(1.0 + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)/360.0)*planner.turnPenalty);
+          cost_time = cost_time*(1.0 + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)/180.0)*planner.turnPenalty);
 
           // Calculate the actual utility
           current_utility = std::sqrt((double)(planner.goalViews[i].cloud.points.size())/cost_time); // frontier voxels/second
@@ -2306,7 +2331,7 @@ int main(int argc, char **argv)
   n.param("global_planning/turnPenalty", turnPenalty, (float)5.0); // deg/s
   planner.speed = speed;
   planner.turnPenalty = turnPenalty;
-  ROS_INFO("Turn penalty set to %0.1f %", planner.turnPenalty*100.0);
+  ROS_INFO("Turn penalty set to %0.1f percent", planner.turnPenalty*100.0);
 
   // Replanning ticks
   int replan_tick_limit;

@@ -6,19 +6,19 @@
     <!-- Inputs (Subscribed Topic Names) -->
 
     <remap from="octomap_binary" to="octomap_binary_crap"/>
-    <!-- <remap from="odometry" to="odometry_map"/> -->
+    <remap from="odometry" to="odometry_map"/>
 
     <!-- Outputs (Published Topic Names) -->
 
-    <!-- <remap from="nearest_frontier" to="nearest_frontier_2"/> -->
-    <!-- <remap from="frontier_goal_pose" to="frontier_goal_pose_2"/> -->
-    <!-- <remap from="planned_path" to="planned_path_2"/> -->
-    <!-- <remap from="frontier" to="frontier_2"/> -->
-    <!-- <remap from="goalFrustum" to="goalFrustum_2"/> -->
+    <remap from="nearest_frontier" to="nearest_frontier_2"/>
+    <remap from="frontier_goal_pose" to="frontier_goal_pose_2"/>
+    <remap from="planned_path" to="planned_path_2"/>
+    <remap from="frontier" to="frontier_2"/>
+    <remap from="goalFrustum" to="goalFrustum_2"/>
     <!-- <remap from="inflated_octomap" to="inflated_octomap"/> -->
     <remap from="artifact_list" to="report_artifact"/>
-    <!-- <remap from="voxblox_node/tsdf_pointcloud" to="cost_map"/> -->
-    <remap from="voxblox_node/tsdf_pointcloud" to="voxblox_node/esdf_pointcloud"/>
+    <remap from="voxblox_node/tsdf_pointcloud" to="cost_map"/>
+    <!-- <remap from="voxblox_node/tsdf_pointcloud" to="voxblox_node/esdf_pointcloud"/> -->
 
     <!-- Parameters -->
     <!-- Map Resolution -->
@@ -28,7 +28,7 @@
     <param name="isGroundVehicle" value="$(arg ground_vehicle)"/>
 
     <!-- If the vehicle is an air vehicle, the following params should be set -->
-    <param name="minGoalDist" value="1.5" />
+    <param name="minGoalDist" value="2.0" />
     <param name="goalArrivalDist" value="1.0" />
 
 	 <!-- Whether or not you want to use an Occupancy Grid or an ESDF map type -->
@@ -37,22 +37,22 @@
     <!-- Name of the map world frame -->
     <param name="frame_id" type="string" value="world"/>
 
-    <!-- Vehicle speed in m/s and turnRate in deg/s -->
+    <!-- Vehicle speed in m/s and turnPenalty as a percentage of current cost to add to total cost -->
     <param name="speed" value="1.0"/>
-    <param name="turnRate" value="0.1"/>
+    <param name="turnPenalty" value="1.0"/>
 
     <!-- Frontier Clustering parameters (in voxels) -->
     <param name="cluster_radius" value="0.30" />
-    <param name="min_cluster_size" value="50" />
+    <param name="min_cluster_size" value="40" />
     <param name="normalThresholdZ" value="0.3" />
 
     <!-- Number of ticks before replanning -->
-    <param name="replan_ticks" value="10" />
+    <param name="replan_ticks" value="3" />
     <!-- Number of ticks before sampling new goal poses -->
     <param name="goal_ticks" value="50" />
     <!-- Replan trigger method -->
-    <!-- <param name="replanTrigger" type="string" value="frontier"/> -->
-    <param name="replanTrigger" type="string" value="distance"/>
+    <param name="replanTrigger" type="string" value="frontier"/>
+    <!-- <param name="replanTrigger" type="string" value="distance"/> -->
 
     <!-- Location of the environment entrance. (Default is [0.0, 0.0, 0.0])  The robot will not explore area within entrance_radius meters of this point -->
     <param name="entrance_x" value="-2.0" />
@@ -64,8 +64,8 @@
     <!-- Camera viewing parameters, angles in degrees, ranges in meters -->
     <param name="cameraVerticalFoV" value="25.0"/>
     <param name="cameraHorizontalFoV" value="120.0"/>
-    <param name="cameraMaxRange" value="4.0"/>
-    <param name="cameraMinRange" value="0.5"/>
+    <param name="cameraMaxRange" value="2.0"/>
+    <param name="cameraMinRange" value="1.0"/>
     <param name="robot2camera_roll" value="0.0"/>
     <param name="robot2camera_pitch" value="0.0"/>
     <param name="robot2camera_yaw" value="0.0"/>
@@ -81,7 +81,7 @@
     <param name="updateRate" value="1.0"/>
 
     <!-- Inflated Obstacle width -->
-    <param name="inflateWidth" value="1.0"/>
+    <param name="inflateWidth" value="0.3"/>
 
     <!-- Vehicle Fence Volume Limits -->
     <param name="fenceOn" value="true"/>
@@ -93,13 +93,13 @@
     <param name="fence_zmax" value="3.0"/>
 
     <!-- Vehicle Volume Extents -->
-    <!-- <param name="vehicleVolumeOn" value="true"/>
-    <param name="vehicleVolumeXmin" value="-0.6"/>
-    <param name="vehicleVolumeXmax" value="0.6"/>
-    <param name="vehicleVolumeYmin" value="-0.6"/>
-    <param name="vehicleVolumeYmax" value="0.6"/>
+    <param name="vehicleVolumeOn" value="true"/>
+    <param name="vehicleVolumeXmin" value="-0.4"/>
+    <param name="vehicleVolumeXmax" value="0.4"/>
+    <param name="vehicleVolumeYmin" value="-0.4"/>
+    <param name="vehicleVolumeYmax" value="0.4"/>
     <param name="vehicleVolumeZmin" value="-0.2"/>
-    <param name="vehicleVolumeZmax" value="0.2"/> -->
+    <param name="vehicleVolumeZmax" value="0.2"/>
 
     <!-- Fix vehicle goal height (in meters) above map ground level for a quad/ground vehicle -->
     <param name="fixGoalHeightAGL" value="false"/>
@@ -114,9 +114,10 @@
 
     <!-- Cost Function -->
     <param name="goalFunction" type="string" value="cost"/>
+    <!-- <param name="goalFunction" type="string" value="information"/> -->
 
     <!-- 5*(tanh(ESDF - e) + 1)/2.0 is used on each ESDF voxel so convert accordingly-->
-    <param name="viewPoseObstacleDistance" value="1.0"/>
+    <param name="viewPoseObstacleDistance" value="0.6"/>
 
   </node>
 
