@@ -2780,7 +2780,7 @@ int main(int argc, char **argv)
             ROS_WARN("Couldn't find feasible path to goal.  Publishing previous path");
           }
 
-          if (isGroundVehicle) {
+          if (planner.ground) {
             newPath = planner.pathmsg;
           } else if (replan) {
             newPath = planner.pathmsg;
