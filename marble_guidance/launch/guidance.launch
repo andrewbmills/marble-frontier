@@ -12,7 +12,7 @@
 
     <!-- data source to integrate (PointCloud2) -->
     <remap from="odometry" to="odometry_map" />
-    <remap from="path" to="planned_path"/>
+    <remap from="path" to="ma_goal_path"/>
     <remap from="goal_pose" to="frontier_goal_pose"/>
     <remap from="cmd_vel" to="cmd_vel_guidance"/>
   </node>
