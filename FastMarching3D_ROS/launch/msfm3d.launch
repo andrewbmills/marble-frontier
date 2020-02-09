@@ -2,11 +2,11 @@
 <launch>
   <arg name="ground_vehicle" default="true" />
 
-  <node pkg="msfm3d" type="msfm3d" name="global_planning" output="screen">
+  <node pkg="msfm3d" type="msfm3d" name="global_planning">
     <!-- Inputs (Subscribed Topic Names) -->
 
     <remap from="octomap_binary" to="octomap_binary_crap"/>
-    <remap from="odometry" to="odometry_map"/>
+    <remap from="odometry" to="odometry"/>
 
     <!-- Outputs (Published Topic Names) -->
 
@@ -42,8 +42,8 @@
     <param name="turnPenalty" value="1.0"/>
 
     <!-- Frontier Clustering parameters (in voxels) -->
-    <param name="cluster_radius" value="0.30" />
-    <param name="min_cluster_size" value="40" />
+    <param name="cluster_radius" value="0.15" />
+    <param name="min_cluster_size" value="80" />
     <param name="normalThresholdZ" value="0.3" />
 
     <!-- Number of ticks before replanning -->
@@ -80,7 +80,7 @@
     <param name="updateRate" value="1.0"/>
 
     <!-- Inflated Obstacle width -->
-    <param name="inflateWidth" value="0.2"/>
+    <param name="inflateWidth" value="0.3"/>
 
     <!-- Vehicle Fence Volume Limits -->
     <!-- <param name="fenceOn" value="true"/>
@@ -116,7 +116,7 @@
     <!-- <param name="goalFunction" type="string" value="information"/> -->
 
     <!-- Minimum obstacle proximity for goal poses (adds to inflated distance) -->
-    <param name="viewPoseObstacleDistance" value="0.25"/>
+    <param name="viewPoseObstacleDistance" value="0.3"/>
 
   </node>
 
