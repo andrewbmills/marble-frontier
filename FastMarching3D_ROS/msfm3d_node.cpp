@@ -730,6 +730,7 @@ bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end) {
       return true;
     }
   } else {
+    ROS_INFO("Casting ray from (%0.1f, %0.1f, %0.1f) to (%0.1f, %0.1f, %0.1f)", start.x, start.y, start.z, end.x, end.y, end.z);
     int id_start[3];
     int id_end[3];
     id_start[0] = roundf((start.x - esdf.min[0])/voxel_size);
@@ -738,7 +739,7 @@ bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end) {
     id_end[0] = roundf((end.x - esdf.min[0])/voxel_size);
     id_end[1] = roundf((end.y - esdf.min[1])/voxel_size);
     id_end[2] = roundf((end.z - esdf.min[2])/voxel_size);
-
+    ROS_INFO("Converted to ids (%d, %d, %d) to (%d, %d, %d)", id_start[0], id_start[1], id_start[2], id_end[0], id_end[1], id_end[2]);
     // Run the bresenham3d line tracing algorithm to find all the indices in between start and end
     // std::vector<int> voxels = Bresenham3D(1, 1, 1, 6, 1, 1);
     std::vector<int> voxels = Bresenham3D(id_start[0], id_start[1], id_start[2], id_end[0], id_end[1], id_end[2]);
@@ -749,9 +750,11 @@ bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end) {
       query[0] = voxels[i]*voxel_size + esdf.min[0];
       query[1] = voxels[i+1]*voxel_size + esdf.min[1];
       query[2] = voxels[i+2]*voxel_size + esdf.min[2];
+      ROS_INFO("Voxel with ids (%d, %d, %d)", voxels[i], voxels[i+1], voxels[i+2]);
+      ROS_INFO("Querying (%0.1f, %0.1f, %0.1f)", query[0], query[1], query[2]);
       int idx = xyz_index3(query);
       if ((idx >= 0) || (idx < (esdf.size[0]*esdf.size[1]*esdf.size[2]))) {
-        if (esdf.data[idx] <= 1e-6) {
+        if (esdf.data[idx] <= 0.001) {
           return false;
         }
       } else {

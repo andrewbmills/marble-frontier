@@ -319,6 +319,8 @@ void Costmap_fuser::fuse_maps()
           }
           fusedSeenMap[idx] = true;
           fusedPointMap[idx].x = point[0]; fusedPointMap[idx].y = point[1]; fusedPointMap[idx].z = point[2];
+        } else {
+          if (value == 0.0) fusedMap[idx] = value;
         }
       } else{ // Fill in all the voxels internal to the leaf
         int width = (int)std::pow(2.0, (double)(lowest_depth-depth));
@@ -360,6 +362,8 @@ void Costmap_fuser::fuse_maps()
                 }
                 fusedSeenMap[idx] = true;
                 fusedPointMap[idx].x = point[0]; fusedPointMap[idx].y = point[1]; fusedPointMap[idx].z = point[2];
+              } else {
+                if (value == 0.0) fusedMap[idx] = value;
               }
             }
           }
