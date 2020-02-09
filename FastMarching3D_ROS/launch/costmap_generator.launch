@@ -8,7 +8,7 @@
     <param name="rate" value="5.0"/>
     <param name="resolution" value="0.2"/>
     <param name="untraversableDistance" value="0.05"/>
-    <param name="octomapFreeDistance" value="0.31"/>
+    <param name="octomapFreeDistance" value="0.21"/>
 
     <remap from="esdf" to="edt"/>
     <!-- <remap from="octomap_binary" to="merged_map"/> -->
@@ -23,8 +23,8 @@
     <remap from="~output" to="cost_map_filtered" />
     <rosparam>
       filter_field_name: intensity
-      filter_limit_min: 0.32
-      filter_limit_max: 100.0
+      filter_limit_min: -0.01
+      filter_limit_max: 0.001
       filter_limit_negative: False
     </rosparam>
   </node>
