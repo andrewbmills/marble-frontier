@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch>
   <arg name="ground_vehicle" default="true" />
+  <arg name="resolution" default="0.2" />
 
   <node pkg="msfm3d" type="msfm3d" name="global_planning">
     <!-- Inputs (Subscribed Topic Names) -->
@@ -23,7 +24,7 @@
 
     <!-- Parameters -->
     <!-- Map Resolution -->
-    <param name="resolution" value="0.2"/>
+    <param name="resolution" value="$(arg resolution)"/>
 
     <!-- The planner assumes the vehicle is an air vehicle.  If the vehicle is constrained to the ground (wheeled vehicle), set to true. -->
     <param name="isGroundVehicle" value="true"/>
@@ -44,7 +45,7 @@
 
     <!-- Frontier Clustering parameters (in voxels) -->
     <param name="cluster_radius" value="0.30" />
-    <param name="min_cluster_size" value="40" />
+    <param name="min_cluster_size" value="50" />
     <param name="normalThresholdZ" value="0.3" />
 
     <!-- Number of ticks before replanning -->
