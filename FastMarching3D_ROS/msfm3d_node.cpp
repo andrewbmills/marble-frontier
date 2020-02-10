@@ -749,7 +749,7 @@ bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end) {
       return true;
     }
   } else {
-    ROS_INFO("Casting ray from (%0.1f, %0.1f, %0.1f) to (%0.1f, %0.1f, %0.1f)", start.x, start.y, start.z, end.x, end.y, end.z);
+    // ROS_INFO("Casting ray from (%0.1f, %0.1f, %0.1f) to (%0.1f, %0.1f, %0.1f)", start.x, start.y, start.z, end.x, end.y, end.z);
     int id_start[3];
     int id_end[3];
     id_start[0] = roundf((start.x - esdf.min[0])/voxel_size);
@@ -758,7 +758,7 @@ bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end) {
     id_end[0] = roundf((end.x - esdf.min[0])/voxel_size);
     id_end[1] = roundf((end.y - esdf.min[1])/voxel_size);
     id_end[2] = roundf((end.z - esdf.min[2])/voxel_size);
-    ROS_INFO("Converted to ids (%d, %d, %d) to (%d, %d, %d)", id_start[0], id_start[1], id_start[2], id_end[0], id_end[1], id_end[2]);
+    // ROS_INFO("Converted to ids (%d, %d, %d) to (%d, %d, %d)", id_start[0], id_start[1], id_start[2], id_end[0], id_end[1], id_end[2]);
     // Run the bresenham3d line tracing algorithm to find all the indices in between start and end
     // std::vector<int> voxels = Bresenham3D(1, 1, 1, 6, 1, 1);
     std::vector<int> voxels = Bresenham3D(id_start[0], id_start[1], id_start[2], id_end[0], id_end[1], id_end[2]);
@@ -769,8 +769,8 @@ bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end) {
       query[0] = voxels[i]*voxel_size + esdf.min[0];
       query[1] = voxels[i+1]*voxel_size + esdf.min[1];
       query[2] = voxels[i+2]*voxel_size + esdf.min[2];
-      ROS_INFO("Voxel with ids (%d, %d, %d)", voxels[i], voxels[i+1], voxels[i+2]);
-      ROS_INFO("Querying (%0.1f, %0.1f, %0.1f)", query[0], query[1], query[2]);
+      // ROS_INFO("Voxel with ids (%d, %d, %d)", voxels[i], voxels[i+1], voxels[i+2]);
+      // ROS_INFO("Querying (%0.1f, %0.1f, %0.1f)", query[0], query[1], query[2]);
       int idx = xyz_index3(query);
       if ((idx >= 0) || (idx < (esdf.size[0]*esdf.size[1]*esdf.size[2]))) {
         if (esdf.data[idx] <= 0.001) {
@@ -1434,7 +1434,18 @@ bool Msfm3d::updatePath(const float goal[3])
   float dist_robot2path = 10.0*voxel_size; // distance of the robot to the path
   float position2D[2];
   float point2D[2];
+  float reachValue;
   std::vector<float> path;
+
+  float sobelKernel_x[27] = {1.0, 0.0, -1.0, 2.0, 0.0, -2.0, 1.0, 0.0, -1.0,
+                            2.0, 0.0, -2.0, 4.0, 0.0, -4.0, 2.0, 0.0, -2.0,
+                            1.0, 0.0, -1.0, 2.0, 0.0, -2.0, 1.0, 0.0, -1.0};
+  float sobelKernel_y[27] = {1.0, 2.0, 1.0, 0.0, 0.0, 0.0, -1.0, -2.0, -1.0,
+                            2.0, 4.0, 2.0, 0.0, 0.0, 0.0, -2.0, -4.0, -2.0,
+                            1.0, 2.0, 1.0, 0.0, 0.0, 0.0, -1.0, -2.0, -1.0};
+  float sobelKernel_z[27] = {1.0, 2.0, 1.0, 2.0, 4.0, 2.0, 1.0, 2.0, 1.0,
+                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                            -1.0, -2.0, -1.0, -2.0, -4.0, -2.0, -1.0, -2.0, -1.0};
 
   // If the goal point isn't in the reachable map, return false
   int goal_idx = xyz_index3(goal);
@@ -1461,34 +1472,67 @@ bool Msfm3d::updatePath(const float goal[3])
     path.push_back(point[i]);
   }
 
+  float maxReach = reach[goal_idx] + 2.0;
+  // ROS_INFO("Goal is (%0.1f, %0.1f, %0.1f), robot is at (%0.1f, %0.1f, %0.1f)", goal[0], goal[1], goal[2], position[0], position[1], position[2]);
   // Run loop until the path is within a voxel of the robot.
-  while ((dist_robot2path > 3.0*voxel_size) && (path.size() < 100000) && grad_norm >= 0.00001) {
+  while ((dist_robot2path > 1.0*voxel_size) && (path.size() < 10000) && grad_norm >= 0.00001) {
+    // Find the 26 neighbor indices
+
   	// Find the current point's grid indices and it's 6 neighbor voxel indices.
+    // ROS_INFO("Current point is (%0.1f, %0.1f, %0.1f)", point[0], point[1], point[2]);
   	idx = xyz_index3(point);
-    neighbor[0] = idx - 1; // i-1
-    neighbor[1] = idx + 1; // i+1
-    neighbor[2] = idx - esdf.size[0]; // j-1
-    neighbor[3] = idx + esdf.size[0]; // j+1
-    neighbor[4] = idx - esdf.size[0]*esdf.size[1]; // k-1
-    neighbor[5] = idx + esdf.size[0]*esdf.size[1]; // k+1
-    // ROS_INFO("Neighbor indices found of corner point %d", i);
-    for (int j=0; j<3; j++) {
-      grad[j] = 0; // Initialize to zero in case neither neighbor has been assigned a reachability value.
-      // Check if the neighbor voxel has no reachability matrix value
-      if (reach[neighbor[2*j]] > 0.0 && reach[neighbor[2*j+1]] > 0.0){
-        grad[j] = 0.5*(float)(reach[neighbor[2*j]] - reach[neighbor[2*j+1]]); // Central Difference Operator (Try Sobel if this is bad)
-        // ROS_INFO("Using Central Difference Operator for %d coordinate for path gradient.", j);
-      } else {
-        if (reach[neighbor[2*j]] > 0.0) {
-          grad[j] = 0.5*(float)(reach[neighbor[2*j]] - reach[idx]); // Intermediate Difference Operator (with previous neighbor)
-          // ROS_INFO("Using Backward Intermediate Difference Operator for %d coordinate for path gradient.", j);
-        }
-        if (reach[neighbor[2*j + 1]] > 0.0) {
-          grad[j] = 0.5*(float)(reach[idx] - reach[neighbor[2*j+1]]); // Intermediate Difference Operator (with next neighbor)
-          // ROS_INFO("Using Forward Intermediate Difference Operator for %d coordinate for path gradient.", j);
+    if ((idx < 0) || (idx >= esdf.size[0]*esdf.size[1]*esdf.size[2])) break;
+    float neighbor[3] = {0.0, 0.0, 0.0};
+    for (int i=0; i<3; i++) grad[i] = 0.0;
+    for (int i=0; i<3; i++) {
+      neighbor[0] = point[0] + (float)(i-1)*voxel_size;
+      for (int j=0; j<3; j++) {
+        neighbor[1] = point[1] + (float)(j-1)*voxel_size;
+        for (int k=0; k<3; k++) {
+          neighbor[2] = point[2] + (float)(k-1)*voxel_size;
+          int voxel_id = xyz_index3(neighbor);
+          int kernel_id = i + 3*j + 9*k;
+          // ROS_INFO("Neighbor %d (%d, %d, %d) is (%0.1f, %0.1f, %0.1f) with index %d", kernel_id, i-1, j-1, k-1, neighbor[0], neighbor[1], neighbor[2], voxel_id);
+          if ((voxel_id < 0) || (voxel_id >= esdf.size[0]*esdf.size[1]*esdf.size[2])) {
+            reachValue = reach[idx];
+          } else {
+            if (reach[voxel_id] <= 0.0) {
+              reachValue = reach[idx];
+            } else {
+              reachValue = reach[voxel_id];
+            }
+          }
+          // ROS_INFO("Reach value = %0.2f", reachValue);
+          grad[0] += sobelKernel_x[kernel_id]*reachValue;
+          grad[1] += sobelKernel_y[kernel_id]*reachValue;
+          grad[2] += sobelKernel_z[kernel_id]*reachValue;
         }
       }
     }
+    // neighbor[0] = idx - 1; // i-1
+    // neighbor[1] = idx + 1; // i+1
+    // neighbor[2] = idx - esdf.size[0]; // j-1
+    // neighbor[3] = idx + esdf.size[0]; // j+1
+    // neighbor[4] = idx - esdf.size[0]*esdf.size[1]; // k-1
+    // neighbor[5] = idx + esdf.size[0]*esdf.size[1]; // k+1
+    // // ROS_INFO("Neighbor indices found of corner point %d", i);
+    // for (int j=0; j<3; j++) {
+    //   grad[j] = 0; // Initialize to zero in case neither neighbor has been assigned a reachability value.
+    //   // Check if the neighbor voxel has no reachability matrix value
+    //   if (reach[neighbor[2*j]] > 0.0 && reach[neighbor[2*j+1]] > 0.0){
+    //     grad[j] = 0.5*(float)(reach[neighbor[2*j]] - reach[neighbor[2*j+1]]); // Central Difference Operator (Try Sobel if this is bad)
+    //     // ROS_INFO("Using Central Difference Operator for %d coordinate for path gradient.", j);
+    //   } else {
+    //     if (reach[neighbor[2*j]] > 0.0) {
+    //       grad[j] = 0.5*(float)(reach[neighbor[2*j]] - reach[idx]); // Intermediate Difference Operator (with previous neighbor)
+    //       // ROS_INFO("Using Backward Intermediate Difference Operator for %d coordinate for path gradient.", j);
+    //     }
+    //     if (reach[neighbor[2*j + 1]] > 0.0) {
+    //       grad[j] = 0.5*(float)(reach[idx] - reach[neighbor[2*j+1]]); // Intermediate Difference Operator (with next neighbor)
+    //       // ROS_INFO("Using Forward Intermediate Difference Operator for %d coordinate for path gradient.", j);
+    //     }
+    //   }
+    // }
 
     // Normalize the size of the gradient vector if it is too large
     grad_norm = std::sqrt(grad[0]*grad[0] + grad[1]*grad[1] + grad[2]*grad[2]);
@@ -1500,15 +1544,16 @@ bool Msfm3d::updatePath(const float goal[3])
     }
 
     // ROS_INFO("3D Interpolation performed.");
-    // ROS_INFO("Gradients: [%f, %f, %f]", grad[0], grad[1], grad[2]);
+    // if (path.size() < 18) ROS_INFO("Gradients: [%f, %f, %f]", grad[0], grad[1], grad[2]);
     // Update point and add to path
     for (int i=0; i<3; i++) {
       if (grad_norm >= 0.00001){
         point[i] = point[i] + step*grad[i];
+        // point[i] = point[i] + grad[i];
         path.push_back(point[i]);
       }
     }
-    // ROS_INFO("[%f, %f, %f] added to path.", point[0], point[1], point[2]);
+    // if (path.size() < 18) ROS_INFO("[%f, %f, %f] added to path.", point[0], point[1], point[2]);
 
     // Update the robot's distance to the path
     if (ground){

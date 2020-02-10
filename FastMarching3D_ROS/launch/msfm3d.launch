@@ -50,7 +50,7 @@
     <!-- Number of ticks before replanning -->
     <param name="replan_ticks" value="5" />
     <!-- Number of ticks before sampling new goal poses -->
-    <param name="goal_ticks" value="5" />
+    <param name="goal_ticks" value="30" />
     <!-- Replan trigger method -->
     <param name="replanTrigger" type="string" value="frontier"/>
     <!-- <param name="replanTrigger" type="string" value="distance"/> -->
@@ -109,7 +109,7 @@
     <param name="dzFrontierVoxelWidth" type="int" value="-1"/>
 
     <!-- Multi-agent Parameters -->
-    <param name="agentCount" value="1"/>
+    <param name="agentCount" value="3"/>
     <param name="goalViewSeparation" value = "2.5"/>
 
     <!-- Cost Function -->
