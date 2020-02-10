@@ -1475,7 +1475,7 @@ bool Msfm3d::updatePath(const float goal[3])
   float maxReach = reach[goal_idx] + 2.0;
   // ROS_INFO("Goal is (%0.1f, %0.1f, %0.1f), robot is at (%0.1f, %0.1f, %0.1f)", goal[0], goal[1], goal[2], position[0], position[1], position[2]);
   // Run loop until the path is within a voxel of the robot.
-  while ((dist_robot2path > 1.0*voxel_size) && (path.size() < 10000) && grad_norm >= 0.00001) {
+  while ((dist_robot2path > 2.0*voxel_size) && (path.size() < 10000) && grad_norm >= 0.01) {
     // Find the 26 neighbor indices
 
   	// Find the current point's grid indices and it's 6 neighbor voxel indices.
@@ -1546,13 +1546,24 @@ bool Msfm3d::updatePath(const float goal[3])
     // ROS_INFO("3D Interpolation performed.");
     // if (path.size() < 18) ROS_INFO("Gradients: [%f, %f, %f]", grad[0], grad[1], grad[2]);
     // Update point and add to path
+    // for (int i=0; i<3; i++) grad[i] = grad[i]/grad_norm;
     for (int i=0; i<3; i++) {
-      if (grad_norm >= 0.00001){
-        point[i] = point[i] + step*grad[i];
-        // point[i] = point[i] + grad[i];
-        path.push_back(point[i]);
-      }
+      point[i] = point[i] + voxel_size*grad[i];
+      point[i] = point[i] + step*grad[i];
+      path.push_back(point[i]);
     }
+
+    // Steps should be at the voxel level only
+    // int idx_last = idx;
+    // idx = xyz_index3(point);
+    // if (idx == idx_last) break;
+    // if ((idx >= 0) && (idx < esdf.size[0]*esdf.size[1]*esdf.size[2])) {
+    //   index3_xyz(idx, point);
+    //   for (int i=0; i<3; i++) path.push_back(point[i]);
+    // } else {
+    //   break;
+    // }
+
     // if (path.size() < 18) ROS_INFO("[%f, %f, %f] added to path.", point[0], point[1], point[2]);
 
     // Update the robot's distance to the path
