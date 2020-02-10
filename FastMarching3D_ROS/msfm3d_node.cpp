@@ -6,6 +6,7 @@
 #include <random>
 // ROS libraries
 #include <ros/ros.h>
+#include <std_msgs/String.h>
 #include <std_msgs/Bool.h>
 #include <std_msgs/Int8.h>
 #include <std_msgs/Float32.h>
@@ -304,6 +305,9 @@ class Msfm3d
     ESDF esdf; // ESDF struct object
     Boundary bounds; // xyz boundary of possible goal locations
 
+    std::string task = "explore";
+    float customGoal[3] = {0.0, 0.0, 0.0};
+
     void callback(sensor_msgs::PointCloud2 msg); // Subscriber callback function for PC2 msg (ESDF)
     void callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg); // Subscriber callback function for Octomap msg
     void callback_Octomap_freePCL(const sensor_msgs::PointCloud2 msg);
@@ -311,7 +315,8 @@ class Msfm3d
     void callback_position(const nav_msgs::Odometry msg); // Subscriber callback for robot position
     void callback_artifactDetected(const std_msgs::Bool msg);
     void callback_numNeighbors(const std_msgs::Int8 msg);
-    void callback_goalId(const std_msgs::Int8 msg);
+    void callback_task(const std_msgs::String msg);
+    void callback_customGoal(const geometry_msgs::PoseStamped msg);
     // void callback_artifactDetected(const marble_common::ArtifactArray msg);
     void parsePointCloud(); // Function to parse pointCloud2 into an esdf format that msfm3d can use
     int xyz_index3(const float point[3]);
@@ -330,6 +335,20 @@ class Msfm3d
     void inflateObstacles(const float radius, sensor_msgs::PointCloud2& inflatedOccupiedMsg);
     float heightAGL(const float point[3]);
 };
+
+void Msfm3d::callback_customGoal(const geometry_msgs::PoseStamped msg)
+{
+  customGoal[0] = msg.pose.position.x;
+  customGoal[1] = msg.pose.position.y;
+  customGoal[2] = msg.pose.position.z;
+  return;
+}
+
+void Msfm3d::callback_task(const std_msgs::String msg)
+{
+  task = msg.data;
+  return;
+}
 
 void Msfm3d::callback_numNeighbors(const std_msgs::Int8 msg)
 {
@@ -2496,6 +2515,12 @@ int main(int argc, char **argv)
   ROS_INFO("Subcribing to neighbor count...");
   ros::Subscriber sub4 = n.subscribe("num_neighbors", 1, &Msfm3d::callback_numNeighbors, &planner);
 
+  ROS_INFO("Subscribing to task...");
+  ros::Subscriber sub5 = n.subscribe("task", 1, &Msfm3d::callback_task, &planner);
+
+  ROS_INFO("Subscribing to cusotm goal point...");
+  ros::Subscriber sub6 = n.subscribe("custom_goal_point", 1, &Msfm3d::callback_customGoal, &planner);
+
   ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("nearest_frontier", 5);
   geometry_msgs::PointStamped frontierGoal;
   frontierGoal.header.frame_id = planner.frame;
@@ -2536,6 +2561,9 @@ int main(int argc, char **argv)
   sensor_msgs::PointCloud2 inflatedOccupiedMsg;
   ros::Publisher pub7 = n.advertise<msfm3d::GoalArray>("goal_array", 5);
   msfm3d::GoalArray goalArrayMsg;
+  ros::Publisher pub8 = n.advertise<std_msgs::String>("task", 5);
+  std_msgs::String noPathMsg;
+  noPathMsg.data = "Unable to plan";
 
   int i = 0;
   bool goalFound = 0;
@@ -2572,7 +2600,6 @@ int main(int argc, char **argv)
       ROS_INFO("Index at Position: %d", i);
       if (planner.receivedMap) {
         ROS_INFO("ESDF or Occupancy at Position: %f", planner.esdf.data[i]);
-
         // Find frontier cells and add them to planner.frontier for output to file.
         // Publish frontiers as MarkerArray
         if (updateFrontier(planner)) {
@@ -2725,7 +2752,7 @@ int main(int argc, char **argv)
             }
           }
           // Store goal location for publishing
-          if ((goalViewCost[0] < 0.0) || planner.artifactDetected) {
+          if ((goalViewCost[0] < 0.0) || planner.artifactDetected || (planner.task == "Home") || (planner.task == "Report")) {
             // The vehicle couldn't find any reasonable frontier views, head to the anchor node.
             ROS_INFO("No reachable frontier views after expanded search or artifact detected, heading to the anchor.");
             tStart = clock();
@@ -2753,6 +2780,23 @@ int main(int argc, char **argv)
             goalPose.pose.orientation.z = 0.0;
             goalPose.pose.orientation.w = 1.0;
 
+          } else if (planner.task == "guiCommand") {
+            frontierGoal.point.x = planner.customGoal[0];
+            frontierGoal.point.y = planner.customGoal[1];
+            frontierGoal.point.z = planner.customGoal[2];
+            goal[0] = planner.customGoal[0];
+            goal[1] = planner.customGoal[1];
+            goal[2] = planner.customGoal[2];
+
+            // Write a new goal pose for publishing
+            goalPose.header.stamp = ros::Time::now();
+            goalPose.pose.position.x = goal[0];
+            goalPose.pose.position.y = goal[1];
+            goalPose.pose.position.z = goal[2];
+            goalPose.pose.orientation.x = 0.0;
+            goalPose.pose.orientation.y = 0.0;
+            goalPose.pose.orientation.z = 0.0;
+            goalPose.pose.orientation.w = 1.0;
           } else {
             // Write a new frontier goal location for publishing
             frontierGoal.point.x = planner.goalViews[goalViewList[0]].pose.position.x;
@@ -2780,6 +2824,7 @@ int main(int argc, char **argv)
 
           // Calculate and publish path
           if (!(planner.updatePath(goal))) {
+            if (planner.task == "guiCommand") pub8.publish(noPathMsg);
             ROS_WARN("Couldn't find feasible path to goal.  Publishing previous path");
           }
 

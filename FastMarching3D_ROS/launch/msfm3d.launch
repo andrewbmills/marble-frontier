@@ -19,6 +19,7 @@
     <remap from="artifact_list" to="report_artifact"/>
     <!-- <remap from="voxblox_node/tsdf_pointcloud" to="voxblox_node/esdf_pointcloud"/> -->
     <remap from="voxblox_node/tsdf_pointcloud" to="cost_map"/>
+    <remap from="custom_goal_point" to="guiGoalPoint"/>
 
     <!-- Parameters -->
     <!-- Map Resolution -->
