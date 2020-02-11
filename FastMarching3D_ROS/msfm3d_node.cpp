@@ -1548,7 +1548,6 @@ bool Msfm3d::updatePath(const float goal[3])
     // Update point and add to path
     // for (int i=0; i<3; i++) grad[i] = grad[i]/grad_norm;
     for (int i=0; i<3; i++) {
-      point[i] = point[i] + voxel_size*grad[i];
       point[i] = point[i] + step*grad[i];
       path.push_back(point[i]);
     }
