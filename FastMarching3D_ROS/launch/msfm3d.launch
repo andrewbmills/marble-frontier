@@ -45,8 +45,8 @@
 
     <!-- Frontier Clustering parameters (in voxels) -->
     <param name="cluster_radius" value="0.30" />
-    <param name="min_cluster_size" value="50" />
-    <param name="normalThresholdZ" value="0.3" />
+    <param name="min_cluster_size" value="30" />
+    <param name="normalThresholdZ" value="0.4" />
 
     <!-- Number of ticks before replanning -->
     <param name="replan_ticks" value="5" />
@@ -63,7 +63,7 @@
     <param name="entrance_radius" value="0.0" />
 
     <!-- Camera viewing parameters, angles in degrees, ranges in meters -->
-    <param name="cameraVerticalFoV" value="25.0"/>
+    <param name="cameraVerticalFoV" value="40.0"/>
     <param name="cameraHorizontalFoV" value="120.0"/>
     <param name="cameraMaxRange" value="2.0"/>
     <param name="cameraMinRange" value="1.0"/>
@@ -82,7 +82,7 @@
     <param name="updateRate" value="1.0"/>
 
     <!-- Inflated Obstacle width -->
-    <param name="inflateWidth" value="0.2"/>
+    <param name="inflateWidth" value="0.0"/>
 
     <!-- Vehicle Fence Volume Limits -->
     <!-- <param name="fenceOn" value="true"/>
@@ -118,7 +118,7 @@
     <!-- <param name="goalFunction" type="string" value="information"/> -->
 
     <!-- Minimum obstacle proximity for goal poses (adds to inflated distance) -->
-    <param name="viewPoseObstacleDistance" value="0.4"/>
+    <param name="viewPoseObstacleDistance" value="0.8"/>
 
   </node>
 

@@ -143,52 +143,6 @@ struct View {
   int index = -1;
 };
 
-// Frontier class declaration
-// class Frontier
-// {
-//   public:
-//     std::vector<bool> data;
-//     float x_min;
-//     float y_min;
-//     float z_min;
-//     float x_max;
-//     float y_max;
-//     float z_max;
-//     float x_size;
-//     float y_size;
-//     float z_size;
-//     float voxel_size;
-
-//     int xyz_index3(const float xyz[3]);
-//     void index3_xyz(const int index, float xyz[3]);
-//     void expand(const float limits[6]); //
-// }
-
-// void Frontier::index3_xyz(const int index, float xyz[3])
-// {
-//   // x+y*sizx+z*sizx*sizy
-//   xyz[2] = z_min + (index/(y_size*x_size))*voxel_size;
-//   xyz[1] = y_min + ((index % (y_size*x_size))/x_size)*voxel_size;
-//   xyz[0] = x_min + ((index % (y_size*x_size)) % x_size)*voxel_size;
-// }
-
-// int Frontier::xyz_index3(const float xyz[3])
-// {
-//   int ind[3];
-//   ind[0] = roundf((xyz[0]-x_min)/voxel_size);
-//   ind[1] = roundf((xyz[1]-y_min)/voxel_size);
-//   ind[2] = roundf((xyz[2]-z_min)/voxel_size);
-//   return mindex3(ind[0], ind[1], ind[2], x_size, y_size);
-// }
-
-// void Frontier::expand(const float limits[6])
-// {
-//   // Calculate the new required size of the vector
-//   // Copy the old data to a holding vector of the old size
-//   // Resize the data property to the new size and clear the data
-//   // Copy the previous data into the data property
-// }
-
 //Msfm3d class declaration
 class Msfm3d
 {
@@ -457,7 +411,9 @@ bool Msfm3d::clusterFrontier(const bool print2File)
 
   // Create cloud pointer to store the removed points
   pcl::PointCloud<pcl::PointXYZ>::Ptr removed_points(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr frontierCloudPreFilter(new pcl::PointCloud<pcl::PointXYZ>);
   pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+  pcl::copyPointCloud(*frontierCloud, *frontierCloudPreFilter);
 
   // Creating the KdTree object for the search method of the extraction
   pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree(new pcl::search::KdTree<pcl::PointXYZ>);
@@ -469,9 +425,7 @@ bool Msfm3d::clusterFrontier(const bool print2File)
   // Initialize euclidean cluster extraction object
   pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
   ec.setClusterTolerance(cluster_radius); // Clusters must be made of contiguous sections of frontier (within sqrt(2)*voxel_size of each other)
-  // ec.setClusterTolerance(2.9*voxel_size);
   ec.setMinClusterSize(roundf(min_cluster_size)); // Cluster must be at least 15 voxels in size
-  // ec.setMaxClusterSize (30);
   ec.setSearchMethod(kdtree);
   ec.setInputCloud(frontierCloud);
   ec.extract(frontierClusterIndices);
@@ -516,19 +470,26 @@ bool Msfm3d::clusterFrontier(const bool print2File)
   }
 
   // Filter frontierCloud to keep only the inliers
-  extract.setNegative(false);
-  extract.filter(*frontierCloud);
+  frontierCloud->clear();
+  idx = 0;
+  for (int i=0; i<frontierClusterIndices.size(); i++) {
+    for (int j=0; j<frontierClusterIndices[i].indices.size(); j++) {
+      frontierCloud->points.push_back(frontierCloudPreFilter->points[frontierClusterIndices[i].indices[j]]);
+      frontierClusterIndices[i].indices[j] = idx;
+      idx++;
+    }
+  }
   ROS_INFO("Frontier cloud after clustering has %d points.", (int)frontierCloud->points.size());
 
   if ((int)frontierCloud->points.size() < 1) {
     return 0;
   } else {
     // Get new indices of Frontier Clusters after filtering (extract filter does not preserve indices);
-    frontierClusterIndices.clear();
-    kdtree->setInputCloud(frontierCloud);
-    ec.setSearchMethod(kdtree);
-    ec.setInputCloud(frontierCloud);
-    ec.extract(frontierClusterIndices);
+    // frontierClusterIndices.clear();
+    // kdtree->setInputCloud(frontierCloud);
+    // ec.setSearchMethod(kdtree);
+    // ec.setInputCloud(frontierCloud);
+    // ec.extract(frontierClusterIndices);
     return 1;
   }
 }
@@ -543,9 +504,6 @@ bool Msfm3d::normalFrontierFilter()
   // Creating the KdTree object for the search method of the extraction
   pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree(new pcl::search::KdTree<pcl::PointXYZ>);
   kdtree->setInputCloud(frontierCloud);
-
-  // Clear previous frontierClusterIndices
-  frontierClusterIndices.clear();
 
   // Initialize euclidean cluster extraction object
   pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::PointXYZINormal> ne;
@@ -717,7 +675,8 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
   ROS_INFO("%d groups generated from the frontier clusters.", groupCount);
 }
 
-bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end) {
+bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end)
+{
   float dx = end.x - start.x;
   float dy = end.y - start.y;
   float dz = end.z - start.z;
@@ -815,6 +774,9 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, co
   std::uniform_real_distribution<float> azimuth_dist(0, 2*M_PI);
   std::uniform_real_distribution<float> elevation_dist((M_PI - (M_PI/180.0)*camera.verticalFoV)/2.0, (M_PI + (M_PI/180.0)*camera.verticalFoV)/2.0);
 
+  int pass1 = 0;
+  int pass2 = 0;
+  int pass3 = 0;
   // ROS_INFO("Initialized uniform distributions, sampling poses near the centroid.");
   for (int i = 0; i < sampleLimit; i++) {
     // Sample in spherical coordinates
@@ -837,6 +799,7 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, co
     // ROS_INFO("Sampled point is at index %d", sample_idx);
     // See if the sample is within the current map range
     if ((sample_idx < 0) || (sample_idx >= esdf.size[0]*esdf.size[1]*esdf.size[2])) {
+      pass1++;
       continue;
     }
 
@@ -844,6 +807,7 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, co
     // See if sample is at an unreachable point (occupied or unseen)
     // if ((esdf.data[sample_idx] < viewPoseObstacleDistance && (i < 0.4*sampleLimit)) || esdf.data[sample_idx] <= 0.0) {
     if (esdf.data[sample_idx] < viewPoseObstacleDistance) {
+      pass2++;
       continue;
     }
 
@@ -874,6 +838,7 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, co
     // ROS_INFO("Checking if the point is occluded from viewing the centroid...");
     // Check for occlusion
     if (!raycast(sample, centroid)) {
+      pass3++;
       continue;
     }
 
@@ -890,7 +855,7 @@ Pose Msfm3d::samplePose(const pcl::PointXYZ centroid, const SensorFoV camera, co
     robotPose.q = euler2Quaternion(sample_yaw, 0.0, 0.0);
     break;
   }
-
+  // ROS_INFO("%d poses sampled outside of map.  %d poses sampled too close to walls or in the air.  %d poses were occluded.", pass1, pass2, pass3);
   return robotPose;
 }
 
@@ -916,8 +881,8 @@ void Msfm3d::updateGoalPoses()
   // Loop through the frontier group centroids
   for (int it=0; it<(int)greedyCenters.points.size(); ++it) {
     // Sample an admissable pose that sees the centroid
-    // ROS_INFO("Sampling an admissable pose that sees the group centroid.");
-    Pose goalPose = samplePose(greedyCenters.points[it], camera, 1500);
+    // ROS_INFO("Sampling an admissable pose that sees the group centroid at (%0.1f, %0.1f, %0.1f)", greedyCenters.points[it].x, greedyCenters.points[it].y, greedyCenters.points[it].z);
+    Pose goalPose = samplePose(greedyCenters.points[it], camera, 400);
 
     if (std::isnan(goalPose.position.x)) {
       // ROS_INFO("Pose is invalid, next loop.");
@@ -983,7 +948,7 @@ void Msfm3d::updateGoalPoses()
     }
     goalViews.push_back(sampleView);
 
-    ROS_INFO("Sampled view from [%0.2f, %0.2f, %0.2f] sees %d frontier voxels.", sampleView.pose.position.x, sampleView.pose.position.y, sampleView.pose.position.z, (int)sampleView.cloud.points.size());
+    // ROS_INFO("Sampled view from [%0.2f, %0.2f, %0.2f] sees %d frontier voxels.", sampleView.pose.position.x, sampleView.pose.position.y, sampleView.pose.position.z, (int)sampleView.cloud.points.size());
   }
   ROS_INFO("Sampled %d possible goal poses for viewing the frontier.", (int)goalViews.size());
 
@@ -1327,7 +1292,8 @@ void Msfm3d::parsePointCloud()
   delete[] xyzis;
 }
 
-void Msfm3d::inflateObstacles(const float radius, sensor_msgs::PointCloud2& inflatedOccupiedMsg) {
+void Msfm3d::inflateObstacles(const float radius, sensor_msgs::PointCloud2& inflatedOccupiedMsg)
+{
   int npixels = esdf.size[0]*esdf.size[1]*esdf.size[2];
   ROS_INFO("Allocating boolean of size %d.", npixels);
   std::vector<bool> changed_value(npixels, 0);
@@ -1459,7 +1425,7 @@ bool Msfm3d::updatePath(const float goal[3])
   }
 
   // 3D Interpolation intermediate values from https://en.wikipedia.org/wiki/Trilinear_interpolation
-  float step = voxel_size/4.0;
+  float step = voxel_size/2.0;
 
   // Path message for ROS
   nav_msgs::Path newpathmsg;
@@ -1585,7 +1551,7 @@ bool Msfm3d::updatePath(const float goal[3])
   }
 
   // Add path vector to path message for plotting in rviz
-  ROS_INFO("Path finished of length %d", (int)(path.size()/3.0));
+  // ROS_INFO("Path finished of length %d", (int)(path.size()/3.0));
   for (int i=(path.size()-3); i>=0; i=i-3){
     pose.header.frame_id = frame;
     pose.pose.position.x = path[i];
@@ -1598,7 +1564,8 @@ bool Msfm3d::updatePath(const float goal[3])
 }
 
 
-void Msfm3d::updateFrontierMsg() {
+void Msfm3d::updateFrontierMsg()
+{
   // Declare a new cloud to store the converted message
   sensor_msgs::PointCloud2 newPointCloud2;
 
@@ -1612,7 +1579,8 @@ void Msfm3d::updateFrontierMsg() {
   frontiermsg = newPointCloud2;
 }
 
-bool updateFrontier(Msfm3d& planner){
+bool updateFrontier(Msfm3d& planner)
+{
   ROS_INFO("Beginning Frontier update step...");
 
   // Expand the frontier vector to be at least as big as the esdf space
@@ -1667,23 +1635,26 @@ bool updateFrontier(Msfm3d& planner){
 
       // Create an array of neighbor indices
       for (int j=0; j<3; j++){
-        if (point[j] < (planner.esdf.max[j] - planner.voxel_size)) {
+        // if (point[j] < (planner.esdf.max[j] - planner.voxel_size)) {
           query[j] = point[j] + planner.voxel_size;
-        }
+        // }
         neighbor[2*j] = planner.xyz_index3(query);
-        if (point[j] > (planner.esdf.min[j] + planner.voxel_size)) {
+        // if (point[j] > (planner.esdf.min[j] + planner.voxel_size)) {
           query[j] = point[j] - planner.voxel_size;
-        }
+        // }
         neighbor[2*j+1] = planner.xyz_index3(query);
         query[j] = point[j];
       }
 
-      // Check if the neighbor indices are unseen voxels
+      // Check if the neighbor indices are unseen voxels or on the edge of the map
       if (planner.ground) {
         for (int j=0; j<4; j++) {
-          if (!planner.esdf.seen[neighbor[j]] && !(i == neighbor[j]) && !frontier) {
+          // if (!planner.esdf.seen[neighbor[j]] && !(i == neighbor[j]) && !frontier) {
+          bool out_of_bounds = ((neighbor[j] < 0) || neighbor[j] >= npixels);
+          if (!planner.esdf.seen[neighbor[j]] || out_of_bounds) {
             frontier = 1;
             pass2++;
+            break;
           }
         }
         // Eliminate frontiers with unseen top/bottom neighbors
@@ -1696,8 +1667,11 @@ bool updateFrontier(Msfm3d& planner){
         // For the time being, exclude the top/bottom neighbor (last two neighbors)
         for (int j=0; j<6; j++) {
         // for (int j=0; j<4; j++) {
-          if (!planner.esdf.seen[neighbor[j]]  && !(i == neighbor[j])) {
+          bool out_of_bounds = ((neighbor[j] < 0) || neighbor[j] >= npixels);
+          if (!planner.esdf.seen[neighbor[j]] || out_of_bounds) {
             frontier = 1;
+            pass2++;
+            break;
           }
         }
         // if (!planner.esdf.seen[neighbor[5]]  && !(i == neighbor[5])) frontier = 1;
@@ -1839,7 +1813,7 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
       // Put the new point in the costs and indices vector
       if (planner.updatePath(point)) {
         // Get the angle between the current robot pose and the path start
-        int j = min((int)planner.pathmsg.poses.size(), 50);
+        int j = min((int)planner.pathmsg.poses.size(), 5);
         float start_path_vec[3] = {(float)(planner.pathmsg.poses[j].pose.position.x - planner.pathmsg.poses[0].pose.position.x),
                                    (float)(planner.pathmsg.poses[j].pose.position.y - planner.pathmsg.poses[0].pose.position.y),
                                    (float)(planner.pathmsg.poses[j].pose.position.z - planner.pathmsg.poses[0].pose.position.z)};
@@ -1992,6 +1966,7 @@ void infoGoalView(Msfm3d& planner, int *viewIndices, double *utility, const int 
       }
     }
   }
+  return;
 }
 
 void findEntrance(Msfm3d& planner, float entranceList[15], double cost[5])
@@ -2363,6 +2338,64 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
     delete[] Frozen;
 }
 
+sensor_msgs::PointCloud2 plotReach(Msfm3d& planner)
+{
+  int N = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
+  pcl::PointCloud<pcl::PointXYZI>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZI>);
+  for (int i=0; i<N; i++) {
+    if (planner.reach[i] > 0.0) {
+      float query[3] = {0.0, 0.0, 0.0};
+      planner.index3_xyz(i, query);
+      pcl::PointXYZI point;
+      point.x = query[0]; point.y = query[1]; point.z = query[2];
+      point.intensity = planner.reach[i];
+      cloud->points.push_back(point);
+    }
+  }
+  // Declare a new cloud to store the converted message
+  sensor_msgs::PointCloud2 newPointCloud2;
+
+  // Convert from pcl::PointCloud to sensor_msgs::PointCloud2
+  pcl::toROSMsg(*cloud, newPointCloud2);
+  newPointCloud2.header.seq = 1;
+  newPointCloud2.header.stamp = ros::Time();
+  newPointCloud2.header.frame_id = planner.frame;
+  return newPointCloud2;
+}
+
+visualization_msgs::Marker plotGoals(Msfm3d& planner)
+{
+  // Preliminaries
+  visualization_msgs::Marker msg;
+  msg.header.frame_id = planner.frame;
+  msg.header.stamp = ros::Time();
+  msg.action = visualization_msgs::Marker::ADD;
+  msg.pose.orientation.w = 1.0;
+  msg.id = 80;
+  // msg.type = visualization_msgs::Marker::POINTS;
+  msg.type = visualization_msgs::Marker::SPHERE_LIST;
+  msg.scale.x = planner.voxel_size;
+  msg.scale.y = planner.voxel_size;
+  msg.scale.z = planner.voxel_size;
+  msg.color.g = 1.0;
+  msg.color.a = 1.0;
+
+  // Add all of the goal points to the msg
+  float point[3];
+  for (int i=0; i<planner.goalViews.size(); i++) {
+    geometry_msgs::Point p;
+    point[0] = planner.goalViews[i].pose.position.x;
+    point[1] = planner.goalViews[i].pose.position.y;
+    point[2] = planner.goalViews[i].pose.position.z;
+    // int idx = planner.xyz_index3(point);
+    p.x = point[0];
+    p.y = point[1];
+    p.z = point[2];
+    msg.points.push_back(p);
+  }
+  return msg;
+}
+
 int main(int argc, char **argv)
 {
   /**
@@ -2573,7 +2606,7 @@ int main(int argc, char **argv)
   ROS_INFO("Subscribing to task...");
   ros::Subscriber sub5 = n.subscribe("task", 1, &Msfm3d::callback_task, &planner);
 
-  ROS_INFO("Subscribing to cusotm goal point...");
+  ROS_INFO("Subscribing to custom goal point...");
   ros::Subscriber sub6 = n.subscribe("custom_goal_point", 1, &Msfm3d::callback_customGoal, &planner);
 
   ros::Publisher pub1 = n.advertise<geometry_msgs::PointStamped>("nearest_frontier", 5);
@@ -2619,6 +2652,9 @@ int main(int argc, char **argv)
   ros::Publisher pub8 = n.advertise<std_msgs::String>("task", 5);
   std_msgs::String noPathMsg;
   noPathMsg.data = "Unable to plan";
+  ros::Publisher pub9 = n.advertise<sensor_msgs::PointCloud2>("reach_grid", 5);
+  ros::Publisher pub10 = n.advertise<visualization_msgs::Marker>("goal_points", 5);
+  visualization_msgs::Marker goalMsg;
 
   int i = 0;
   bool goalFound = 0;
@@ -2715,6 +2751,11 @@ int main(int argc, char **argv)
             // Find goal poses from which to view the frontier
             planner.updateGoalPoses();
             replan = 1;
+            // Plot goal points
+            // goalMsg.action = visualization_msgs::Marker::DELETE;
+            // pub10.publish(goalMsg);
+            // goalMsg = plotGoals(planner);
+            // pub10.publish(goalMsg);
           }
 
           // The robot might have moved or the goal poses may have been updated, so you need to recalculate the reachability grid
@@ -2728,6 +2769,7 @@ int main(int argc, char **argv)
             reach(planner, 0, 0, (int)planner.frontierCloud->points.size(), false);
           }
 
+          // pub9.publish(plotReach(planner));
           ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
 
           // Replan if the point is no longer reachable
@@ -2879,7 +2921,7 @@ int main(int argc, char **argv)
 
           // Calculate and publish path
           if (!(planner.updatePath(goal))) {
-            if (planner.task == "guiCommand") pub8.publish(noPathMsg);
+            if ((planner.task == "guiCommand") || (planner.task == "Home") || (planner.task == "Report")) pub8.publish(noPathMsg);
             ROS_WARN("Couldn't find feasible path to goal.  Publishing previous path");
           }
 
