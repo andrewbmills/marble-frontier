@@ -4,13 +4,13 @@
 -->
 <launch>
   <arg name="resolution" default="0.2" />
-  
+
   <node pkg="msfm3d" type="costmap_generator" name="costmap_generator">
     <param name="fixedFrame" type="string" value="world"/>
     <param name="rate" value="5.0"/>
     <param name="resolution" value="$(arg resolution)"/>
     <param name="untraversableDistance" value="0.05"/>
-    <param name="octomapFreeDistance" value="0.22"/>
+    <param name="octomapFreeDistance" value="0.2"/>
 
     <remap from="esdf" to="edt"/>
     <!-- <remap from="esdf" to="voxblox_node/esdf_pointcloud"/> -->
@@ -26,9 +26,20 @@
     <remap from="~output" to="cost_map_filtered" />
     <rosparam>
       filter_field_name: intensity
-      filter_limit_min: 0.23
+      filter_limit_min: 0.21
       filter_limit_max: 100.0
       filter_limit_negative: False
     </rosparam>
   </node>
+
+  <!-- <node pkg="nodelet" type="nodelet" name="passthrough_reach" args="load pcl/PassThrough pcl_manager_costmap" output="screen">
+    <remap from="~input" to="reach_grid" />
+    <remap from="~output" to="reach_grid_filtered" />
+    <rosparam>
+      filter_field_name: z
+      filter_limit_min: 0.21
+      filter_limit_max: 0.39
+      filter_limit_negative: False
+    </rosparam>
+  </node> -->
 </launch>
