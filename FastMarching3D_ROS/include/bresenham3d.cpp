@@ -43,63 +43,64 @@ std::vector<int> Bresenham3D(int x1, int y1, int z1, const int x2, const int y2,
   dz2 = n << 1;
 
 if ((l >= m) && (l >= n)) {
-    err_1 = dy2 - l;
-    err_2 = dz2 - l;
-    for (i = 0; i < l; i++) {
-        result.push_back(point[0]);
-        result.push_back(point[1]);
-        result.push_back(point[2]);
-        if (err_1 > 0) {
-            point[1] += y_inc;
-            err_1 -= dx2;
-        }
-        if (err_2 > 0) {
-            point[2] += z_inc;
-            err_2 -= dx2;
-        }
-        err_1 += dy2;
-        err_2 += dz2;
-        point[0] += x_inc;
+  err_1 = dy2 - l;
+  err_2 = dz2 - l;
+  for (i = 0; i < l; i++) {
+    result.push_back(point[0]);
+    result.push_back(point[1]);
+    result.push_back(point[2]);
+    if (err_1 > 0) {
+      point[1] += y_inc;
+      err_1 -= dx2;
     }
+    if (err_2 > 0) {
+      point[2] += z_inc;
+      err_2 -= dx2;
+    }
+    err_1 += dy2;
+    err_2 += dz2;
+    point[0] += x_inc;
+  }
 } else if ((m >= l) && (m >= n)) {
-    err_1 = dx2 - m;
-    err_2 = dz2 - m;
-    for (i = 0; i < m; i++) {
-        result.push_back(point[0]);
-        result.push_back(point[1]);
-        result.push_back(point[2]);
-        if (err_1 > 0) {
-            point[0] += x_inc;
-            err_1 -= dy2;
-        }
-        if (err_2 > 0) {
-            point[2] += z_inc;
-            err_2 -= dy2;
-        }
-        err_1 += dx2;
-        err_2 += dz2;
-        point[1] += y_inc;
+  err_1 = dx2 - m;
+  err_2 = dz2 - m;
+  for (i = 0; i < m; i++) {
+    result.push_back(point[0]);
+    result.push_back(point[1]);
+    result.push_back(point[2]);
+    if (err_1 > 0) {
+      point[0] += x_inc;
+      err_1 -= dy2;
     }
+    if (err_2 > 0) {
+      point[2] += z_inc;
+      err_2 -= dy2;
+    }
+    err_1 += dx2;
+    err_2 += dz2;
+    point[1] += y_inc;
+  }
 } else {
-    err_1 = dy2 - n;
-    err_2 = dx2 - n;
-    for (i = 0; i < n; i++) {
-        result.push_back(point[0]);
-        result.push_back(point[1]);
-        result.push_back(point[2]);
-        if (err_1 > 0) {
-            point[1] += y_inc;
-            err_1 -= dz2;
-        }
-        if (err_2 > 0) {
-            point[0] += x_inc;
-            err_2 -= dz2;
-        }
-        err_1 += dy2;
-        err_2 += dx2;
-        point[2] += z_inc;
+  err_1 = dy2 - n;
+  err_2 = dx2 - n;
+  for (i = 0; i < n; i++) {
+    result.push_back(point[0]);
+    result.push_back(point[1]);
+    result.push_back(point[2]);
+    if (err_1 > 0) {
+      point[1] += y_inc;
+      err_1 -= dz2;
     }
+    if (err_2 > 0) {
+      point[0] += x_inc;
+      err_2 -= dz2;
+    }
+    err_1 += dy2;
+    err_2 += dx2;
+    point[2] += z_inc;
+  }
 }
+
   result.push_back(point[0]);
   result.push_back(point[1]);
   result.push_back(point[2]);
