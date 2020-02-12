@@ -1532,16 +1532,16 @@ bool Msfm3d::updatePath(const float goal[3])
     // if (path.size() < 18) ROS_INFO("[%f, %f, %f] added to path.", point[0], point[1], point[2]);
 
     // Update the robot's distance to the path
-    if (ground){
-      position2D[0] = position[0];
-      position2D[1] = position[1];
-      point2D[0] = point[0];
-      point2D[1] = point[1];
-      dist_robot2path = dist2(position2D, point2D);
-    }
-    else {
-      dist_robot2path = dist3(position, point);
-    }
+    // if (ground){
+    //   position2D[0] = position[0];
+    //   position2D[1] = position[1];
+    //   point2D[0] = point[0];
+    //   point2D[1] = point[1];
+    //   dist_robot2path = dist2(position2D, point2D);
+    // }
+    // else {
+    dist_robot2path = dist3(position, point);
+    // }
   }
 
   // Check if the path made it back to the vehicle
