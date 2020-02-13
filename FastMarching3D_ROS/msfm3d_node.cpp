@@ -159,7 +159,7 @@ struct View {
 
 //     int xyz_index3(const float xyz[3]);
 //     void index3_xyz(const int index, float xyz[3]);
-//     void expand(const float limits[6]); // 
+//     void expand(const float limits[6]); //
 // }
 
 // void Frontier::index3_xyz(const int index, float xyz[3])
@@ -264,7 +264,7 @@ class Msfm3d
 
     // Frontier and frontier filter parameters
     // std::vector<bool> frontier;
-    // float 
+    // float
     bool * frontier;
     bool * entrance;
     int frontier_size = 0;
@@ -437,7 +437,9 @@ bool Msfm3d::clusterFrontier(const bool print2File)
 
   // Create cloud pointer to store the removed points
   pcl::PointCloud<pcl::PointXYZ>::Ptr removed_points(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr frontierCloudPreFilter(new pcl::PointCloud<pcl::PointXYZ>);
   pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+  pcl::copyPointCloud(*frontierCloud, *frontierCloudPreFilter);
 
   // Creating the KdTree object for the search method of the extraction
   pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree(new pcl::search::KdTree<pcl::PointXYZ>);
@@ -496,19 +498,28 @@ bool Msfm3d::clusterFrontier(const bool print2File)
   }
 
   // Filter frontierCloud to keep only the inliers
-  extract.setNegative(false);
-  extract.filter(*frontierCloud);
+  frontierCloud->clear();
+  idx = 0;
+  for (int i=0; i<frontierClusterIndices.size(); i++) {
+    for (int j=0; j<frontierClusterIndices[i].indices.size(); j++) {
+      frontierCloud->points.push_back(frontierCloudPreFilter->points[frontierClusterIndices[i].indices[j]]);
+      frontierClusterIndices[i].indices[j] = idx;
+      idx++;
+    }
+  }
+  // extract.setNegative(false);
+  // extract.filter(*frontierCloud);
   ROS_INFO("Frontier cloud after clustering has %d points.", (int)frontierCloud->points.size());
 
   if ((int)frontierCloud->points.size() < 1) {
     return 0;
   } else {
     // Get new indices of Frontier Clusters after filtering (extract filter does not preserve indices);
-    frontierClusterIndices.clear();
-    kdtree->setInputCloud(frontierCloud);
-    ec.setSearchMethod(kdtree);
-    ec.setInputCloud(frontierCloud);
-    ec.extract(frontierClusterIndices);
+    // frontierClusterIndices.clear();
+    // kdtree->setInputCloud(frontierCloud);
+    // ec.setSearchMethod(kdtree);
+    // ec.setInputCloud(frontierCloud);
+    // ec.extract(frontierClusterIndices);
     return 1;
   }
 }
@@ -693,7 +704,7 @@ void Msfm3d::greedyGrouping(const float radius, const bool print2File)
         // std::cout << "Writing to file " << ss.str() << std::endl;
         writer.write<pcl::PointXYZ> (ss.str(), *cloud_cluster, false); //*
       }
-      
+
       groupCount++;
     }
     clusterCount++;
@@ -897,7 +908,7 @@ void Msfm3d::updateGoalPoses()
 
     // Cull the view frustum points with the pcl function
     // ROS_INFO("Frustum Culling...");
-    // TO-DO: Use a series of passthrough filters to restrict the x,y,z neighborhood (cropbox) and then compute 
+    // TO-DO: Use a series of passthrough filters to restrict the x,y,z neighborhood (cropbox) and then compute
     // polar coords for each point to filter those within the sensor FoV.
 
     pcl::FrustumCulling<pcl::PointXYZ> fc;
@@ -1027,7 +1038,7 @@ void Msfm3d::callback_position(const nav_msgs::Odometry msg)
 void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
 {
   ROS_INFO("Getting OctoMap message...");
-  
+
 
   // Free/Allocate the tree memory
   // ROS_INFO("Converting Octomap msg to AbstractOcTree...");
@@ -1412,7 +1423,7 @@ bool Msfm3d::updatePath(const float goal[3])
   }
 
   // Run loop until the path is within a voxel of the robot.
-  while ((dist_robot2path > 3.0*voxel_size) && (path.size() < 100000) && grad_norm >= 0.00001) {
+  while ((dist_robot2path > 2.0*voxel_size) && (path.size() < 100000) && grad_norm >= 0.00001) {
   	// Find the current point's grid indices and it's 6 neighbor voxel indices.
   	idx = xyz_index3(point);
     neighbor[0] = idx - 1; // i-1
@@ -1461,20 +1472,20 @@ bool Msfm3d::updatePath(const float goal[3])
     // ROS_INFO("[%f, %f, %f] added to path.", point[0], point[1], point[2]);
 
     // Update the robot's distance to the path
-    if (ground){
-      position2D[0] = position[0];
-      position2D[1] = position[1];
-      point2D[0] = point[0];
-      point2D[1] = point[1];
-      dist_robot2path = dist2(position2D, point2D);
-    }
-    else {
-      dist_robot2path = dist3(position, point);
-    }
+    // if (ground){
+    //   position2D[0] = position[0];
+    //   position2D[1] = position[1];
+    //   point2D[0] = point[0];
+    //   point2D[1] = point[1];
+    //   dist_robot2path = dist2(position2D, point2D);
+    // }
+    // else {
+    dist_robot2path = dist3(position, point);
+    // }
   }
 
   // Check if the path made it back to the vehicle
-  if (dist_robot2path > 3.0*voxel_size) {
+  if (dist_robot2path > 2.0*voxel_size) {
     ROS_INFO("Path did not make it back to the robot.  Select a different goal point.");
     return false;
   }
@@ -2323,7 +2334,7 @@ int main(int argc, char **argv)
   float cluster_radius, min_cluster_size;
   n.param("global_planning/cluster_radius", cluster_radius, (float)(1.5*voxel_size)); // voxels
   n.param("global_planning/min_cluster_size", min_cluster_size, (float)(5.0/voxel_size)); // voxels
-  n.param("global_planning/normalThresholdZ", planner.normalThresholdZ, (float)1.1); 
+  n.param("global_planning/normalThresholdZ", planner.normalThresholdZ, (float)1.1);
   planner.cluster_radius = cluster_radius;
   planner.min_cluster_size = min_cluster_size;
 
@@ -2645,14 +2656,14 @@ int main(int argc, char **argv)
                 for (int i=0; i<agentCount; i++) {
                   if (goalViewCost[i] >= 0.0) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, utility: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
                     planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
-                } 
+                }
               } else {
                 for (int i=0; i<agentCount; i++) {
                   if (goalViewCost[i] >= 0.0) ROS_INFO("Frontier Pose Position: [x: %f, y: %f, z: %f, cost: %f]", planner.goalViews[goalViewList[i]].pose.position.x,
                     planner.goalViews[goalViewList[i]].pose.position.y, planner.goalViews[goalViewList[i]].pose.position.z, goalViewCost[i]);
                 }
               }
-            
+
 
               // If using multi-agent, publish a goal decision matrix, goalArray, and the corresponding pathArray msg
               int rows = 0;
