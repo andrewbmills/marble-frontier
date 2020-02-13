@@ -35,7 +35,7 @@
     <param name="useOctomap" value="false"/>
 
     <!-- Name of the map world frame -->
-    <param name="frame_id" type="string" value="map"/>
+    <param name="frame_id" type="string" value="world"/>
 
     <!-- Vehicle speed in m/s and turnRate in deg/s -->
     <param name="speed" value="1.0"/>
