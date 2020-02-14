@@ -4,8 +4,16 @@ project(home_planner)
 find_package(catkin REQUIRED COMPONENTS
   rospy
   cartographer_ros
+  cartographer_ros_msgs
 )
-catkin_package()
+find_package(cartographer)
+
+catkin_package(
+  CATKIN_DEPENDS
+  rospy
+  cartographer_ros
+  cartographer_ros_msgs
+)
 
 include_directories(
   include
