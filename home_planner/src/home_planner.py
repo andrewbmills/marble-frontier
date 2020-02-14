@@ -34,12 +34,13 @@ class HomePlanner:
 			return
 		delta = self.getTransform(self.frame_node_list, self.frame_path, self.node_list_msg[0].header.stamp)
 		self.path_msg.header.stamp = self.node_list_msg[0].header.stamp
+		self.path_msg.poses.clear()
 		new_pose = PoseStamped()
 		new_pose.header.frame_id = self.frame_path
-		for pose in self.node_list_msg:
-			new_pose.pose.position.x = pose.pose.position.x + delta[0]
-			new_pose.pose.position.y = pose.pose.position.y + delta[1]
-			new_pose.pose.position.z = pose.pose.position.z + delta[2]
+		for i in np.arange(0, len(self.node_list_msg), 5):
+			new_pose.pose.position.x = self.node_list_msg[i].pose.position.x + delta[0]
+			new_pose.pose.position.y = self.node_list_msg[i].pose.position.y + delta[1]
+			new_pose.pose.position.z = self.node_list_msg[i].pose.position.z + delta[2]
 			self.path_msg.poses.insert(0, new_pose)
 		return
 
