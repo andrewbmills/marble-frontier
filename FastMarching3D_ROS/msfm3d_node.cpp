@@ -1425,7 +1425,7 @@ bool Msfm3d::updatePath(const float goal[3])
   }
 
   // 3D Interpolation intermediate values from https://en.wikipedia.org/wiki/Trilinear_interpolation
-  float step = voxel_size/2.0;
+  float step = voxel_size;
 
   // Path message for ROS
   nav_msgs::Path newpathmsg;
@@ -1441,7 +1441,7 @@ bool Msfm3d::updatePath(const float goal[3])
   float maxReach = reach[goal_idx] + 2.0;
   // ROS_INFO("Goal is (%0.1f, %0.1f, %0.1f), robot is at (%0.1f, %0.1f, %0.1f)", goal[0], goal[1], goal[2], position[0], position[1], position[2]);
   // Run loop until the path is within a voxel of the robot.
-  while ((dist_robot2path > 2.0*voxel_size) && (path.size() < 10000) && grad_norm >= 0.01) {
+  while ((dist_robot2path > 2.0*voxel_size) && (path.size() < 100000) && grad_norm >= 0.001) {
     // Find the 26 neighbor indices
 
   	// Find the current point's grid indices and it's 6 neighbor voxel indices.
@@ -1545,7 +1545,7 @@ bool Msfm3d::updatePath(const float goal[3])
   }
 
   // Check if the path made it back to the vehicle
-  if (dist_robot2path > 3.0*voxel_size) {
+  if (dist_robot2path > 6.0*voxel_size) {
     ROS_INFO("Path did not make it back to the robot.  Select a different goal point.");
     return false;
   }
@@ -2141,6 +2141,7 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
     dims_sp[1] = 1;
     dims_sp[2] = 1;
     npixels=dims[0]*dims[1]*dims[2];
+    int reachOriginIteration = npixels;
     Ed = 0;
     delete[] planner.reach;
     planner.reach = NULL;
@@ -2276,9 +2277,13 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
         }
         neg_pos =neg_pos-1;
 
-        if (planner.frontier[XYZ_index]) frontCount++;
+        if (!reachOrigin) {
+          if (planner.frontier[XYZ_index]) frontCount++;
+        }
 
-        if (XYZ_index == planner.xyz_index3(planner.origin)) reachOrigin = false;
+        // if (XYZ_index == planner.xyz_index3(planner.origin)) break;
+        if (XYZ_index == planner.xyz_index3(planner.origin) && reachOrigin) reachOriginIteration = itt;
+        if ((itt - reachOriginIteration) > 200) break;
 
         /*Loop through all 6 neighbours of current pixel */
         for (w=0;w<6;w++) {
@@ -2693,7 +2698,7 @@ int main(int argc, char **argv)
         ROS_INFO("ESDF or Occupancy at Position: %f", planner.esdf.data[i]);
         // Find frontier cells and add them to planner.frontier for output to file.
         // Publish frontiers as MarkerArray
-        if (updateFrontier(planner)) {
+        if (!(planner.artifactDetected) && updateFrontier(planner)) {
           planner.updateFrontierMsg();
           pub3.publish(planner.frontiermsg);
           ROS_INFO("Frontier published!");
@@ -2752,10 +2757,10 @@ int main(int argc, char **argv)
             planner.updateGoalPoses();
             replan = 1;
             // Plot goal points
-            // goalMsg.action = visualization_msgs::Marker::DELETE;
-            // pub10.publish(goalMsg);
-            // goalMsg = plotGoals(planner);
-            // pub10.publish(goalMsg);
+            goalMsg.action = visualization_msgs::Marker::DELETE;
+            pub10.publish(goalMsg);
+            goalMsg = plotGoals(planner);
+            pub10.publish(goalMsg);
           }
 
           // The robot might have moved or the goal poses may have been updated, so you need to recalculate the reachability grid
@@ -2931,6 +2936,7 @@ int main(int argc, char **argv)
             newPath = planner.pathmsg;
           }
           pub2.publish(newPath);
+          // pub9.publish(plotReach(planner));
           ROS_INFO("Path to goal published!");
           goalFound = 0;
 
@@ -2962,7 +2968,7 @@ int main(int argc, char **argv)
             ROS_INFO("Inflated occupancy grid published!");
           }
 
-          ROS_INFO("No frontiers after filtering, robot is heading to the anchor.");
+          ROS_INFO("No frontiers after filtering or home command given, robot is heading home.");
           tStart = clock();
           ROS_INFO("Replanning to be able to reach the origin...");
           reach(planner, 0, 0, 1, true);
@@ -2997,6 +3003,7 @@ int main(int argc, char **argv)
           pub2.publish(planner.pathmsg);
           ROS_INFO("Path to goal published!");
           goalFound = 0;
+          // pub9.publish(plotReach(planner));
 
           // Height debugging
           // ROS_INFO("The robot is %0.2f meters off of the ground.  The goal point is %0.2f meters off of the ground.", planner.heightAGL(planner.position), planner.heightAGL(goal));
