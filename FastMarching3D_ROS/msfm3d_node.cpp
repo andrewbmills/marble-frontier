@@ -2752,10 +2752,10 @@ int main(int argc, char **argv)
             planner.updateGoalPoses();
             replan = 1;
             // Plot goal points
-            // goalMsg.action = visualization_msgs::Marker::DELETE;
-            // pub10.publish(goalMsg);
-            // goalMsg = plotGoals(planner);
-            // pub10.publish(goalMsg);
+            goalMsg.action = visualization_msgs::Marker::DELETE;
+            pub10.publish(goalMsg);
+            goalMsg = plotGoals(planner);
+            pub10.publish(goalMsg);
           }
 
           // The robot might have moved or the goal poses may have been updated, so you need to recalculate the reachability grid
