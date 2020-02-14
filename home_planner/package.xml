@@ -1,0 +1,23 @@
+<package format="2">
+  <name>home_planner</name>
+  <version>1.0.0</version>
+  <description>
+  This package provides path home given a trajectory history
+  </description>
+  <maintainer email="andmills17@gmail.com">Andrew Mills</maintainer>
+  <license>GPL</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>python-numpy</exec_depend>
+  <exec_depend>python-sys</exec_depend>
+  <exec_depend>cartographer_ros</exec_depend>
+
+  <depend>std_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>cartographer_ros_msgs</depend>
+</package>
