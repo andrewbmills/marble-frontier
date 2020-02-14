@@ -33,8 +33,9 @@ class HomePlanner:
 		if ((not self.first_node_list) or len(self.node_list_msg) == 0):
 			return
 		delta = self.getTransform(self.frame_node_list, self.frame_path, self.node_list_msg[0].header.stamp)
+		self.path_msg = Path()
 		self.path_msg.header.stamp = self.node_list_msg[0].header.stamp
-		self.path_msg.poses.clear()
+		self.path_msg.header.frame_id = self.frame_path
 		new_pose = PoseStamped()
 		new_pose.header.frame_id = self.frame_path
 		for i in np.arange(0, len(self.node_list_msg), 5):
