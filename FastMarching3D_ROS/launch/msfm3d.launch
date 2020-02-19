@@ -30,8 +30,8 @@
     <param name="isGroundVehicle" value="true"/>
 
     <!-- If the vehicle is an air vehicle, the following params should be set -->
-    <param name="minGoalDist" value="1.0" />
-    <param name="goalArrivalDist" value="1.0" />
+    <param name="minGoalDist" value="1.5" />
+    <param name="goalArrivalDist" value="1.5" />
 
 	 <!-- Whether or not you want to use an Occupancy Grid or an ESDF map type -->
     <param name="useOctomap" value="false"/>
@@ -42,31 +42,32 @@
     <!-- Vehicle speed in m/s and turnRate in deg/s -->
     <param name="speed" value="1.0"/>
     <param name="turnPenalty" value="1.0"/>
+    <param name="minViewCloudSize" value="10"/>
 
     <!-- Frontier Clustering parameters (in voxels) -->
     <param name="cluster_radius" value="0.30" />
-    <param name="min_cluster_size" value="30" />
+    <param name="min_cluster_size" value="40" />
     <param name="normalThresholdZ" value="0.4" />
 
     <!-- Number of ticks before replanning -->
-    <param name="replan_ticks" value="5" />
+    <param name="replan_ticks" value="20" />
     <!-- Number of ticks before sampling new goal poses -->
-    <param name="goal_ticks" value="30" />
+    <param name="goal_ticks" value="10" />
     <!-- Replan trigger method -->
-    <param name="replanTrigger" type="string" value="frontier"/>
-    <!-- <param name="replanTrigger" type="string" value="distance"/> -->
+    <!-- <param name="replanTrigger" type="string" value="frontier"/> -->
+    <param name="replanTrigger" type="string" value="distance"/>
 
     <!-- Location of the environment entrance. (Default is [0.0, 0.0, 0.0])  The robot will not explore area within entrance_radius meters of this point -->
-    <param name="entrance_x" value="1.0" />
+    <param name="entrance_x" value="-2.0" />
     <param name="entrance_y" value="0.0" />
     <param name="entrance_z" value="0.2" />
-    <param name="entrance_radius" value="0.0" />
+    <param name="entrance_radius" value="6.0" />
 
     <!-- Camera viewing parameters, angles in degrees, ranges in meters -->
     <param name="cameraVerticalFoV" value="40.0"/>
     <param name="cameraHorizontalFoV" value="120.0"/>
-    <param name="cameraMaxRange" value="2.0"/>
-    <param name="cameraMinRange" value="1.0"/>
+    <param name="cameraMaxRange" value="2.2"/>
+    <param name="cameraMinRange" value="1.2"/>
     <param name="robot2camera_roll" value="0.0"/>
     <param name="robot2camera_pitch" value="0.0"/>
     <param name="robot2camera_yaw" value="0.0"/>
@@ -118,7 +119,7 @@
     <!-- <param name="goalFunction" type="string" value="information"/> -->
 
     <!-- Minimum obstacle proximity for goal poses (adds to inflated distance) -->
-    <param name="viewPoseObstacleDistance" value="0.8"/>
+    <param name="viewPoseObstacleDistance" value="0.6"/>
 
   </node>
 

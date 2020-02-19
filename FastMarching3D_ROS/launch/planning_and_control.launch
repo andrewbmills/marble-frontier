@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+  <group ns="Base">
+    <arg name="resolution" value="0.2" />
+    <include file="$(find ground_finder)/launch/ground_finder.launch"/>
+    <include file="$(find msfm3d)/launch/msfm3d_sim.launch"/>
+    <include file="$(find msfm3d)/launch/costmap_generator.launch"/>
+  </group>
+</launch>

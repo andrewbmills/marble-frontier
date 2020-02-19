@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+  <group ns="L01">
+    <arg name="resolution" value="0.1" />
+    <node pkg="topic_tools" type="relay" name="relay1" args="os1_cloud_node/points points"/>
+    <node pkg="topic_tools" type="relay" name="relay2" args="vert_os1_cloud_node/points points"/>
+    <node pkg="octomap_server" type="octomap_server_node" name="octomap_server">
+      <param name="resolution" value="$(arg resolution)" />
+      <!-- fixed map frame (set to 'map' if SLAM or localization running!) -->
+      <param name="frame_id" type="string" value="world" />
+      <!-- maximum range to integrate (speedup!) -->
+      <param name="sensor_model/max_range" value="5.0" />
+      <!-- data source to integrate (PointCloud2) -->
+      <remap from="cloud_in" to="points" />
+      <remap from="octomap_binary" to="merged_map" />
+    </node>
+    <include file="$(find ground_finder)/launch/ground_finder.launch"/>
+    <!-- <include file="$(find msfm3d)/launch/msfm3d_sim.launch"/> -->
+    <!-- <include file="$(find msfm3d)/launch/costmap_generator.launch"/> -->
+  </group>
+</launch>

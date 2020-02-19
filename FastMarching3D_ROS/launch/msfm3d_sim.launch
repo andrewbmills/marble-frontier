@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch>
   <arg name="ground_vehicle" default="true" />
+  <arg name="resolution" default="0.2"/>
 
   <node pkg="msfm3d" type="msfm3d" name="global_planning" output="screen">
     <!-- Inputs (Subscribed Topic Names) -->
@@ -22,13 +23,13 @@
 
     <!-- Parameters -->
     <!-- Map Resolution -->
-    <param name="resolution" value="0.2"/>
+    <param name="resolution" value="$(arg resolution)"/>
 
     <!-- The planner assumes the vehicle is an air vehicle.  If the vehicle is constrained to the ground (wheeled vehicle), set to true. -->
     <param name="isGroundVehicle" value="$(arg ground_vehicle)"/>
 
     <!-- If the vehicle is an air vehicle, the following params should be set -->
-    <param name="minGoalDist" value="2.0" />
+    <param name="minGoalDist" value="1.0" />
     <param name="goalArrivalDist" value="1.0" />
 
 	 <!-- Whether or not you want to use an Occupancy Grid or an ESDF map type -->
@@ -40,32 +41,33 @@
     <!-- Vehicle speed in m/s and turnPenalty as a percentage of current cost to add to total cost -->
     <param name="speed" value="1.0"/>
     <param name="turnPenalty" value="1.0"/>
+    <param name="minViewCloudSize" value="10"/>
 
     <!-- Frontier Clustering parameters (in voxels) -->
     <param name="cluster_radius" value="0.30" />
-    <param name="min_cluster_size" value="40" />
-    <param name="normalThresholdZ" value="0.3" />
+    <param name="min_cluster_size" value="50" />
+    <param name="normalThresholdZ" value="0.4" />
 
     <!-- Number of ticks before replanning -->
-    <param name="replan_ticks" value="3" />
+    <param name="replan_ticks" value="20" />
     <!-- Number of ticks before sampling new goal poses -->
-    <param name="goal_ticks" value="50" />
+    <param name="goal_ticks" value="10" />
     <!-- Replan trigger method -->
-    <param name="replanTrigger" type="string" value="frontier"/>
-    <!-- <param name="replanTrigger" type="string" value="distance"/> -->
+    <!-- <param name="replanTrigger" type="string" value="frontier"/> -->
+    <param name="replanTrigger" type="string" value="distance"/>
 
     <!-- Location of the environment entrance. (Default is [0.0, 0.0, 0.0])  The robot will not explore area within entrance_radius meters of this point -->
-    <param name="entrance_x" value="-2.0" />
-    <param name="entrance_y" value="0.0" />
-    <param name="entrance_z" value="1.5" />
+    <param name="entrance_x" value="2.0" />
+    <param name="entrance_y" value="1.0" />
+    <param name="entrance_z" value="0.4" />
     <!-- <param name="entrance_z" value="2.0" /> -->
     <param name="entrance_radius" value="0.0" />
 
     <!-- Camera viewing parameters, angles in degrees, ranges in meters -->
-    <param name="cameraVerticalFoV" value="25.0"/>
+    <param name="cameraVerticalFoV" value="50.0"/>
     <param name="cameraHorizontalFoV" value="120.0"/>
-    <param name="cameraMaxRange" value="2.0"/>
-    <param name="cameraMinRange" value="1.0"/>
+    <param name="cameraMaxRange" value="2.2"/>
+    <param name="cameraMinRange" value="1.2"/>
     <param name="robot2camera_roll" value="0.0"/>
     <param name="robot2camera_pitch" value="0.0"/>
     <param name="robot2camera_yaw" value="0.0"/>
@@ -78,19 +80,19 @@
     <param name="robot2camera_q_z" value="0.0"/> -->
 
     <!-- Update Rate, default is 1.0 Hz -->
-    <param name="updateRate" value="1.0"/>
+    <param name="updateRate" value="1"/>
 
     <!-- Inflated Obstacle width -->
-    <param name="inflateWidth" value="0.3"/>
+    <param name="inflateWidth" value="0.0"/>
 
     <!-- Vehicle Fence Volume Limits -->
-    <param name="fenceOn" value="true"/>
-    <param name="fence_xmin" value="-1000.0"/>
-    <param name="fence_xmax" value="1000.0"/>
-    <param name="fence_ymin" value="-1000.0"/>
-    <param name="fence_ymax" value="1000.0"/>
-    <param name="fence_zmin" value="-50.0"/>
-    <param name="fence_zmax" value="3.0"/>
+    <!-- <param name="fenceOn" value="true"/> -->
+    <!-- <param name="fence_xmin" value="-1000.0"/> -->
+    <!-- <param name="fence_xmax" value="1000.0"/> -->
+    <!-- <param name="fence_ymin" value="-1000.0"/> -->
+    <!-- <param name="fence_ymax" value="1000.0"/> -->
+    <!-- <param name="fence_zmin" value="-50.0"/> -->
+    <!-- <param name="fence_zmax" value="3.0"/> -->
 
     <!-- Vehicle Volume Extents -->
     <param name="vehicleVolumeOn" value="true"/>
@@ -109,7 +111,7 @@
     <param name="dzFrontierVoxelWidth" type="int" value="-1"/>
 
     <!-- Multi-agent Parameters -->
-    <param name="agentCount" value="1"/>
+    <param name="agentCount" value="2"/>
     <param name="goalViewSeparation" value = "3.0"/>
 
     <!-- Cost Function -->
@@ -117,7 +119,8 @@
     <!-- <param name="goalFunction" type="string" value="information"/> -->
 
     <!-- 5*(tanh(ESDF - e) + 1)/2.0 is used on each ESDF voxel so convert accordingly-->
-    <param name="viewPoseObstacleDistance" value="0.6"/>
+    <param name="viewPoseObstacleDistance" value="0.4"/>
+    <!-- <param name="viewPoseObstacleDistance" value="0.0095"/> -->
 
   </node>
 
