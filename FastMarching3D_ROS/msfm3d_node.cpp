@@ -209,6 +209,7 @@ class Msfm3d
     float origin[3]; // location in xyz coordinates where the robot entered the environment
     float entranceRadius; // radius around the origin where frontiers can't exist
     float inflateWidth = 0.0;
+    int minViewCloudSize = 10;
 
     float viewPoseObstacleDistance = 0.001; // view pose minimum distance from obstacles
 
@@ -732,7 +733,7 @@ bool Msfm3d::raycast(const pcl::PointXYZ start, const pcl::PointXYZ end)
       // ROS_INFO("Querying (%0.1f, %0.1f, %0.1f)", query[0], query[1], query[2]);
       int idx = xyz_index3(query);
       if ((idx >= 0) || (idx < (esdf.size[0]*esdf.size[1]*esdf.size[2]))) {
-        if (esdf.data[idx] <= 0.001) {
+        if (esdf.data[idx] <= 0.005) {
           return false;
         }
       } else {
@@ -1256,7 +1257,7 @@ void Msfm3d::parsePointCloud()
     // Use the hyperbolic tan function from the btraj paper
     // esdf = v_max*(tanh(d - e) + 1)/2
     if (xyzis[i+3] > 0.0) {
-      // esdf.data[index] = (double)(5.0*(tanh(xyzis[i+3] - exp(1.0)) + 1.0)/2.0);
+      // esdf.data[index] = (double)(5.0*(tanh(xyzis[i+3] - exp(1.0)) + 1.0)/2.0); // doesn't work too well (numerical issues)
       esdf.data[index] = (double)xyzis[i+3];
     }
     else {
@@ -1425,7 +1426,7 @@ bool Msfm3d::updatePath(const float goal[3])
   }
 
   // 3D Interpolation intermediate values from https://en.wikipedia.org/wiki/Trilinear_interpolation
-  float step = voxel_size;
+  float step = 0.5*voxel_size;
 
   // Path message for ROS
   nav_msgs::Path newpathmsg;
@@ -1475,6 +1476,7 @@ bool Msfm3d::updatePath(const float goal[3])
         }
       }
     }
+
     // neighbor[0] = idx - 1; // i-1
     // neighbor[1] = idx + 1; // i+1
     // neighbor[2] = idx - esdf.size[0]; // j-1
@@ -1806,24 +1808,31 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
     if (dist3(planner.position, point) <= dAgentMin) {
       continue;
     }
+    if (planner.goalViews[i].cloud.points.size() < planner.minViewCloudSize) { // Filter out goal poses that don't see enough frontier cells
+      continue;
+    }
     if ((idx < 0) || (idx > planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2])) {
       continue;
     }
     if (planner.reach[idx] > (double)0.0) {
-      // Put the new point in the costs and indices vector
-      if (planner.updatePath(point)) {
-        // Get the angle between the current robot pose and the path start
-        int j = min((int)planner.pathmsg.poses.size(), 5);
-        float start_path_vec[3] = {(float)(planner.pathmsg.poses[j].pose.position.x - planner.pathmsg.poses[0].pose.position.x),
-                                   (float)(planner.pathmsg.poses[j].pose.position.y - planner.pathmsg.poses[0].pose.position.y),
-                                   (float)(planner.pathmsg.poses[j].pose.position.z - planner.pathmsg.poses[0].pose.position.z)};
-        float start_path_yaw = std::atan2(start_path_vec[1], start_path_vec[0]); // rad
-        double cost;
-        cost = planner.reach[idx]*(1.0 + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)/180.0)*planner.turnPenalty);
-        // ROS_INFO("Vehicle yaw = %0.2f deg, Path yaw = %0.2f deg, cost = %0.2f, cost_turn = %0.2f", (180.0/M_PI)*vehicle_yaw, (180.0/M_PI)*start_path_yaw, planner.reach[idx], cost - planner.reach[idx]);
-        costs.push_back(cost);
-        indices.push_back(i);
-      }
+      // Ignore points that are clearly not in the top
+        // Put the new point in the costs and indices vector
+      // if (planner.updatePath(point)) {
+      // Get the angle between the current robot pose and the path start
+      // int j = min((int)planner.pathmsg.poses.size(), 5);
+      // float start_path_vec[3] = {(float)(planner.pathmsg.poses[j].pose.position.x - planner.pathmsg.poses[0].pose.position.x),
+      //                            (float)(planner.pathmsg.poses[j].pose.position.y - planner.pathmsg.poses[0].pose.position.y),
+      //                            (float)(planner.pathmsg.poses[j].pose.position.z - planner.pathmsg.poses[0].pose.position.z)};
+      float start_path_vec[3] = {(float)(point[0] - planner.position[0]),
+                                 (float)(point[1] - planner.position[1]),
+                                 (float)(point[2] - planner.position[2])};
+      float start_path_yaw = std::atan2(start_path_vec[1], start_path_vec[0]); // rad
+      double cost;
+      cost = planner.reach[idx]*(1.0 + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)/180.0)*planner.turnPenalty);
+      // ROS_INFO("Vehicle yaw = %0.2f deg, Path yaw = %0.2f deg, cost = %0.2f, cost_turn = %0.2f", (180.0/M_PI)*vehicle_yaw, (180.0/M_PI)*start_path_yaw, planner.reach[idx], cost - planner.reach[idx]);
+      costs.push_back(cost);
+      indices.push_back(i);
+      // }
     }
   }
 
@@ -1847,12 +1856,19 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
     point[0] = planner.goalViews[indices_sorted[i]].pose.position.x;
     point[1] = planner.goalViews[indices_sorted[i]].pose.position.y;
     point[2] = planner.goalViews[indices_sorted[i]].pose.position.z;
-    for (int j=(i-1); j>=0; j--) {
+    if (addCount == 0) {
+       if (!(planner.updatePath(point))) addView = false;
+    }
+    for (int j=(addCount-1); j>=0; j--) {
       // std::cout << j << std::endl;
-      query[0] = planner.goalViews[indices_sorted[j]].pose.position.x;
-      query[1] = planner.goalViews[indices_sorted[j]].pose.position.y;
-      query[2] = planner.goalViews[indices_sorted[j]].pose.position.z;
-      if (dist3(point, query) < dMin) addView = false; // Don't add goal views within dMin of each other
+      query[0] = planner.goalViews[viewIndices[j]].pose.position.x;
+      query[1] = planner.goalViews[viewIndices[j]].pose.position.y;
+      query[2] = planner.goalViews[viewIndices[j]].pose.position.z;
+      if (dist3(point, query) < dMin) {
+        addView = false; // Don't add goal views within dMin of each other
+      } else if(!planner.updatePath(point)) {
+        addView = false;
+      }
     }
     if (addView) {
       viewIndices[addCount] = indices_sorted[i];
@@ -2590,6 +2606,9 @@ int main(int argc, char **argv)
   n.param("global_planning/agentCount", agentCount, 5);
   n.param("global_planning/goalViewSeparation", goalViewSeparation, (float)5.0);
 
+  // minViewCloudSize
+  n.param("global_planning/minViewCloudSize", planner.minViewCloudSize, 1);
+
   // View pose minimum obstacle distance
   n.param("global_planning/viewPoseObstacleDistance", planner.viewPoseObstacleDistance, (float)0.01);
 
@@ -2669,6 +2688,7 @@ int main(int argc, char **argv)
   int spins = 0;
   int goalViewList[agentCount];
   double goalViewCost[agentCount];
+  int oldFrontierClusterCount = 0;
   for (int i=0; i<agentCount; i++) {
     goalViewList[i] = 0;
     goalViewCost[i] = -1.0;
@@ -2728,6 +2748,8 @@ int main(int argc, char **argv)
             if (dist3(planner.position, _query) < goalArrivalDist) {
               replan = 1;
             }
+          } else if (oldFrontierClusterCount != planner.frontierClusterIndices.size()) {
+            oldFrontierClusterCount = planner.frontierClusterIndices.size();
           }
 
           // Inflate the obstacle map to avoid collisions
@@ -2936,7 +2958,7 @@ int main(int argc, char **argv)
             newPath = planner.pathmsg;
           }
           pub2.publish(newPath);
-          // pub9.publish(plotReach(planner));
+          pub9.publish(plotReach(planner));
           ROS_INFO("Path to goal published!");
           goalFound = 0;
 
@@ -3003,7 +3025,7 @@ int main(int argc, char **argv)
           pub2.publish(planner.pathmsg);
           ROS_INFO("Path to goal published!");
           goalFound = 0;
-          // pub9.publish(plotReach(planner));
+          pub9.publish(plotReach(planner));
 
           // Height debugging
           // ROS_INFO("The robot is %0.2f meters off of the ground.  The goal point is %0.2f meters off of the ground.", planner.heightAGL(planner.position), planner.heightAGL(goal));
