@@ -2676,6 +2676,8 @@ int main(int argc, char **argv)
   ros::Publisher pub8 = n.advertise<std_msgs::String>("task", 5);
   std_msgs::String noPathMsg;
   noPathMsg.data = "Unable to plan";
+  std_msgs::String gotPathMsg;
+  gotPathMsg.data = "Able to plan";
   ros::Publisher pub9 = n.advertise<sensor_msgs::PointCloud2>("reach_grid", 5);
   ros::Publisher pub10 = n.advertise<visualization_msgs::Marker>("goal_points", 5);
   visualization_msgs::Marker goalMsg;
@@ -2950,6 +2952,8 @@ int main(int argc, char **argv)
           if (!(planner.updatePath(goal))) {
             if ((planner.task == "guiCommand") || (planner.task == "Home") || (planner.task == "Report")) pub8.publish(noPathMsg);
             ROS_WARN("Couldn't find feasible path to goal.  Publishing previous path");
+          } else {
+            if ((planner.task == "guiCommand") || (planner.task == "Home") || (planner.task == "Report")) pub8.publish(gotPathMsg);
           }
 
           if (planner.ground) {
@@ -3016,6 +3020,7 @@ int main(int argc, char **argv)
           // Find a path to the goal point
           goalFound = planner.updatePath(goal);
           if (!goalFound && ((planner.task == "Home") || (planner.task == "Report"))) pub8.publish(noPathMsg);
+          if (goalFound && ((planner.task == "Home") || (planner.task == "Report"))) pub8.publish(gotPathMsg);
 
            // Publish path, goal point, and goal point only path
           pub1.publish(frontierGoal);
