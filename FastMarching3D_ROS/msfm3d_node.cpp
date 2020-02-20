@@ -2676,8 +2676,10 @@ int main(int argc, char **argv)
   ros::Publisher pub8 = n.advertise<std_msgs::String>("task", 5);
   std_msgs::String noPathMsg;
   noPathMsg.data = "Unable to plan";
-  std_msgs::String gotPathMsg;
-  gotPathMsg.data = "Able to plan";
+  std_msgs::String noPathHomeMsg;
+  noPathHomeMsg.data = "Unable to plan home";
+  std_msgs::String gotPathHomeMsg;
+  gotPathHomeMsg.data = "Able to plan home";
   ros::Publisher pub9 = n.advertise<sensor_msgs::PointCloud2>("reach_grid", 5);
   ros::Publisher pub10 = n.advertise<visualization_msgs::Marker>("goal_points", 5);
   visualization_msgs::Marker goalMsg;
@@ -2950,10 +2952,11 @@ int main(int argc, char **argv)
 
           // Calculate and publish path
           if (!(planner.updatePath(goal))) {
-            if ((planner.task == "guiCommand") || (planner.task == "Home") || (planner.task == "Report")) pub8.publish(noPathMsg);
+            if (planner.task == "guiCommand") pub8.publish(noPathMsg);
+            if ((planner.task == "Home") || (planner.task == "Report")) pub8.publish(noPathHomeMsg);
             ROS_WARN("Couldn't find feasible path to goal.  Publishing previous path");
           } else {
-            if ((planner.task == "guiCommand") || (planner.task == "Home") || (planner.task == "Report")) pub8.publish(gotPathMsg);
+            if ((planner.task == "Home") || (planner.task == "Report")) pub8.publish(gotPathHomeMsg);
           }
 
           if (planner.ground) {
@@ -3019,8 +3022,8 @@ int main(int argc, char **argv)
 
           // Find a path to the goal point
           goalFound = planner.updatePath(goal);
-          if (!goalFound && ((planner.task == "Home") || (planner.task == "Report"))) pub8.publish(noPathMsg);
-          if (goalFound && ((planner.task == "Home") || (planner.task == "Report"))) pub8.publish(gotPathMsg);
+          if (!goalFound && ((planner.task == "Home") || (planner.task == "Report"))) pub8.publish(noPathHomeMsg);
+          if (goalFound && ((planner.task == "Home") || (planner.task == "Report"))) pub8.publish(gotPathHomeMsg);
 
            // Publish path, goal point, and goal point only path
           pub1.publish(frontierGoal);
