@@ -3015,6 +3015,7 @@ int main(int argc, char **argv)
 
           // Find a path to the goal point
           goalFound = planner.updatePath(goal);
+          if (!goalFound && ((planner.task == "Home") || (planner.task == "Report"))) pub8.publish(noPathMsg);
 
            // Publish path, goal point, and goal point only path
           pub1.publish(frontierGoal);
