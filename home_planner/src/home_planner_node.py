@@ -76,7 +76,7 @@ class HomePlanner:
 		self.tf_listener = tf.TransformListener()
 
 	def start(self):
-		rate = rospy.Rate(2.0) # 10Hz
+		rate = rospy.Rate(1.0) # 10Hz
 		while not rospy.is_shutdown():
 			rate.sleep()
 			self.updatePath()

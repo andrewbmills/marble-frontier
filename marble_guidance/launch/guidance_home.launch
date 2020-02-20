@@ -14,12 +14,23 @@
     <remap from="goal_pose" to="frontier_goal_pose"/>
     <remap from="cmd_vel" to="cmd_vel_guidance"/>
     <remap from="odometry" to="tf_odom"/>
+    <remap from="lookahead_point" to="home_planner/lookahead_point"/>
+    <remap from="lookahead_vec" to="home_planner/lookahead_vec"/>
   </node>
 
   <node pkg="home_planner" type="home_planner_node.py" name="home_planner" output="screen">
     <param name="frame_path" type="string" value="map" />
     <param name="frame_node_list" type="string" value="map" />
-    <remap from="path" to="home_path" />
+    <remap from="path" to="home_planner/path" />
     <!-- <remap from="pose_graph" to="pose_graph"/> -->
+  </node>
+
+  <node pkg="home_planner" type="home_planner_switch.py" name="home_planner_switch" output="screen">
+    <remap from="path1" to="planned_path"/>
+    <remap from="path2" to="home_path"/>
+    <remap from="point1" to="lookahead_point"/>
+    <remap from="point2" to="home_planner/lookahead_point"/>
+    <remap from="planned_path" to="planned_path_switch"/>
+    <remap from="lookahead_point" to="lookahead_point_switch"/>
   </node>
 </launch>
