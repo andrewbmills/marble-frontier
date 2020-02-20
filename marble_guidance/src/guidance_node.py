@@ -90,10 +90,10 @@ class guidance_controller:
 			print("Path is only one point long, heading to goal point.")
 		else:
 			if (self.vehicle_type == 'ground'):
-				p_L2, v_L2 = guidance.find_Lookahead_Discrete_2D(path[0:2,:], p_robot[0:2], self.speed*self.Tstar, 0, 0)
+				p_L2, v_L2 = guidance.find_Lookahead_Discrete_2D(path[0:2,:], p_robot[0:2], self.speed*self.Tstar, 0, 0, reverse=self.reverse)
 
 				# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
-				if (np.linalg.norm(p_robot - goal) <= self.speed*self.Tstar):
+				if ((np.linalg.norm(p_robot - goal) <= self.speed*self.Tstar) and (not self.reverse)):
 					p_L2 = goal
 
 				# print("The L2 point is: [%0.2f, %0.2f]" % (p_L2[0], p_L2[1]))
@@ -103,9 +103,9 @@ class guidance_controller:
 				self.L2.z = p_robot[2]
 				L2_vec = p_L2[0:2] - p_robot[0:2]
 			else:
-				p_L2, v_L2 = guidance.find_Lookahead_Discrete_3D(path, p_robot, self.speed*self.Tstar, 0, 0)
+				p_L2, v_L2 = guidance.find_Lookahead_Discrete_3D(path, p_robot, self.speed*self.Tstar, 0, 0, reverse=self.reverse)
 				# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
-				if (np.linalg.norm(p_robot - goal) <= self.speed*self.Tstar):
+				if ((np.linalg.norm(p_robot - goal) <= self.speed*self.Tstar) and (not self.reverse)):
 					p_L2 = goal
 
 				# Update class members
@@ -194,6 +194,8 @@ class guidance_controller:
 		self.fixed_frame = rospy.get_param('guidance_controller/fixed_frame', 'world')
 		self.speed = rospy.get_param('guidance_controller/speed', 1.0) # m/s
 		self.Tstar = rospy.get_param('guidance_controller/Tstar', 1.0) # s
+		self.reverse = rospy.get_param('guidance_controller/reverse', 0)
+		print("Reverse = %d" % self.reverse)
 
 		# Subscribers
 		rospy.Subscriber('odometry', Odometry, self.getPosition)

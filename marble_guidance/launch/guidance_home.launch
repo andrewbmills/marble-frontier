@@ -1,22 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Example launch file for a bezier path fitting and following guidance controller
+  Example launch file for a path following guidance controller
 -->
 <launch>
 
-  <!-- <node pkg="marble_guidance" type="guidance_node.py" name="guidance_controller">
-    <param name="vehicle_type" type="string" value="ground" />
-    <param name="fixed_frame" type="string" value="world" />
+  <node pkg="marble_guidance" type="guidance_node.py" name="guidance_controller" output="screen">
+    <param name="vehicle_type" type="string" value="air" />
+    <param name="fixed_frame" type="string" value="map" />
     <param name="speed" value="1.0" />
     <param name="Tstar" value="1.6" />
+    <param name="reverse" type="bool" value="true" />
     <remap from="path" to="home_path"/>
     <remap from="goal_pose" to="frontier_goal_pose"/>
     <remap from="cmd_vel" to="cmd_vel_guidance"/>
-  </node> -->
+    <remap from="odometry" to="tf_odom"/>
+  </node>
 
-  <node pkg="home_planner" type="home_planner.py" name="home_planner">
-    <param name="frame_path" type="string" value="world" />
+  <node pkg="home_planner" type="home_planner_node.py" name="home_planner" output="screen">
+    <param name="frame_path" type="string" value="map" />
     <param name="frame_node_list" type="string" value="map" />
     <remap from="path" to="home_path" />
+    <!-- <remap from="pose_graph" to="pose_graph"/> -->
   </node>
 </launch>

@@ -20,4 +20,7 @@
   <depend>visualization_msgs</depend>
   <depend>cartographer_ros</depend>
   <depend>cartographer_ros_msgs</depend>
+  <build_depend>message_generation</build_depend>
+  <exec_depend>message_runtime</exec_depend>
+  <depend>tf</depend>
 </package>

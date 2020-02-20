@@ -3,16 +3,29 @@ project(home_planner)
 
 find_package(catkin REQUIRED COMPONENTS
   rospy
-  cartographer_ros
-  cartographer_ros_msgs
+  message_generation
+  std_msgs
+  geometry_msgs
+  nav_msgs
+  lcd_pkg
+  tf
 )
-find_package(cartographer)
+
+add_message_files(
+   FILES
+   PoseGraph.msg
+)
+
+generate_messages(
+   DEPENDENCIES
+   geometry_msgs
+   roscpp
+)
 
 catkin_package(
   CATKIN_DEPENDS
   rospy
-  cartographer_ros
-  cartographer_ros_msgs
+  message_runtime
 )
 
 include_directories(

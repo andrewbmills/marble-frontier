@@ -61,7 +61,7 @@ def trajectory_Shaping_Guidance(p_L2, p_AC, v_AC, v_path):
             2*angle_Diff(alpha_t, theta))*math.pi/180)
     return a_cmd
 
-def find_Lookahead_Discrete_2D(path, p_AC, R, gamma_max, Mstar):
+def find_Lookahead_Discrete_2D(path, p_AC, R, gamma_max, Mstar, reverse=False):
     # Determine the last path index
     i_max = path.shape
     i_max = i_max[1] - 1
@@ -99,7 +99,10 @@ def find_Lookahead_Discrete_2D(path, p_AC, R, gamma_max, Mstar):
             t_hat2 = (-b - math.sqrt(discriminant)) / (2*a)
 
             # Take larger of two intersections, furthest point down the path
-            t_hat = max(t_hat1, t_hat2)
+            if (reverse):
+                t_hat = min(t_hat1, t_hat2)
+            else:
+                t_hat = max(t_hat1, t_hat2)
         # If p1 is the closest point to p_AC, store it
         if (c < c_closest):
             c_closest = c
@@ -123,7 +126,7 @@ def find_Lookahead_Discrete_2D(path, p_AC, R, gamma_max, Mstar):
     
     return p_L2, v_L2
 
-def find_Lookahead_Discrete_3D(path, p_AC, R, gamma_max, Mstar):
+def find_Lookahead_Discrete_3D(path, p_AC, R, gamma_max, Mstar, reverse=False):
     i = 0
     i_closest = 0
     c_closest = 100.0*R
@@ -160,7 +163,10 @@ def find_Lookahead_Discrete_3D(path, p_AC, R, gamma_max, Mstar):
             t_hat2 = (-b - math.sqrt(discriminant)) / (2*a)
 
             # Take larger of two intersections, furthest point down the path
-            t_hat = max(t_hat1, t_hat2)
+            if (reverse):
+                t_hat = min(t_hat1, t_hat2)
+            else:
+                t_hat = max(t_hat1, t_hat2)
 
         # If p1 is the closest point to p_AC, store it
         if (c <= c_closest):
@@ -169,7 +175,6 @@ def find_Lookahead_Discrete_3D(path, p_AC, R, gamma_max, Mstar):
 
         # Next iteration
         i = i + 1
-
     # Check for intersection of circle around p_AC with path
     if intersection:
         # Calculate lookahead point and its local tangent vector
