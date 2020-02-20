@@ -48,17 +48,17 @@
     <!-- Number of ticks before replanning -->
     <param name="replan_ticks" value="1" />
     <!-- Number of ticks before sampling new goal poses -->
-    <param name="goal_ticks" value="10" />
+    <param name="goal_ticks" value="5" />
     <!-- Replan trigger method -->
     <!-- <param name="replanTrigger" type="string" value="frontier"/> -->
     <param name="replanTrigger" type="string" value="distance"/>
 
     <!-- Location of the environment entrance. (Default is [0.0, 0.0, 0.0])  The robot will not explore area within entrance_radius meters of this point -->
-    <param name="entrance_x" value="0.0" />
+    <param name="entrance_x" value="-3.0" />
     <param name="entrance_y" value="0.0" />
     <param name="entrance_z" value="1.5" />
     <!-- <param name="entrance_z" value="2.0" /> -->
-    <param name="entrance_radius" value="0.0" />
+    <param name="entrance_radius" value="8.0" />
 
     <!-- Camera viewing parameters, angles in degrees, ranges in meters -->
     <param name="cameraVerticalFoV" value="25.0"/>
@@ -82,13 +82,13 @@
     <param name="inflateWidth" value="1.4"/>
 
     <!-- Vehicle Fence Volume Limits -->
-    <param name="fenceOn" value="true"/>
-    <param name="fence_xmin" value="1.0"/>
-    <param name="fence_xmax" value="1000.0"/>
-    <param name="fence_ymin" value="-1000.0"/>
-    <param name="fence_ymax" value="1000.0"/>
-    <param name="fence_zmin" value="-50.0"/>
-    <param name="fence_zmax" value="50.0"/>
+    <param name="fenceOn" value="false"/>
+    <param name="fence_xmin" value="-3.0"/>
+    <param name="fence_xmax" value="2000.0"/>
+    <param name="fence_ymin" value="-2000.0"/>
+    <param name="fence_ymax" value="2000.0"/>
+    <param name="fence_zmin" value="-200.0"/>
+    <param name="fence_zmax" value="200.0"/>
 
     <!-- Vehicle Volume Extents -->
     <param name="vehicleVolumeOn" value="true"/>
