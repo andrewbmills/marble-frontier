@@ -10,23 +10,26 @@ from geometry_msgs.msg import *
 
 class LinkStateToOdometry:
 	def getTransform(self): # Position subscriber callback function
-		(trans,rot) = self.tf_listener.lookupTransform(self.Odometry.header.frame_id, self.Odometry.child_frame_id, rospy.Time(0))
-		self.Odometry.pose.pose.position.x = trans[0]
-		self.Odometry.pose.pose.position.y = trans[1]
-		self.Odometry.pose.pose.position.z = trans[2]
-		self.Odometry.pose.pose.orientation.x = rot[0]
-		self.Odometry.pose.pose.orientation.y = rot[1]
-		self.Odometry.pose.pose.orientation.z = rot[2]
-		self.Odometry.pose.pose.orientation.w = rot[3]
+		try:
+			(trans,rot) = self.tf_listener.lookupTransform(self.Odometry.header.frame_id, self.Odometry.child_frame_id, rospy.Time(0))
+			self.Odometry.pose.pose.position.x = trans[0]
+			self.Odometry.pose.pose.position.y = trans[1]
+			self.Odometry.pose.pose.position.z = trans[2]
+			self.Odometry.pose.pose.orientation.x = rot[0]
+			self.Odometry.pose.pose.orientation.y = rot[1]
+			self.Odometry.pose.pose.orientation.z = rot[2]
+			self.Odometry.pose.pose.orientation.w = rot[3]
 
-		# Add time stamp
-		self.Odometry.header.stamp = rospy.Time.now()
+			# Add time stamp
+			self.Odometry.header.stamp = rospy.Time.now()
 
-		self.Odometry.pose.pose.position.z = self.Odometry.pose.pose.position.z
+			# self.Odometry.pose.pose.position.z = self.Odometry.pose.pose.position.z
 
-		# Assign pose topic values
-		self.Pose.pose.pose.position = self.Odometry.pose.pose.position
-		self.Pose.pose.pose.orientation = self.Odometry.pose.pose.orientation
+			# Assign pose topic values
+			self.Pose.pose.pose.position = self.Odometry.pose.pose.position
+			self.Pose.pose.pose.orientation = self.Odometry.pose.pose.orientation
+		except:
+			pass
 		return
 
 	def start(self):

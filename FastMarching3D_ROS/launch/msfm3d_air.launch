@@ -2,7 +2,7 @@
 <launch>
   <arg name="ground_vehicle" default="true" />
 
-  <node pkg="msfm3d" type="msfm3d" name="global_planning" output="screen">
+  <node pkg="msfm3d" type="msfm3d" name="global_planning">
     <!-- Inputs (Subscribed Topic Names) -->
 
     <remap from="octomap_binary" to="octomap_binary_crap"/>
@@ -40,11 +40,11 @@
 
     <!-- Vehicle speed in m/s and turnRate in deg/s -->
     <param name="speed" value="1.0"/>
-    <param name="turnRate" value="0.05"/>
+    <param name="turnRate" value="0.1"/>
 
     <!-- Frontier Clustering parameters (in voxels) -->
     <param name="cluster_radius" value="0.30" />
-    <param name="min_cluster_size" value="150" />
+    <param name="min_cluster_size" value="100" />
 
     <!-- Number of ticks before replanning -->
     <param name="replan_ticks" value="1" />
