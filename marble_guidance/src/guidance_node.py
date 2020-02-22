@@ -3,6 +3,7 @@ import sys
 import numpy as np
 import guidance
 import rospy
+import math
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import Point
 from geometry_msgs.msg import Quaternion
@@ -40,6 +41,9 @@ class guidance_controller:
 			newpath[0,i] = data.poses[i].pose.position.x
 			newpath[1,i] = data.poses[i].pose.position.y
 			newpath[2,i] = data.poses[i].pose.position.z
+			if (math.isnan(newpath[0,i]) or math.isnan(newpath[1,i]) or math.isnan(newpath[2,i])):
+				print("point [%0.1f, %0.1f, %0.1f], entry %d in path of length %d, contained NaNs" % (newpath[0,i], newpath[1,i], newpath[2,i], i, len(data.poses)))
+				return
 		self.path = newpath
 		print('path received of size: %d' % self.path.shape[1])
 		self.pathUpdated = 1
@@ -87,13 +91,14 @@ class guidance_controller:
 		if (self.path.shape[1] < 2):
 			p_L2 = goal
 			v_L2 = (goal - p_robot)/np.linalg.norm(goal - p_robot)
+			L2_vec = p_L2[0:2] - p_robot[0:2]
 			print("Path is only one point long, heading to goal point.")
 		else:
 			if (self.vehicle_type == 'ground'):
 				p_L2, v_L2 = guidance.find_Lookahead_Discrete_2D(path[0:2,:], p_robot[0:2], self.speed*self.Tstar, 0, 0, reverse=self.reverse)
 
 				# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
-				if ((np.linalg.norm(p_robot - goal) <= self.speed*self.Tstar) and (not self.reverse)):
+				if (np.linalg.norm(p_robot[0:2] - goal[0:2]) <= 1.02*self.speed*self.Tstar):
 					p_L2 = goal
 
 				# print("The L2 point is: [%0.2f, %0.2f]" % (p_L2[0], p_L2[1]))
@@ -105,7 +110,7 @@ class guidance_controller:
 			else:
 				p_L2, v_L2 = guidance.find_Lookahead_Discrete_3D(path, p_robot, self.speed*self.Tstar, 0, 0, reverse=self.reverse)
 				# If p_L2 is the start of the path, check if the goal point is within an L2 radius of the vehicle, if so, go to the goal point
-				if ((np.linalg.norm(p_robot - goal) <= self.speed*self.Tstar) and (not self.reverse)):
+				if (np.linalg.norm(p_robot - goal) <= 1.02*self.speed*self.Tstar):
 					p_L2 = goal
 
 				# Update class members
