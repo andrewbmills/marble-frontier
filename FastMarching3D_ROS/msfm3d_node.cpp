@@ -1448,7 +1448,7 @@ bool Msfm3d::updatePath(const float goal[3])
   	// Find the current point's grid indices and it's 6 neighbor voxel indices.
     // ROS_INFO("Current point is (%0.1f, %0.1f, %0.1f)", point[0], point[1], point[2]);
   	idx = xyz_index3(point);
-    
+
 
     if ((idx < 0) || (idx >= esdf.size[0]*esdf.size[1]*esdf.size[2])) break;
     float neighbor[3] = {0.0, 0.0, 0.0};
@@ -2733,7 +2733,7 @@ int main(int argc, char **argv)
         ROS_INFO("ESDF or Occupancy at Position: %f", planner.esdf.data[i]);
         // Find frontier cells and add them to planner.frontier for output to file.
         // Publish frontiers as MarkerArray
-        if (!(planner.artifactDetected) && updateFrontier(planner)) {
+        if (updateFrontier(planner)) {
           planner.updateFrontierMsg();
           pub3.publish(planner.frontiermsg);
           ROS_INFO("Frontier published!");
