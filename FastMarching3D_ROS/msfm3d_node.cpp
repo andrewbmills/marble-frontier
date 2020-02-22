@@ -1398,7 +1398,7 @@ bool Msfm3d::updatePath(const float goal[3])
   float query[3]; // intermediate x,y,z coordinates for another operation
   float grad[3]; // gradient at the current point
   float grad_norm = 1.0; // norm of the gradient vector
-  float dist_robot2path = 10.0*voxel_size; // distance of the robot to the path
+  float dist_robot2path = dist3(position, goal); // distance of the robot to the path
   float position2D[2];
   float point2D[2];
   float reachValue;
@@ -1442,12 +1442,14 @@ bool Msfm3d::updatePath(const float goal[3])
   float maxReach = reach[goal_idx] + 2.0;
   // ROS_INFO("Goal is (%0.1f, %0.1f, %0.1f), robot is at (%0.1f, %0.1f, %0.1f)", goal[0], goal[1], goal[2], position[0], position[1], position[2]);
   // Run loop until the path is within a voxel of the robot.
-  while ((dist_robot2path > 2.0*voxel_size) && (path.size() < 100000) && grad_norm >= 0.001) {
+  while ((dist_robot2path > 3.0*voxel_size) && (path.size() < 100000) && grad_norm >= 0.001) {
     // Find the 26 neighbor indices
 
   	// Find the current point's grid indices and it's 6 neighbor voxel indices.
     // ROS_INFO("Current point is (%0.1f, %0.1f, %0.1f)", point[0], point[1], point[2]);
   	idx = xyz_index3(point);
+    
+
     if ((idx < 0) || (idx >= esdf.size[0]*esdf.size[1]*esdf.size[2])) break;
     float neighbor[3] = {0.0, 0.0, 0.0};
     for (int i=0; i<3; i++) grad[i] = 0.0;
@@ -1517,8 +1519,17 @@ bool Msfm3d::updatePath(const float goal[3])
     // for (int i=0; i<3; i++) grad[i] = grad[i]/grad_norm;
     for (int i=0; i<3; i++) {
       point[i] = point[i] + step*grad[i];
+    }
+
+    // Check for NaNs and Infs
+    if (std::isnan(point[0]) || std::isnan(point[1]) || std::isnan(point[2])) return false;
+    if (std::isinf(point[0]) || std::isinf(point[1]) || std::isinf(point[2])) return false;
+
+    for (int i=0; i<3; i++) {
       path.push_back(point[i]);
     }
+
+
 
     // Steps should be at the voxel level only
     // int idx_last = idx;
@@ -1547,7 +1558,7 @@ bool Msfm3d::updatePath(const float goal[3])
   }
 
   // Check if the path made it back to the vehicle
-  if (dist_robot2path > 6.0*voxel_size) {
+  if (dist_robot2path > 3.0*voxel_size) {
     ROS_INFO("Path did not make it back to the robot.  Select a different goal point.");
     return false;
   }
