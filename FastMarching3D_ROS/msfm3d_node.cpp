@@ -43,6 +43,7 @@
 // Custom libraries
 #include "msfm3d.c"
 #include "bresenham3d.cpp"
+#include "fastmarching_astar.cpp"
 
 template <typename T>
 std::vector<size_t> sort_indexes(const std::vector<T> &v) {
@@ -216,6 +217,8 @@ class Msfm3d
     double * reach; // reachability grid (output from reach())
     sensor_msgs::PointCloud2 PC2msg;
     nav_msgs::Path pathmsg;
+    nav_msgs::Path pathmsg_astar;
+    std::string path_mode = "astar";
     // visualization_msgs::MarkerArray frontiermsg;
     octomap::OcTree* mytree; // OcTree object for holding Octomap
 
@@ -1432,7 +1435,6 @@ bool Msfm3d::updatePath(const float goal[3])
   nav_msgs::Path newpathmsg;
   geometry_msgs::PoseStamped pose;
   newpathmsg.header.frame_id = frame;
-
   // Clear the path vector to prep for adding new elements.
   for (int i=0; i<3; i++){
     point[i] = goal[i];
@@ -1442,6 +1444,39 @@ bool Msfm3d::updatePath(const float goal[3])
   float maxReach = reach[goal_idx] + 2.0;
   // ROS_INFO("Goal is (%0.1f, %0.1f, %0.1f), robot is at (%0.1f, %0.1f, %0.1f)", goal[0], goal[1], goal[2], position[0], position[1], position[2]);
   // Run loop until the path is within a voxel of the robot.
+
+  if (path_mode == "astar") {
+    // Use the A* wrapper for fast marching and micropather library to compute path
+    Map astar_map;
+    // Copy over planner map params
+    for (int i=0; i<3; i++) {
+      astar_map.size[i] = esdf.size[i];
+      astar_map.map_min[i] = esdf.min[i];
+    }
+    astar_map.reach = reach;
+    astar_map.esdf = esdf.data;
+    astar_map.voxel_size = voxel_size;
+    int robot_id = xyz_index3(position);
+    astar_map.goal_id = robot_id;
+    // Find the path
+    nav_msgs::Path new_path_msg;
+    float total_cost = 0.0;
+    int result = astar_map.astar->Solve(reinterpret_cast<void*>(goal_idx), reinterpret_cast<void*>(robot_id), &(astar_map.path), &total_cost);
+    ROS_INFO("A* planning result=%d with path of size: %d and cost: %0.1f", result, astar_map.path.size(), total_cost);
+    for (int i=0; i<astar_map.path.size(); i++)
+    {
+      geometry_msgs::PoseStamped new_pose;
+      float path_point[3];
+      index3_xyz(*((int*)(&(astar_map.path[i]))), path_point);
+      new_pose.pose.position.x = path_point[0];
+      new_pose.pose.position.y = path_point[1];
+      new_pose.pose.position.z = path_point[2];
+      new_path_msg.poses.push_back(new_pose);
+    }
+    new_path_msg.header.frame_id = frame;
+    new_path_msg.header.stamp = ros::Time();
+    pathmsg_astar = new_path_msg;
+  }
   while ((dist_robot2path > 3.0*voxel_size) && (path.size() < 100000) && grad_norm >= 0.001) {
     // Find the 26 neighbor indices
 
@@ -2694,6 +2729,7 @@ int main(int argc, char **argv)
   ros::Publisher pub9 = n.advertise<sensor_msgs::PointCloud2>("reach_grid", 5);
   ros::Publisher pub10 = n.advertise<visualization_msgs::Marker>("goal_points", 5);
   visualization_msgs::Marker goalMsg;
+  ros::Publisher pub11 = n.advertise<nav_msgs::Path>("planned_path_astar", 5);
 
   int i = 0;
   bool goalFound = 0;
@@ -2976,6 +3012,7 @@ int main(int argc, char **argv)
             newPath = planner.pathmsg;
           }
           pub2.publish(newPath);
+          pub11.publish(planner.pathmsg_astar);
           pub9.publish(plotReach(planner));
           ROS_INFO("Path to goal published!");
           goalFound = 0;
@@ -3043,6 +3080,7 @@ int main(int argc, char **argv)
 
           // Output and publish path
           pub2.publish(planner.pathmsg);
+          pub11.publish(planner.pathmsg_astar);
           ROS_INFO("Path to goal published!");
           goalFound = 0;
           pub9.publish(plotReach(planner));

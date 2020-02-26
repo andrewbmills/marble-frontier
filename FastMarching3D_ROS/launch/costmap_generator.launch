@@ -14,7 +14,7 @@
 
     <remap from="esdf" to="edt"/>
     <!-- <remap from="esdf" to="voxblox_node/esdf_pointcloud"/> -->
-    <remap from="octomap_binary" to="merged_map"/>
+    <!-- <remap from="octomap_binary" to="merged_map"/> -->
     <!-- <remap from="traversability_map" to="traversability_map"/> -->
   </node>
 
@@ -32,7 +32,7 @@
     </rosparam>
   </node>
 
-  <!-- <node pkg="nodelet" type="nodelet" name="passthrough_reach" args="load pcl/PassThrough pcl_manager_costmap" output="screen">
+  <node pkg="nodelet" type="nodelet" name="passthrough_reach" args="load pcl/PassThrough pcl_manager_costmap" output="screen">
     <remap from="~input" to="reach_grid" />
     <remap from="~output" to="reach_grid_filtered" />
     <rosparam>
@@ -41,5 +41,5 @@
       filter_limit_max: -0.01
       filter_limit_negative: False
     </rosparam>
-  </node> -->
+  </node>
 </launch>
