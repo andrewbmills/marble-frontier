@@ -61,7 +61,7 @@
     <param name="entrance_x" value="-2.0" />
     <param name="entrance_y" value="0.0" />
     <param name="entrance_z" value="0.6" />
-    <param name="entrance_radius" value="6.0" />
+    <param name="entrance_radius" value="7.0" />
 
     <!-- Camera viewing parameters, angles in degrees, ranges in meters -->
     <param name="cameraVerticalFoV" value="40.0"/>

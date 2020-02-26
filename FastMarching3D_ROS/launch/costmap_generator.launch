@@ -26,7 +26,7 @@
     <remap from="~output" to="cost_map_filtered" />
     <rosparam>
       filter_field_name: intensity
-      filter_limit_min: 0.03
+      filter_limit_min: 0.21
       filter_limit_max: 100.0
       filter_limit_negative: False
     </rosparam>
@@ -37,8 +37,8 @@
     <remap from="~output" to="reach_grid_filtered" />
     <rosparam>
       filter_field_name: z
-      filter_limit_min: -0.19
-      filter_limit_max: -0.01
+      filter_limit_min: 0.41
+      filter_limit_max: 0.59
       filter_limit_negative: False
     </rosparam>
   </node> -->

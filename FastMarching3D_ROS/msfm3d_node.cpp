@@ -1442,14 +1442,12 @@ bool Msfm3d::updatePath(const float goal[3])
   float maxReach = reach[goal_idx] + 2.0;
   // ROS_INFO("Goal is (%0.1f, %0.1f, %0.1f), robot is at (%0.1f, %0.1f, %0.1f)", goal[0], goal[1], goal[2], position[0], position[1], position[2]);
   // Run loop until the path is within a voxel of the robot.
-  while ((dist_robot2path > 3.0*voxel_size) && (path.size() < 100000) && grad_norm >= 0.001) {
+  while ((dist_robot2path > 3.0*voxel_size) && (path.size() < 9000) && grad_norm >= 0.001) {
     // Find the 26 neighbor indices
 
   	// Find the current point's grid indices and it's 6 neighbor voxel indices.
     // ROS_INFO("Current point is (%0.1f, %0.1f, %0.1f)", point[0], point[1], point[2]);
   	idx = xyz_index3(point);
-
-
     if ((idx < 0) || (idx >= esdf.size[0]*esdf.size[1]*esdf.size[2])) break;
     float neighbor[3] = {0.0, 0.0, 0.0};
     for (int i=0; i<3; i++) grad[i] = 0.0;
@@ -1559,7 +1557,7 @@ bool Msfm3d::updatePath(const float goal[3])
 
   // Check if the path made it back to the vehicle
   if (dist_robot2path > 3.0*voxel_size) {
-    ROS_INFO("Path did not make it back to the robot.  Select a different goal point.");
+    // ROS_INFO("Path did not make it back to the robot.  Select a different goal point.");
     return false;
   }
 
@@ -1791,6 +1789,7 @@ void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5])
 
 void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int N, const float dMin, const float dAgentMin)
 {
+  double tStart = clock();
   // findFrontier scans through the environment arrays and returns the N closest frontier locations in reachability distance that are at least dMin apart.
   float point[3];
   float query[3];
@@ -1850,25 +1849,27 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
   // Sort costs and indices vectors
   std::vector<double> costs_sorted;
   std::vector<int> indices_sorted;
-  ROS_INFO("Goal View Costs:");
-  std::cout << "[";
+  // ROS_INFO("Goal View Costs:");
+  // std::cout << "[";
   for (auto i:sort_indexes(costs)) {
     costs_sorted.push_back(costs[i]);
     indices_sorted.push_back(indices[i]);
-    std::cout << costs[i] << ", ";
+    // std::cout << costs[i] << ", ";
   }
-  std::cout << "]" << std::endl;
+  // std::cout << "]" << std::endl;
 
   // Return the N closest goal views that are at least dMin distance from those above them.
   bool addView = true;
   int addCount = 0;
+  int plannerCallCount = 0;
   ROS_INFO("Closest Goal Views:");
   for (int i=0; i<costs_sorted.size(); i++) {
     point[0] = planner.goalViews[indices_sorted[i]].pose.position.x;
     point[1] = planner.goalViews[indices_sorted[i]].pose.position.y;
     point[2] = planner.goalViews[indices_sorted[i]].pose.position.z;
     if (addCount == 0) {
-       if (!(planner.updatePath(point))) addView = false;
+      plannerCallCount++;
+      if (!(planner.updatePath(point))) addView = false;
     }
     for (int j=(addCount-1); j>=0; j--) {
       // std::cout << j << std::endl;
@@ -1877,8 +1878,11 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
       query[2] = planner.goalViews[viewIndices[j]].pose.position.z;
       if (dist3(point, query) < dMin) {
         addView = false; // Don't add goal views within dMin of each other
-      } else if(!planner.updatePath(point)) {
-        addView = false;
+      } else {
+        plannerCallCount++;
+        if(!planner.updatePath(point)) {
+          addView = false;
+        }
       }
     }
     if (addView) {
@@ -1887,9 +1891,13 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
       ROS_INFO("Cost: %0.2f, @ (%0.2fm, %0.2fm, %0.2fm)", cost[addCount], point[0], point[1], point[2]);
       addCount++;
     }
-    if (addCount == N) return; // Stop if the N closest view poses are found
+    if (addCount == N) {
+      ROS_INFO("%d Paths calculated in optimization.  Total optimization took %0.3f seconds.", plannerCallCount, (double)(clock() - tStart)/CLOCKS_PER_SEC);
+      return; // Stop if the N closest view poses are found
+    }
     addView = true;
   }
+  ROS_INFO("%d Paths calculated in optimization.  Total optimization took %0.3f seconds.", plannerCallCount, (double)(clock() - tStart)/CLOCKS_PER_SEC);
 }
 
 void infoGoalView(Msfm3d& planner, int *viewIndices, double *utility, const int nAgents, const float dMin, const float dAgentMin)
@@ -2101,8 +2109,8 @@ void view2MarkerMsg(const View cameraView, const SensorFoV camera, visualization
   marker.points.push_back(BL);
 }
 
-void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const int nFront, bool reachOrigin) {
-
+void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const int nFront, bool reachOrigin, const double timeOut = 1.50) {
+    double tStart = clock();
     /* The input variables */
     double *F;
     int SourcePoints[3];
@@ -2360,6 +2368,10 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
         // Exit when nFront frontiers have been reached.
         // TO-DO Change criteria to stop when the best num_Neighbor poses have been reached.
         if (frontCount >= nFront && !reachOrigin) break;
+        if (((double)(clock() - tStart)/CLOCKS_PER_SEC) >= timeOut) {
+          ROS_INFO("Reachbility calculation timed out after %0.2f seconds.", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+          break;
+        }
     }
     /* Free memory */
     /* Destroy parameter list */
@@ -2837,7 +2849,9 @@ int main(int argc, char **argv)
             if (goalViewCost[0] < 0.0) {
               tStart = clock();
               ROS_INFO("Reachability matrix calculating to %d closest frontier points...", (int)planner.frontierCloud->points.size());
+              tStart = clock();
               reach(planner, 0, 0, (int)planner.frontierCloud->points.size(), false);
+              ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
               if (goalFunction == "information") {
                 infoGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation, minGoalDist);
               } else {
