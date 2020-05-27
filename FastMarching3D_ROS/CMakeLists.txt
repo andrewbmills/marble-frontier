@@ -61,3 +61,8 @@ add_executable(costmap_generator src/costmap_generator.cpp)
 target_link_libraries(costmap_generator
   ${catkin_LIBRARIES}
 )
+
+add_executable(VoxelHashingTest src/VoxelHashingTest.cpp)
+target_link_libraries(VoxelHashingTest
+  ${catkin_LIBRARIES}
+)

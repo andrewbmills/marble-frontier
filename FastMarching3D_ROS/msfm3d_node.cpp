@@ -44,6 +44,9 @@
 #include "msfm3d.c"
 #include "bresenham3d.cpp"
 
+// Sleep library
+#include <unistd.h>
+
 template <typename T>
 std::vector<size_t> sort_indexes(const std::vector<T> &v) {
 
@@ -141,6 +144,16 @@ struct View {
   Pose pose;
   pcl::PointCloud<pcl::PointXYZ> cloud;
   int index = -1;
+};
+struct Node
+{
+  int id = -1;
+  int parent = -1;
+  float g = 1e10;
+  float h;
+  float f = 1e10;
+  std::vector<int> neighbors;
+  float position[3];
 };
 
 //Msfm3d class declaration
@@ -278,6 +291,8 @@ class Msfm3d
     void index3_xyz(const int index, float point[3]);
     void getEuler(); // Updates euler array given the current quaternion values
     bool updatePath(const float goal[3]); // Updates the path vector from the goal frontier point to the robot location
+    bool updatePathOneVoxel(const float goal[3]);
+    std::vector<int> getNeighbors(int id);
     void updateFrontierMsg(); // Updates the frontiermsg MarkerArray with the frontier matrix for publishing
     bool clusterFrontier(const bool print2File); // Clusters the frontier pointCloud with euclidean distance within a radius
     bool normalFrontierFilter(); // Filters frontiers based on they're local normal value
@@ -1390,7 +1405,128 @@ int Msfm3d::xyz_index3(const float point[3])
   return mindex3(ind[0], ind[1], ind[2], esdf.size[0], esdf.size[1]);
 }
 
+std::vector<int> Msfm3d::getNeighbors(int id)
+{
+  std::vector<int> neighbors;
+  float query[3], neighbor_position[3];
+  index3_xyz(id, query);
+  for (int i=0; i<3; i++) {
+    neighbor_position[0] = query[0] + (float)(i-1)*voxel_size;
+    for (int j=0; j<3; j++) {
+      neighbor_position[1] = query[1] + (float)(j-1)*voxel_size;
+      for (int k=0; k<3; k++) {
+        neighbor_position[2] = query[2] + (float)(k-1)*voxel_size;
+        int neighbor_id = xyz_index3(neighbor_position);
+        if (neighbor_id == id) continue;
+        if ((neighbor_id >= 0) && (neighbor_id <= esdf.size[0]*esdf.size[1]*esdf.size[2])) {
+          if ((reach[neighbor_id] > 0.01) && (reach[neighbor_id] <= 1e8)) {
+            if (esdf.data[neighbor_id] >= 1.5*voxel_size) neighbors.push_back(neighbor_id);
+          }
+        }
+      }
+    }
+  }
+  return neighbors;
+}
+
+std::vector<float> reconstructPath(std::vector<Node> visited, Node end) {
+  std::vector<float> path;
+  Node current = end;
+  for (int i=0; i<3; i++) path.push_back(current.position[i]);
+  while (current.parent != -1) {
+    current = visited[current.parent];
+    for (int i=0; i<3; i++) path.push_back(current.position[i]);
+  }
+  return path;
+}
+
 bool Msfm3d::updatePath(const float goal[3])
+{
+  int npixels = esdf.size[0]*esdf.size[1]*esdf.size[2]; // size of the reachability array, index in reachability array of the current path voxel.
+  int goal_idx = xyz_index3(goal);
+  if (goal_idx < 0 || goal_idx > npixels){
+    ROS_INFO("Goal point is not reachable.");
+    return false;
+  }
+  if (reach[goal_idx] <= 0.0 || reach[goal_idx] >= 1e12) {
+    ROS_INFO("Goal point is either too far away or is blocked by an obstacle.");
+    return false;
+  }
+  ROS_INFO("Attempting to find path to [%0.1f, %0.1f, %0.1f] from [%0.1f, %0.1f, %0.1f].", goal[0], goal[1], goal[2], position[0], position[1], position[2]);
+  std::vector<int> node_id_list(npixels, -1);
+  std::vector<Node> visited;
+
+  // Initialize a star from goal position back to start.
+  Node start;
+  start.id = goal_idx;
+  start.g = 0.0;
+  start.h = reach[goal_idx];
+  start.f = start.g + start.h;
+  start.neighbors = getNeighbors(start.id);
+  start.parent = -1;
+  index3_xyz(goal_idx, start.position);
+  
+  visited.push_back(start);
+  node_id_list[start.id] = visited.size()-1;
+
+  std::vector<Node> open_set; // priority queue of next nodes
+  open_set.push_back(start);
+  int itt = 0;
+  while (open_set.size()>0) {
+    itt++;
+    Node current = open_set.back();
+    // ROS_INFO("Current node, [%0.1f, %0.1f, %0.1f] with f cost %0.1f has %d neighbors", current.position[0], current.position[1], current.position[2], current.f, current.neighbors.size());
+    // if (current.id == xyz_index3(position)) {
+    if (dist3(current.position, position) <= 3*voxel_size) {
+      std::vector<float> path = reconstructPath(visited, current); // Stop if the robot's current position (the goal) has been reached.
+      nav_msgs::Path newpathmsg;
+      newpathmsg.header.frame_id = frame;
+      geometry_msgs::PoseStamped pose;
+      for (int i=0; i<(path.size()-2); i=i+3){
+        pose.header.frame_id = frame;
+        pose.pose.position.x = path[i]; pose.pose.position.y = path[i+1]; pose.pose.position.z = path[i+2];
+        newpathmsg.poses.push_back(pose);
+      }
+      pathmsg = newpathmsg;
+      ROS_INFO("Path found of length %d and updated.", newpathmsg.poses.size());
+      return true;
+    }
+    open_set.pop_back();
+    for (int i=0; i<current.neighbors.size(); i++) {
+      int neighbor_id = current.neighbors[i];
+      bool neighbor_is_new = false;
+      if (node_id_list[neighbor_id] == -1) {
+        neighbor_is_new = true;
+        Node neighbor;
+        neighbor.id = neighbor_id;
+        neighbor.h = reach[neighbor.id];
+        index3_xyz(neighbor.id, neighbor.position);
+        neighbor.neighbors = getNeighbors(neighbor.id);
+        node_id_list[neighbor.id] = visited.size();
+        visited.push_back(neighbor);
+      }
+      int visit_id = node_id_list[neighbor_id];
+      float tentative_g = current.g + dist2(current.position, visited[visit_id].position)/(esdf.data[current.id]);
+      if (visited[visit_id].g > tentative_g) {
+        // Change the neighbors parent to the current
+        visited[visit_id].parent = node_id_list[current.id];
+        visited[visit_id].g = tentative_g;
+        visited[visit_id].f = tentative_g + visited[visit_id].h;
+        if (neighbor_is_new) {
+          int j;
+          for (j=0; j<open_set.size(); j++) {
+            if (open_set[j].f < visited[visit_id].f) break;
+          }
+          open_set.insert(open_set.begin() + j, visited[visit_id]);
+        }
+      }
+    }
+  }
+  ROS_INFO("Not able to find the start position after running path updater for %d iterations.", itt);
+  return false;
+}
+
+bool Msfm3d::updatePathOneVoxel(const float goal[3])
 {
   int npixels = esdf.size[0]*esdf.size[1]*esdf.size[2], idx; // size of the reachability array, index in reachability array of the current path voxel.
   int neighbor[6]; // neighbor voxels to the current voxel
@@ -1574,6 +1710,91 @@ bool Msfm3d::updatePath(const float goal[3])
   return true;
 }
 
+void updateFrontierClusterGroupMsgs(Msfm3d &planner, visualization_msgs::MarkerArray &cluster_marker_msg, visualization_msgs::MarkerArray &group_marker_msg)
+{
+  cluster_marker_msg.markers.clear();
+  std::vector<std_msgs::ColorRGBA> color_table;
+  std_msgs::ColorRGBA red; red.r = 1.0; red.a = 1.0;
+  std_msgs::ColorRGBA lime; lime.g = 1.0; lime.a = 1.0;
+  std_msgs::ColorRGBA blue; blue.b = 1.0; blue.a = 1.0;
+  std_msgs::ColorRGBA yellow; yellow.r = 1.0; yellow.g = 1.0; yellow.a = 1.0;
+  std_msgs::ColorRGBA cyan; cyan.g = 1.0; cyan.b = 1.0; cyan.a = 1.0;
+  std_msgs::ColorRGBA magenta; magenta.r = 1.0; magenta.b = 1.0; magenta.a = 1.0;
+  std_msgs::ColorRGBA silver; silver.r = 0.75; silver.g = 0.75; silver.b = 0.75; silver.a = 1.0;
+  std_msgs::ColorRGBA maroon; maroon.r = 0.5; maroon.a = 1.0;
+  std_msgs::ColorRGBA olive; olive.r = 0.5; olive.g = 0.5; olive.a = 1.0;
+  std_msgs::ColorRGBA green; green.g = 0.5; green.a = 1.0;
+  std_msgs::ColorRGBA purple; purple.r = 0.5; purple.b = 0.5; purple.a = 1.0;
+  std_msgs::ColorRGBA teal; teal.g = 0.5; teal.b = 0.5; teal.a = 1.0;
+  std_msgs::ColorRGBA navy; navy.b = 0.5; navy.a = 1.0;
+  color_table.push_back(red);
+  color_table.push_back(lime);
+  color_table.push_back(blue);
+  color_table.push_back(yellow);
+  color_table.push_back(cyan);
+  color_table.push_back(magenta);
+  color_table.push_back(silver);
+  color_table.push_back(maroon);
+  color_table.push_back(olive);
+  color_table.push_back(green);
+  color_table.push_back(purple);
+  color_table.push_back(teal);
+  color_table.push_back(navy);
+
+  for (int i=0; i<planner.frontierClusterIndices.size(); i++) {
+    // Preliminaries
+    visualization_msgs::Marker msg;
+    msg.header.frame_id = planner.frame;
+    msg.header.stamp = ros::Time();
+    msg.action = visualization_msgs::Marker::ADD;
+    msg.pose.orientation.w = 1.0;
+    msg.id = i;
+    // msg.type = visualization_msgs::Marker::POINTS;
+    msg.type = visualization_msgs::Marker::CUBE_LIST;
+    msg.scale.x = planner.voxel_size;
+    msg.scale.y = planner.voxel_size;
+    msg.scale.z = planner.voxel_size;
+    int color_id = (i % color_table.size());
+    msg.color = color_table[color_id];
+    for (int j=0; j<planner.frontierClusterIndices[i].indices.size(); j++) {
+      geometry_msgs::Point p;
+      p.x = planner.frontierCloud->points[planner.frontierClusterIndices[i].indices[j]].x;
+      p.y = planner.frontierCloud->points[planner.frontierClusterIndices[i].indices[j]].y;
+      p.z = planner.frontierCloud->points[planner.frontierClusterIndices[i].indices[j]].z;
+      msg.points.push_back(p);
+    }
+    cluster_marker_msg.markers.push_back(msg);
+  }
+
+  group_marker_msg.markers.clear();
+  for (int i=0; i<planner.greedyGroups.size(); i++) {
+    // Preliminaries
+    visualization_msgs::Marker msg;
+    msg.header.frame_id = planner.frame;
+    msg.header.stamp = ros::Time();
+    msg.action = visualization_msgs::Marker::ADD;
+    msg.pose.orientation.w = 1.0;
+    msg.id = i;
+    // msg.type = visualization_msgs::Marker::POINTS;
+    msg.type = visualization_msgs::Marker::CUBE_LIST;
+    msg.scale.x = planner.voxel_size;
+    msg.scale.y = planner.voxel_size;
+    msg.scale.z = planner.voxel_size;
+    int color_id = (i % color_table.size());
+    msg.color = color_table[color_id];
+    for (int j=0; j<planner.greedyGroups[i].indices.size(); j++) {
+      geometry_msgs::Point p;
+      p.x = planner.frontierCloud->points[planner.greedyGroups[i].indices[j]].x;
+      p.y = planner.frontierCloud->points[planner.greedyGroups[i].indices[j]].y;
+      p.z = planner.frontierCloud->points[planner.greedyGroups[i].indices[j]].z;
+      msg.points.push_back(p);
+    }
+    group_marker_msg.markers.push_back(msg);
+  }
+
+  return;
+}
+
 
 void Msfm3d::updateFrontierMsg()
 {
@@ -1590,7 +1811,7 @@ void Msfm3d::updateFrontierMsg()
   frontiermsg = newPointCloud2;
 }
 
-bool updateFrontier(Msfm3d& planner)
+bool updateFrontier(Msfm3d& planner, ros::Publisher& frontier_publisher)
 {
   ROS_INFO("Beginning Frontier update step...");
 
@@ -1647,7 +1868,7 @@ bool updateFrontier(Msfm3d& planner)
       // Create an array of neighbor indices
       for (int j=0; j<3; j++){
         // if (point[j] < (planner.esdf.max[j] - planner.voxel_size)) {
-          query[j] = point[j] + planner.voxel_size;
+        query[j] = point[j] + planner.voxel_size;
         // }
         neighbor[2*j] = planner.xyz_index3(query);
         // if (point[j] > (planner.esdf.min[j] + planner.voxel_size)) {
@@ -1739,11 +1960,28 @@ bool updateFrontier(Msfm3d& planner)
     return false;
   }
 
+  // Publish pre-filtered frontier
+  // planner.updateFrontierMsg();
+  // ROS_INFO("Raw frontier published.");
+  // frontier_publisher.publish(planner.frontiermsg);
+  // sleep(3);
+
   // Filter frontiers based upon normal vectors
   if (!planner.normalFrontierFilter()) return false;
 
+  // Publish Normal Filtered Frontier
+  // planner.updateFrontierMsg();
+  // frontier_publisher.publish(planner.frontiermsg);
+  // ROS_INFO("Normal filtered frontier published.");
+  // sleep(3);
+
   // Cluster the frontier into euclidean distance groups
   if (planner.clusterFrontier(false)) {
+    // Publish clustered frontier
+    // planner.updateFrontierMsg();
+    // frontier_publisher.publish(planner.frontiermsg);
+    // ROS_INFO("Clustering filtered frontier published.");
+    // sleep(3);
     // Group frontier within each cluster with greedy algorithm
     planner.greedyGrouping(4*planner.voxel_size, false);
     return true;
@@ -2440,6 +2678,37 @@ visualization_msgs::Marker plotGoals(Msfm3d& planner)
   return msg;
 }
 
+visualization_msgs::MarkerArray plotGoalViews(Msfm3d& planner)
+{
+  // Preliminaries
+  visualization_msgs::MarkerArray output_msg;
+  visualization_msgs::Marker msg;
+  msg.header.frame_id = planner.frame;
+  msg.header.stamp = ros::Time();
+  msg.action = visualization_msgs::Marker::ADD;
+  msg.type = visualization_msgs::Marker::ARROW;
+  msg.scale.x = 0.6;
+  msg.scale.y = 0.05;
+  msg.scale.z = 0.05;
+  msg.color.g = 1.0;
+  msg.color.a = 1.0;
+
+  // Add all of the goal points to the msg
+  float point[3];
+  for (int i=0; i<planner.goalViews.size(); i++) {
+    msg.id = i;
+    msg.pose.position.x = planner.goalViews[i].pose.position.x;
+    msg.pose.position.y = planner.goalViews[i].pose.position.y;
+    msg.pose.position.z = planner.goalViews[i].pose.position.z;
+    msg.pose.orientation.x = planner.goalViews[i].pose.q.x;
+    msg.pose.orientation.y = planner.goalViews[i].pose.q.y;
+    msg.pose.orientation.z = planner.goalViews[i].pose.q.z;
+    msg.pose.orientation.w = planner.goalViews[i].pose.q.w;
+    output_msg.markers.push_back(msg);
+  }
+  return output_msg;
+}
+
 int main(int argc, char **argv)
 {
   /**
@@ -2706,6 +2975,13 @@ int main(int argc, char **argv)
   ros::Publisher pub9 = n.advertise<sensor_msgs::PointCloud2>("reach_grid", 5);
   ros::Publisher pub10 = n.advertise<visualization_msgs::Marker>("goal_points", 5);
   visualization_msgs::Marker goalMsg;
+  ros::Publisher pub11 = n.advertise<sensor_msgs::PointCloud2>("frontier_steps", 5);
+  ros::Publisher pub12 = n.advertise<visualization_msgs::MarkerArray>("frontier_clusters", 5);
+  ros::Publisher pub13 = n.advertise<visualization_msgs::MarkerArray>("frontier_groups", 5);
+  visualization_msgs::MarkerArray cluster_marker_msg;
+  visualization_msgs::MarkerArray group_marker_msg;
+  ros::Publisher pub14 = n.advertise<visualization_msgs::MarkerArray>("goal_views", 5);
+  visualization_msgs::MarkerArray goal_views_marker_msg;
 
   int i = 0;
   bool goalFound = 0;
@@ -2745,10 +3021,19 @@ int main(int argc, char **argv)
         ROS_INFO("ESDF or Occupancy at Position: %f", planner.esdf.data[i]);
         // Find frontier cells and add them to planner.frontier for output to file.
         // Publish frontiers as MarkerArray
-        if (updateFrontier(planner)) {
+        if (updateFrontier(planner, pub11)) {
           planner.updateFrontierMsg();
           pub3.publish(planner.frontiermsg);
           ROS_INFO("Frontier published!");
+
+          // for (int i=0; i<cluster_marker_msg.markers.size(); i++) cluster_marker_msg.markers[i].action = visualization_msgs::Marker::DELETE;
+          // pub12.publish(cluster_marker_msg);
+          // for (int i=0; i<group_marker_msg.markers.size(); i++) group_marker_msg.markers[i].action = visualization_msgs::Marker::DELETE;
+          // pub13.publish(group_marker_msg);
+
+          // updateFrontierClusterGroupMsgs(planner, cluster_marker_msg, group_marker_msg);
+          // pub12.publish(cluster_marker_msg);
+          // pub13.publish(group_marker_msg);
 
           // Replan if you're within a radius of the goal point
 
@@ -2810,6 +3095,10 @@ int main(int argc, char **argv)
             pub10.publish(goalMsg);
             goalMsg = plotGoals(planner);
             pub10.publish(goalMsg);
+            // for (int i=0; i<goal_views_marker_msg.markers.size(); i++) goal_views_marker_msg.markers[i].action = visualization_msgs::Marker::DELETE;
+            // pub14.publish(goal_views_marker_msg);
+            // goal_views_marker_msg = plotGoalViews(planner);
+            // pub14.publish(goal_views_marker_msg);
           }
 
           // The robot might have moved or the goal poses may have been updated, so you need to recalculate the reachability grid
