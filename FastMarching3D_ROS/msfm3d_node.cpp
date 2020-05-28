@@ -1461,6 +1461,7 @@ bool Msfm3d::updatePath(const float goal[3])
   start.id = goal_idx;
   start.g = 0.0;
   start.h = reach[goal_idx];
+  // start.h = dist3(goal, position)/esdf.data[goal_idx];
   start.f = start.g + start.h;
   start.neighbors = getNeighbors(start.id);
   start.parent = -1;
@@ -1475,9 +1476,9 @@ bool Msfm3d::updatePath(const float goal[3])
   while (open_set.size()>0) {
     itt++;
     Node current = open_set.back();
-    // ROS_INFO("Current node, [%0.1f, %0.1f, %0.1f] with f cost %0.1f has %d neighbors", current.position[0], current.position[1], current.position[2], current.f, current.neighbors.size());
+    // ROS_INFO("Current node, [%0.1f, %0.1f, %0.1f], g = %0.2f, h = %0.2f, f = %0.2f, has %d neighbors", current.position[0], current.position[1], current.position[2], current.g, current.h, current.f, current.neighbors.size());
     // if (current.id == xyz_index3(position)) {
-    if (dist3(current.position, position) <= 3*voxel_size) {
+    if (dist2(current.position, position) <= 3*voxel_size) {
       std::vector<float> path = reconstructPath(visited, current); // Stop if the robot's current position (the goal) has been reached.
       nav_msgs::Path newpathmsg;
       newpathmsg.header.frame_id = frame;
@@ -1488,7 +1489,7 @@ bool Msfm3d::updatePath(const float goal[3])
         newpathmsg.poses.push_back(pose);
       }
       pathmsg = newpathmsg;
-      ROS_INFO("Path found of length %d and updated.", newpathmsg.poses.size());
+      ROS_INFO("Path found of length %d.", newpathmsg.poses.size());
       return true;
     }
     open_set.pop_back();
@@ -1498,15 +1499,16 @@ bool Msfm3d::updatePath(const float goal[3])
       if (node_id_list[neighbor_id] == -1) {
         neighbor_is_new = true;
         Node neighbor;
-        neighbor.id = neighbor_id;
-        neighbor.h = reach[neighbor.id];
+        neighbor.id = neighbor_id; 
         index3_xyz(neighbor.id, neighbor.position);
+        neighbor.h = reach[neighbor.id];
+        // neighbor.h = dist3(neighbor.position, position)/esdf.data[neighbor_id];
         neighbor.neighbors = getNeighbors(neighbor.id);
         node_id_list[neighbor.id] = visited.size();
         visited.push_back(neighbor);
       }
       int visit_id = node_id_list[neighbor_id];
-      float tentative_g = current.g + dist2(current.position, visited[visit_id].position)/(esdf.data[current.id]);
+      float tentative_g = current.g + dist3(current.position, visited[visit_id].position)/(esdf.data[neighbor_id]*voxel_size);
       if (visited[visit_id].g > tentative_g) {
         // Change the neighbors parent to the current
         visited[visit_id].parent = node_id_list[current.id];
