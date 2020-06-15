@@ -20,6 +20,7 @@
     <remap from="artifact_list" to="report_artifact"/>
     <!-- <remap from="voxblox_node/tsdf_pointcloud" to="voxblox_node/esdf_pointcloud"/> -->
     <remap from="voxblox_node/tsdf_pointcloud" to="cost_map"/>
+    <!-- <remap from="voxblox_node/tsdf_pointcloud" to="edt"/> -->
     <remap from="custom_goal_point" to="guiGoalPoint"/>
 
     <!-- Parameters -->
@@ -46,7 +47,7 @@
 
     <!-- Frontier Clustering parameters (in voxels) -->
     <param name="cluster_radius" value="0.3" />
-    <param name="min_cluster_size" value="50" />
+    <param name="min_cluster_size" value="30" />
     <param name="normalThresholdZ" value="0.4" />
 
     <!-- Number of ticks before replanning -->
@@ -54,14 +55,20 @@
     <!-- Number of ticks before sampling new goal poses -->
     <param name="goal_ticks" value="25" />
     <!-- Replan trigger method -->
-    <!-- <param name="replanTrigger" type="string" value="frontier"/> -->
-    <param name="replanTrigger" type="string" value="distance"/>
+    <param name="replanTrigger" type="string" value="frontier"/>
+    <!-- <param name="replanTrigger" type="string" value="distance"/> -->
 
     <!-- Location of the environment entrance. (Default is [0.0, 0.0, 0.0])  The robot will not explore area within entrance_radius meters of this point -->
-    <param name="entrance_x" value="2.0" />
+    <param name="entrance_x" value="-4.0" />
     <param name="entrance_y" value="0.0" />
     <param name="entrance_z" value="0.3" />
-    <param name="entrance_radius" value="10.0" />
+    <!-- <param name="entrance_x" value="10.0" />
+    <param name="entrance_y" value="27.0" />
+    <param name="entrance_z" value="7.6" /> -->
+    <!-- <param name="entrance_x" value="4.0" /> -->
+    <!-- <param name="entrance_y" value="0.0" /> -->
+    <!-- <param name="entrance_z" value="0.1" /> -->
+    <param name="entrance_radius" value="0.0" />
 
     <!-- Camera viewing parameters, angles in degrees, ranges in meters -->
     <param name="cameraVerticalFoV" value="10.0"/>
@@ -80,7 +87,7 @@
     <param name="robot2camera_q_z" value="0.0"/> -->
 
     <!-- Update Rate, default is 1.0 Hz -->
-    <param name="updateRate" value="0.5"/>
+    <param name="updateRate" value="1.0"/>
 
     <!-- Inflated Obstacle width -->
     <param name="inflateWidth" value="0.0"/>
@@ -119,7 +126,7 @@
     <!-- <param name="goalFunction" type="string" value="information"/> -->
 
     <!-- Minimum obstacle proximity for goal poses (adds to inflated distance) -->
-    <param name="viewPoseObstacleDistance" value="1.0"/>
+    <param name="viewPoseObstacleDistance" value="0.4"/>
 
   </node>
 
