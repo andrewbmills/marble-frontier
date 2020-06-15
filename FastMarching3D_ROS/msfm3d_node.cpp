@@ -526,6 +526,7 @@ bool Msfm3d::normalFrontierFilter()
   ne.setSearchMethod(kdtree);
   ne.setInputCloud(frontierCloud);
   ne.setRadiusSearch(2.1*voxel_size);
+  // ne.setRadiusSearch(1.5*voxel_size);
   ne.compute(*normalCloud);
 
   float query[3];
@@ -2349,7 +2350,7 @@ void view2MarkerMsg(const View cameraView, const SensorFoV camera, visualization
   marker.points.push_back(BL);
 }
 
-void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const int nFront, bool reachOrigin, const double timeOut = 1.50) {
+void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const int nFront, bool reachOrigin, const double timeOut = 0.5) {
     double tStart = clock();
     /* The input variables */
     double *F;
