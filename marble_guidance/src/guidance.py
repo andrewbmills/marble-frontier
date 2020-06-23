@@ -68,7 +68,7 @@ def find_Lookahead_Discrete_2D(path, p_AC, R, gamma_max, Mstar, reverse=False):
     # Loop initialization params
     intersection = True
     t_hat = -1
-    i = 0
+    i = i_max - 1
     i_closest = 0
     c_closest = 100.0*R
 
@@ -107,8 +107,8 @@ def find_Lookahead_Discrete_2D(path, p_AC, R, gamma_max, Mstar, reverse=False):
         if (c < c_closest):
             c_closest = c
             i_closest = i
-        # Next iteration
-        i = i + 1
+        # Next iteration, go from the last path point to the first
+        i = i - 1
 
     # Check for intersection of circle around p_AC with path
     if intersection:
@@ -127,7 +127,6 @@ def find_Lookahead_Discrete_2D(path, p_AC, R, gamma_max, Mstar, reverse=False):
     return p_L2, v_L2
 
 def find_Lookahead_Discrete_3D(path, p_AC, R, gamma_max, Mstar, reverse=False):
-    i = 0
     i_closest = 0
     c_closest = 100.0*R
     # Determine the last path index
@@ -136,6 +135,7 @@ def find_Lookahead_Discrete_3D(path, p_AC, R, gamma_max, Mstar, reverse=False):
     
     intersection = True
     t_hat = -1
+    i = i_max - 1
     while (t_hat < 0) or (t_hat > 1):
         # Break loop when you reach the last path index
         if (i == i_max):
@@ -173,8 +173,8 @@ def find_Lookahead_Discrete_3D(path, p_AC, R, gamma_max, Mstar, reverse=False):
             c_closest = c
             i_closest = i
 
-        # Next iteration
-        i = i + 1
+        # Next iteration, go from the last path point to the first
+        i = i - 1
     # Check for intersection of circle around p_AC with path
     if intersection:
         # Calculate lookahead point and its local tangent vector
