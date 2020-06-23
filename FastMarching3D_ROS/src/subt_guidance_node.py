@@ -236,7 +236,7 @@ class guidance_controller:
 		self.L2_marker.type = 4
 		self.L2_marker.header.frame_id = "world"
 		self.L2_marker.header.stamp = rospy.Time()
-		self.L2_marker.id = 101;
+		self.L2_marker.id = 101
 		self.L2_marker.scale.x = 0.05
 		self.L2_marker.color.b = 1.0
 		self.L2_marker.color.a = 1.0

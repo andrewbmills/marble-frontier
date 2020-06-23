@@ -1483,6 +1483,7 @@ bool Msfm3d::updatePath(const float goal[3])
       std::vector<float> path = reconstructPath(visited, current); // Stop if the robot's current position (the goal) has been reached.
       nav_msgs::Path newpathmsg;
       newpathmsg.header.frame_id = frame;
+      newpathmsg.header.stamp = ros::Time::now();
       geometry_msgs::PoseStamped pose;
       for (int i=0; i<(path.size()-2); i=i+3){
         pose.header.frame_id = frame;

@@ -7,7 +7,7 @@
     <!-- Inputs (Subscribed Topic Names) -->
 
     <remap from="octomap_binary" to="octomap_binary_crap"/>
-    <remap from="odometry" to="odometry"/>
+    <remap from="odometry" to="odometry_stitch"/>
 
     <!-- Outputs (Published Topic Names) -->
 

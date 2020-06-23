@@ -3,7 +3,7 @@
   <group ns="X1">
     <arg name="resolution" value="0.2" />
     <!-- <include file="$(find marble_guidance)/launch/guidance.launch"/> -->
-    <!-- <include file="$(find ground_finder)/launch/traversability_mapping.launch"/> -->
+    <include file="$(find ground_finder)/launch/traversability_mapping.launch"/>
     <!-- <include file="$(find ground_finder)/launch/ground_finder.launch"/> -->
     <include file="$(find msfm3d)/launch/msfm3d.launch"/>
     <include file="$(find msfm3d)/launch/costmap_generator.launch"/>
