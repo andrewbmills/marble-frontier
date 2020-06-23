@@ -200,6 +200,7 @@ class guidance_controller:
 		self.speed = rospy.get_param('guidance_controller/speed', 1.0) # m/s
 		self.Tstar = rospy.get_param('guidance_controller/Tstar', 1.0) # s
 		self.reverse = rospy.get_param('guidance_controller/reverse', 0)
+		self.yaw_rate_max = rospy.get_param('guidance_controller/yaw_rate_max', 0.3); # rad/s
 		print("Reverse = %d" % self.reverse)
 
 		# Subscribers
