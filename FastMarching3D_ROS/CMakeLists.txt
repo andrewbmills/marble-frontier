@@ -13,6 +13,7 @@ find_package(catkin REQUIRED
     nav_msgs
     geometry_msgs
     visualization_msgs
+    cv_bridge
     pcl_ros
     pcl_conversions
     sensor_msgs
@@ -64,5 +65,15 @@ target_link_libraries(costmap_generator
 
 add_executable(VoxelHashingTest src/VoxelHashingTest.cpp)
 target_link_libraries(VoxelHashingTest
+  ${catkin_LIBRARIES}
+)
+
+add_executable(gain_test_node src/gain_test.cpp)
+target_link_libraries(gain_test_node
+  ${catkin_LIBRARIES}
+)
+
+add_executable(depthImageToPointCloud2 src/depthImg2PCL2.cpp)
+target_link_libraries(depthImageToPointCloud2
   ${catkin_LIBRARIES}
 )

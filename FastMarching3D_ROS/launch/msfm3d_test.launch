@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch>
   <arg name="ground_vehicle" default="true" />
-  <arg name="resolution" default="0.1" />
+  <arg name="resolution" default="0.2" />
 
-  <node pkg="msfm3d" type="msfm3d" name="global_planning" output="screen">
+  <node pkg="msfm3d" type="msfm3d" name="global_planning">
     <!-- Inputs (Subscribed Topic Names) -->
 
     <remap from="octomap_binary" to="octomap_binary_crap"/>
-    <remap from="odometry" to="odometry_stitch"/>
+    <!-- <remap from="odometry" to="odometry_stitch"/> -->
 
     <!-- Outputs (Published Topic Names) -->
 
@@ -19,8 +19,8 @@
     <!-- <remap from="inflated_octomap" to="inflated_octomap"/> -->
     <remap from="artifact_list" to="report_artifact"/>
     <!-- <remap from="voxblox_node/tsdf_pointcloud" to="voxblox_node/esdf_pointcloud"/> -->
-    <remap from="voxblox_node/tsdf_pointcloud" to="cost_map"/>
-    <!-- <remap from="voxblox_node/tsdf_pointcloud" to="edt"/> -->
+    <!-- <remap from="voxblox_node/tsdf_pointcloud" to="cost_map"/> -->
+    <remap from="voxblox_node/tsdf_pointcloud" to="edt"/>
     <remap from="custom_goal_point" to="guiGoalPoint"/>
 
     <!-- Parameters -->
@@ -28,7 +28,7 @@
     <param name="resolution" value="$(arg resolution)"/>
 
     <!-- The planner assumes the vehicle is an air vehicle.  If the vehicle is constrained to the ground (wheeled vehicle), set to true. -->
-    <param name="isGroundVehicle" value="true"/>
+    <param name="isGroundVehicle" value="false"/>
 
     <!-- If the vehicle is an air vehicle, the following params should be set -->
     <param name="minGoalDist" value="0.0" />
@@ -46,8 +46,8 @@
     <param name="minViewCloudSize" value="5"/>
 
     <!-- Frontier Clustering parameters (in voxels) -->
-    <param name="cluster_radius" value="0.15" />
-    <param name="min_cluster_size" value="150" />
+    <param name="cluster_radius" value="0.30" />
+    <param name="min_cluster_size" value="50" />
     <param name="normalThresholdZ" value="0.4" />
 
     <!-- Number of ticks before replanning -->
@@ -71,12 +71,12 @@
     <param name="entrance_radius" value="0.0" />
 
     <!-- Camera viewing parameters, angles in degrees, ranges in meters -->
-    <param name="cameraVerticalFoV" value="10.0"/>
-    <param name="cameraHorizontalFoV" value="120.0"/>
-    <param name="cameraMaxRange" value="2.2"/>
-    <param name="cameraMinRange" value="1.2"/>
+    <param name="cameraVerticalFoV" value="40.0"/>
+    <param name="cameraHorizontalFoV" value="65.0"/>
+    <param name="cameraMaxRange" value="2.5"/>
+    <param name="cameraMinRange" value="0.5"/>
     <param name="robot2camera_roll" value="0.0"/>
-    <param name="robot2camera_pitch" value="0.0"/>
+    <param name="robot2camera_pitch" value="15.0"/>
     <param name="robot2camera_yaw" value="0.0"/>
     <!--  -->
 
@@ -90,7 +90,7 @@
     <param name="updateRate" value="1.0"/>
 
     <!-- Inflated Obstacle width -->
-    <param name="inflateWidth" value="0.0"/>
+    <param name="inflateWidth" value="0.4"/>
 
     <!-- Vehicle Fence Volume Limits -->
     <!-- <param name="fenceOn" value="true"/>
@@ -102,7 +102,7 @@
     <param name="fence_zmax" value="3.0"/> -->
 
     <!-- Vehicle Volume Extents -->
-    <param name="vehicleVolumeOn" value="false"/>
+    <param name="vehicleVolumeOn" value="true"/>
     <param name="vehicleVolumeXmin" value="-0.11"/>
     <param name="vehicleVolumeXmax" value="0.11"/>
     <param name="vehicleVolumeYmin" value="-0.11"/>

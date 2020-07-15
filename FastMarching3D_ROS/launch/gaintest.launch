@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+<group ns="X1">
+  <node pkg="msfm3d" type="gain_test_node" name="gain_test_node" output="screen">
+    <remap from="map" to="octomap_binary"/>
+    <remap from="pose" to="/move_base_simple/goal"/>
+    <remap from="points" to="points_fov"/>
+
+  	<!-- Params -->
+  	<param name="verticalFoV" value="40.0"/>
+    <param name="horizontalFoV" value="360.0"/>
+    <param name="range_min" value="0.5"/>
+    <param name="range_max" value="4.0"/>
+    <param name="sensor_type" value="lidar"/>
+    
+  </node>
+</group>
+</launch>

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch>
   <group ns="X1">
-    <arg name="resolution" value="0.2" />
+    <arg name="resolution" value="0.1" />
     <!-- <include file="$(find marble_guidance)/launch/guidance.launch"/> -->
     <include file="$(find ground_finder)/launch/traversability_mapping.launch"/>
     <!-- <include file="$(find ground_finder)/launch/ground_finder.launch"/> -->

@@ -8,8 +8,6 @@
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CameraInfo.h>
 #include <cv_bridge/cv_bridge.h>
-// OpenCV2
-#include <opencv2/highgui/highgui.hpp>
 // pcl
 #include <pcl/point_types.h>
 #include <pcl/io/pcd_io.h>
@@ -152,6 +150,7 @@ void project_truncated_depths::callback_image(const sensor_msgs::ImageConstPtr& 
             }
             du++;
           }
+          if (std::isnan(z_neighbor)) z_neighbor = camera.rMax;
           cv_ptr->image.at<float>(v,u) = z_neighbor;
         } else if (v == 0) {
           z_neighbor = cv_ptr->image.at<float>(v,u-1);
@@ -186,9 +185,9 @@ void project_truncated_depths::callback_image(const sensor_msgs::ImageConstPtr& 
 
   // Convert from pcl::PointCloud to sensor_msgs::PointCloud2
   pcl::toROSMsg(*depthCloud, newPointCloud2);
-  newPointCloud2.header.seq = 1;
-  newPointCloud2.header.stamp = ros::Time();
-  newPointCloud2.header.frame_id = camera.frame;
+  newPointCloud2.header.seq = msg->header.seq;
+  newPointCloud2.header.stamp = msg->header.stamp;
+  newPointCloud2.header.frame_id = msg->header.frame_id;
 
   // Update the old message
   depthCloudMsg = newPointCloud2;
@@ -203,21 +202,21 @@ int main(int argc, char **argv)
   project_truncated_depths trunc_depths;
 
   // Declare subscribers for the camera info and the raw depth image.  Use the image truncator callbacks
-  ros::Subscriber sub1 = n.subscribe("X4/rgbd_camera/depth/camera_info", 1, &project_truncated_depths::callback_camera_info, &trunc_depths);
-  ros::Subscriber sub2 = n.subscribe("X4/rgbd_camera/depth/image_raw", 1, &project_truncated_depths::callback_image, &trunc_depths);
+  ros::Subscriber sub1 = n.subscribe("rgbd_camera/depth/camera_info", 1, &project_truncated_depths::callback_camera_info, &trunc_depths);
+  ros::Subscriber sub2 = n.subscribe("rgbd_camera/depth/image_raw", 1, &project_truncated_depths::callback_image, &trunc_depths);
 
-  ros::Publisher pub1 = n.advertise<sensor_msgs::PointCloud2>("X4/depth_cam_fixed", 5);
+  ros::Publisher pub1 = n.advertise<sensor_msgs::PointCloud2>("depth_cam_fixed", 5);
 
   // Get depth camera min and max range values
   double rMin, rMax;
-  n.param("rgbd_camera/rMin", rMin, (double)0.05);
-  n.param("rgbd_camera/rMax", rMax, (double)6.5);
+  n.param("project_truncated_depths/rMin", rMin, (double)0.05);
+  n.param("project_truncated_depths/rMax", rMax, (double)6.5);
   trunc_depths.camera.rMin = rMin;
   trunc_depths.camera.rMax = rMax;
 
   // Declare and read in the node update rate from the launch file parameters
   double updateRate;
-  n.param("project_truncated_depths/updateRate", updateRate, (double)200.0); // Hz
+  n.param("project_truncated_depths/updateRate", updateRate, (double)10.0); // Hz
   ros::Rate r(updateRate);
 
   // Run the node until ROS quits

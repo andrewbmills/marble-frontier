@@ -3,7 +3,7 @@
   Example launch file for a costmap fusion node
 -->
 <launch>
-  <arg name="resolution" default="0.2" />
+  <arg name="resolution" default="0.1" />
 
   <node pkg="msfm3d" type="costmap_generator" name="costmap_generator">
     <param name="fixedFrame" type="string" value="world"/>

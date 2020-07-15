@@ -43,7 +43,6 @@
 // Custom libraries
 #include "msfm3d.c"
 #include "bresenham3d.cpp"
-
 // Sleep library
 #include <unistd.h>
 
@@ -1479,7 +1478,7 @@ bool Msfm3d::updatePath(const float goal[3])
     Node current = open_set.back();
     // ROS_INFO("Current node, [%0.1f, %0.1f, %0.1f], g = %0.2f, h = %0.2f, f = %0.2f, has %d neighbors", current.position[0], current.position[1], current.position[2], current.g, current.h, current.f, current.neighbors.size());
     // if (current.id == xyz_index3(position)) {
-    if (dist2(current.position, position) <= 3*voxel_size) {
+    if (dist3(current.position, position) <= 3*voxel_size) {
       std::vector<float> path = reconstructPath(visited, current); // Stop if the robot's current position (the goal) has been reached.
       nav_msgs::Path newpathmsg;
       newpathmsg.header.frame_id = frame;
@@ -2351,7 +2350,7 @@ void view2MarkerMsg(const View cameraView, const SensorFoV camera, visualization
   marker.points.push_back(BL);
 }
 
-void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const int nFront, bool reachOrigin, const double timeOut = 0.5) {
+void reach(Msfm3d& planner, const bool usesecond, const bool usecross, const int nFront, bool reachOrigin, const double timeOut = 2.0) {
     double tStart = clock();
     /* The input variables */
     double *F;
@@ -2379,7 +2378,7 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
     int dims_sp[3];
 
     /* Number of pixels in image */
-    int npixels;
+    int npixels = planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2];
 
     /* Neighbour list */
     int neg_free;
@@ -2408,6 +2407,27 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
     /* Frontier View Count */
     int frontCount = 0;
 
+    /* Initialize a matrix with the gain values of the goal poses for terminating the reach function */
+    std::vector<bool> goal (npixels, false); // All values are initially zero
+    std::vector<std::pair<float,int>> gain_id_table;
+    for (int i_view=0; i_view<planner.goalViews.size(); i_view++) {
+      float query[3] = {planner.goalViews[i_view].pose.position.x, planner.goalViews[i_view].pose.position.y, planner.goalViews[i_view].pose.position.z};
+      goal[planner.xyz_index3(query)] = true; // Temporary until the gains are actually calculated
+      gain_id_table.push_back(std::make_pair(100.0,planner.xyz_index3(query)));
+    }
+    float max_turn_rate_penalty = planner.turnPenalty; // Max cost percent increase to add for heading differences
+    float utility_max = 0.0;
+    float cost_terminate = 1.0e10; // Reach cost to stop MSFM
+    // Sort gain id table
+    std::sort(gain_id_table.begin(), gain_id_table.end());
+    std::vector<float> gain_goals_sorted(gain_id_table.size());
+    std::vector<int> id_goals_sorted(gain_id_table.size());
+    for (int i_table=0; i_table<gain_id_table.size(); i_table++) {
+      gain_goals_sorted[i_table] = gain_id_table[i_table].first;
+      id_goals_sorted[i_table] = gain_id_table[i_table].second;
+      // ROS_INFO("gain = %0.2f, idx = %d", gain_goals_sorted[i_table], id_goals_sorted[i_table]);
+    }
+
     // Parse input arguments to relevent function variables
     for (int i=0; i<3; i++){
         SourcePoints[i] = roundf((planner.position[i]-planner.esdf.min[i])/planner.voxel_size);
@@ -2417,7 +2437,6 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
     dims_sp[0] = 3;
     dims_sp[1] = 1;
     dims_sp[2] = 1;
-    npixels=dims[0]*dims[1]*dims[2];
     int reachOriginIteration = npixels;
     Ed = 0;
     delete[] planner.reach;
@@ -2554,9 +2573,9 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
         }
         neg_pos =neg_pos-1;
 
-        if (!reachOrigin) {
-          if (planner.frontier[XYZ_index]) frontCount++;
-        }
+        // if (!reachOrigin) {
+        //   if (planner.frontier[XYZ_index]) frontCount++;
+        // }
 
         // if (XYZ_index == planner.xyz_index3(planner.origin)) break;
         if (XYZ_index == planner.xyz_index3(planner.origin) && reachOrigin) reachOriginIteration = itt;
@@ -2607,9 +2626,64 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
                 }
             }
         }
-        // Exit when nFront frontiers have been reached.
-        // TO-DO Change criteria to stop when the best num_Neighbor poses have been reached.
-        if (frontCount >= nFront && !reachOrigin) break;
+        // Exit when nFront frontiers have been reached.  (OLD)
+        // if (frontCount >= nFront && !reachOrigin) break;
+
+        if (!reachOrigin) {
+          // Stop if the current reach cost exceeds the stopping criteria
+          float cost_local = T[XYZ_index];
+          if (cost_local > cost_terminate) {
+            ROS_INFO("Local cost is greater than termination criteria, terminating fast marching.");
+            break;
+          }
+
+          // Update the stopping criteria cost if there is a better goal pose found so far
+          if (goal[XYZ_index]) { // This might need to change
+            // The current voxel is one with a goal view
+            float query[3];
+            float gain_local = 0.0;
+            planner.index3_xyz(XYZ_index, query);
+            // ROS_INFO("Idx = %d is a goal pose voxel", XYZ_index);
+
+            // Remove the current goal from the id and gain vectors
+            // ROS_INFO("Removing goal from gains without costs list.");
+            std::vector<int>::iterator it = std::find(id_goals_sorted.begin(), id_goals_sorted.end(), XYZ_index);
+            if (it != id_goals_sorted.end()) {
+              int idx = std::distance(id_goals_sorted.begin(), it);
+              id_goals_sorted.erase(it);
+              gain_local = gain_goals_sorted[idx];
+              gain_goals_sorted.erase(gain_goals_sorted.begin() + idx);
+              // ROS_INFO("Erasing entry %d from gain table of size %d", idx, gain_goals_sorted.size());
+            } else {
+              ROS_INFO("Couldn't find goal view id in gain table.");
+            }
+
+            // ROS_INFO("Voxel @ [%0.2f, %0.2f, %0.2f] has gain %0.2f.", query[0], query[1], query[2], gain_local);
+
+            // Update best utility so far
+            // ***TO-DO, Add in utility function call here***
+            float utility_worst_case = gain_local/(cost_local*(1.0 + max_turn_rate_penalty));  // Best utility so far with max turn rate penalty added in
+            if (utility_worst_case > utility_max) {
+              // ROS_INFO("Updating best utility so far.");
+              utility_max = utility_worst_case;
+            }
+
+            // ROS_INFO("Updating terminate cost.");
+            // Update terminate cost if the best possible gain from the remaining goals is worse
+            // Terminate MSFM if all the goals are reached
+            if (gain_goals_sorted.size() > 0) {
+              cost_terminate = gain_goals_sorted[0]/utility_max;
+            }
+            else {
+              ROS_INFO("Final goal pose reached, fast marching terminating.");
+              break;
+            }
+            // ROS_INFO("Best utility so far is %0.2f, best gain left is %0.2f", utility_max, gain_goals_sorted[0]);
+            // ROS_INFO("Current cost is %0.2f, terminating cost is %0.2f", cost_local, cost_terminate);
+          }
+        }
+
+
         if (((double)(clock() - tStart)/CLOCKS_PER_SEC) >= timeOut) {
           ROS_INFO("Reachbility calculation timed out after %0.2f seconds.", (double)(clock() - tStart)/CLOCKS_PER_SEC);
           break;
@@ -2622,6 +2696,7 @@ void reach( Msfm3d& planner, const bool usesecond, const bool usecross, const in
     free(neg_listy);
     free(neg_listz);
     delete[] Frozen;
+    // delete[] goal;
 }
 
 sensor_msgs::PointCloud2 plotReach(Msfm3d& planner)
