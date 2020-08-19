@@ -4,6 +4,6 @@
     <arg name="resolution" value="0.2" />
     <include file="$(find marble_guidance)/launch/guidance_air.launch"/>
     <include file="$(find msfm3d)/launch/msfm3d_test.launch"/>
-    <!-- <include file="$(find receding_horizon_stitcher)/launch/stitcher.launch"/> -->
+    <include file="$(find receding_horizon_stitcher)/launch/stitcher.launch"/>
   </group>
 </launch>

@@ -1,5 +1,5 @@
 #include <math.h>
-#include <VoxelHashMap.h>
+#include <voxelHashMap.h>
 // Octomap libaries
 #include <octomap/octomap.h>
 #include <octomap/ColorOcTree.h>

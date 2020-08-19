@@ -77,3 +77,8 @@ add_executable(depthImageToPointCloud2 src/depthImg2PCL2.cpp)
 target_link_libraries(depthImageToPointCloud2
   ${catkin_LIBRARIES}
 )
+
+add_executable(goal_pose_sampler src/goal_pose_sampler_node.cpp)
+target_link_libraries(goal_pose_sampler
+  ${catkin_LIBRARIES}
+)

@@ -1,4 +1,4 @@
-#include "gain.hpp"
+#include "gain.h"
 // #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <geometry_msgs/PoseStamped.h>

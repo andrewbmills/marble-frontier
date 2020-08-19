@@ -6,8 +6,8 @@
   <node pkg="msfm3d" type="msfm3d" name="global_planning">
     <!-- Inputs (Subscribed Topic Names) -->
 
-    <remap from="octomap_binary" to="octomap_binary_crap"/>
-    <!-- <remap from="odometry" to="odometry_stitch"/> -->
+    <!-- <remap from="octomap_binary" to="octomap_binary_crap"/> -->
+    <remap from="odometry" to="odometry_stitch"/>
 
     <!-- Outputs (Published Topic Names) -->
 
@@ -31,8 +31,8 @@
     <param name="isGroundVehicle" value="false"/>
 
     <!-- If the vehicle is an air vehicle, the following params should be set -->
-    <param name="minGoalDist" value="0.0" />
-    <param name="goalArrivalDist" value="1.5" />
+    <param name="minGoalDist" value="1.0" />
+    <param name="goalArrivalDist" value="1.0" />
 
 	 <!-- Whether or not you want to use an Occupancy Grid or an ESDF map type -->
     <param name="useOctomap" value="false"/>
@@ -93,13 +93,13 @@
     <param name="inflateWidth" value="0.4"/>
 
     <!-- Vehicle Fence Volume Limits -->
-    <!-- <param name="fenceOn" value="true"/>
+    <param name="fenceOn" value="true"/>
     <param name="fence_xmin" value="-1000.0"/>
     <param name="fence_xmax" value="1000.0"/>
     <param name="fence_ymin" value="-1000.0"/>
     <param name="fence_ymax" value="1000.0"/>
-    <param name="fence_zmin" value="-50.0"/>
-    <param name="fence_zmax" value="3.0"/> -->
+    <param name="fence_zmin" value="-0.4"/>
+    <param name="fence_zmax" value="3.0"/>
 
     <!-- Vehicle Volume Extents -->
     <param name="vehicleVolumeOn" value="true"/>
@@ -123,6 +123,7 @@
 
     <!-- Cost Function -->
     <param name="goalFunction" type="string" value="cost"/>
+    <param name="gain" type="string" value="constant"/>
     <!-- <param name="goalFunction" type="string" value="information"/> -->
 
     <!-- Minimum obstacle proximity for goal poses (adds to inflated distance) -->

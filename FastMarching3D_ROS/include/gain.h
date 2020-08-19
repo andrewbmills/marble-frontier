@@ -90,16 +90,7 @@ struct View {
   Pose pose;
   pcl::PointCloud<pcl::PointXYZ> cloud;
   int index = -1;
-};
-struct Node
-{
-  int id = -1;
-  int parent = -1;
-  float g = 1e10;
-  float h;
-  float f = 1e10;
-  std::vector<int> neighbors;
-  float position[3];
+  float gain = 0.0;
 };
 
 Eigen::MatrixXf CalculateFieldOfViewNormals(Pose pose, SensorFoV sensor)
@@ -243,6 +234,9 @@ float GainUnseen(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud)
 
 float Gain(Pose pose, SensorFoV sensor, octomap::OcTree* map, pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_seen, std::string type="frontier")
 {
+  // Calculates the gain value of a sensor at a pose within an occupancy grid map.
+  // Also returns the voxels seen by the sensor at a pose in the cloud_seen PointCloud.
+
   if (type == "constant") return 1.0;
 
   // Copy map in PointCloud
@@ -263,7 +257,7 @@ float Gain(Pose pose, SensorFoV sensor, octomap::OcTree* map, pcl::PointCloud<pc
   CheckLineOfSight(pose, map, cloud_fov, cloud_seen, true); // Optional argument to consider the value of unseen voxels beyond the frontier
 
   // Calculate gain for the seen voxels
-  ROS_INFO("Calculating gain.");
   float gain = GainUnseen(cloud_seen);
+  ROS_INFO("Calculated gain of %0.1f unseen voxels.", gain);
   return gain;
 }

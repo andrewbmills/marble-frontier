@@ -45,6 +45,9 @@
 #include "bresenham3d.cpp"
 // Sleep library
 #include <unistd.h>
+// Gain and utility libraries
+#include "gain.h"
+#include "utility.h"
 
 template <typename T>
 std::vector<size_t> sort_indexes(const std::vector<T> &v) {
@@ -104,46 +107,6 @@ float angle_diff(float a, float b)
     return d;
 }
 
-// Some orientation and pose structures
-struct Quaternion {
-  float w, x, y, z;
-};
-
-Quaternion euler2Quaternion(float yaw, float pitch, float roll) // yaw (Z), pitch (Y), roll (X)
-{
-  // From Wikipedia
-  // Abbreviations for the various angular functions
-  float cy = std::cos(yaw * 0.5);
-  float sy = std::sin(yaw * 0.5);
-  float cp = std::cos(pitch * 0.5);
-  float sp = std::sin(pitch * 0.5);
-  float cr = std::cos(roll * 0.5);
-  float sr = std::sin(roll * 0.5);
-
-  Quaternion q;
-  q.w = cy * cp * cr + sy * sp * sr;
-  q.x = cy * cp * sr - sy * sp * cr;
-  q.y = sy * cp * sr + cy * sp * cr;
-  q.z = sy * cp * cr - cy * sp * sr;
-  return q;
-}
-
-struct Pose {
-  pcl::PointXYZ position;
-  Eigen::Matrix3f R;
-  Quaternion q;
-};
-struct SensorFoV {
-  float verticalFoV; // in degrees
-  float horizontalFoV; // in degrees
-  float rMin; // in meters
-  float rMax; // in meters
-};
-struct View {
-  Pose pose;
-  pcl::PointCloud<pcl::PointXYZ> cloud;
-  int index = -1;
-};
 struct Node
 {
   int id = -1;
@@ -274,9 +237,12 @@ class Msfm3d
 
     std::string task = "explore";
     float customGoal[3] = {0.0, 0.0, 0.0};
+    std::string gain_type = "constant";
+    float minGoalDist = 0.0;
 
     void callback(sensor_msgs::PointCloud2 msg); // Subscriber callback function for PC2 msg (ESDF)
     void callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg); // Subscriber callback function for Octomap msg
+    void callback_Octomap_Simple(const octomap_msgs::Octomap::ConstPtr msg);
     void callback_Octomap_freePCL(const sensor_msgs::PointCloud2 msg);
     void callback_Octomap_occupiedPCL(const sensor_msgs::PointCloud2 msg);
     void callback_position(const nav_msgs::Odometry msg); // Subscriber callback for robot position
@@ -904,7 +870,11 @@ void Msfm3d::updateGoalPoses()
       // ROS_INFO("Pose is invalid, next loop.");
       continue;
     }
-
+    float query[3] = {goalPose.position.x, goalPose.position.y, goalPose.position.z};
+    if (dist3(position, query) <= minGoalDist) {
+      // Goal is too close to the robot's current position.
+      continue;
+    }
     // At least one group in this cluster is viewable, so add a view count to the vector
     // clusterViewCounts[greedyClusterNumber[it]] = clusterViewCounts[greedyClusterNumber[it]] + 1;
 
@@ -953,6 +923,11 @@ void Msfm3d::updateGoalPoses()
     extract.setNegative(false);
     extract.filter(*viewed_cloud);
 
+    if (viewed_cloud->points.size() < minViewCloudSize) {
+      // Not enough frontiers observed by sampled pose.
+      continue;
+    }
+
     // Add the pose and the viewed frontier indices to the goalViews vector.
     // ROS_INFO("Adding view to vector of potential goal views");
     View sampleView;
@@ -962,6 +937,8 @@ void Msfm3d::updateGoalPoses()
     for (int i = 0; i < viewed_cloud->points.size(); i++) {
       sampleView.cloud.points.push_back(viewed_cloud->points[i]);
     }
+    pcl::PointCloud<pcl::PointXYZI>::Ptr gain_cloud(new pcl::PointCloud<pcl::PointXYZI>);
+    sampleView.gain = Gain(sampleView.pose, camera, mytree, gain_cloud, gain_type);
     goalViews.push_back(sampleView);
 
     // ROS_INFO("Sampled view from [%0.2f, %0.2f, %0.2f] sees %d frontier voxels.", sampleView.pose.position.x, sampleView.pose.position.y, sampleView.pose.position.z, (int)sampleView.cloud.points.size());
@@ -1046,6 +1023,20 @@ void Msfm3d::callback_position(const nav_msgs::Odometry msg)
   q.z = msg.pose.pose.orientation.z;
   q.w = msg.pose.pose.orientation.w;
   ROS_INFO("Robot pose updated!");
+}
+
+void Msfm3d::callback_Octomap_Simple(const octomap_msgs::Octomap::ConstPtr msg)
+{
+  ROS_INFO("Getting OctoMap message...");
+  if (msg->data.size() == 0) {
+    ROS_INFO("Octomap message is of length 0");
+    return;
+  }
+  delete mytree;
+  mytree = new octomap::OcTree(msg->resolution);
+  mytree = (octomap::OcTree*)octomap_msgs::binaryMsgToMap(*msg);
+  ROS_INFO("AbstractOcTree cast into OcTree.");
+  return;
 }
 
 void Msfm3d::callback_Octomap(const octomap_msgs::Octomap::ConstPtr msg)
@@ -1478,7 +1469,7 @@ bool Msfm3d::updatePath(const float goal[3])
     Node current = open_set.back();
     // ROS_INFO("Current node, [%0.1f, %0.1f, %0.1f], g = %0.2f, h = %0.2f, f = %0.2f, has %d neighbors", current.position[0], current.position[1], current.position[2], current.g, current.h, current.f, current.neighbors.size());
     // if (current.id == xyz_index3(position)) {
-    if (dist3(current.position, position) <= 3*voxel_size) {
+    if (dist3(current.position, position) <= 1.1*voxel_size) {
       std::vector<float> path = reconstructPath(visited, current); // Stop if the robot's current position (the goal) has been reached.
       nav_msgs::Path newpathmsg;
       newpathmsg.header.frame_id = frame;
@@ -2028,10 +2019,10 @@ void findFrontier(Msfm3d& planner, float frontierList[15], double cost[5])
   }
 }
 
-void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int N, const float dMin, const float dAgentMin)
+void closestGoalView(Msfm3d& planner, int *viewIndices, double *utility_list, const int N, const float dMin)
 {
   double tStart = clock();
-  // findFrontier scans through the environment arrays and returns the N closest frontier locations in reachability distance that are at least dMin apart.
+  // closestGoalView scans through the environment arrays and returns the N closest frontier locations in reachability distance that are at least dMin apart.
   float point[3];
   float query[3];
   int slot = 0;
@@ -2041,7 +2032,7 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
 
   // Initialize cost list with negative values.
   for (int i=0; i<N; i++) {
-    cost[i] = -(N-i);
+    utility_list[i] = -i;
     viewIndices[i] = -1;
   }
 
@@ -2049,62 +2040,46 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
 
   ROS_INFO("Finding the closest viewpoint to see frontiers.");
   // Store costs and their indices in a vector
-  std::vector<double> costs;
+  // std::vector<float> gains;
+  // std::vector<double> costs;
+  std::vector<double> utilities;
   std::vector<int> indices;
   for (int i=0; i<planner.goalViews.size(); i++){
     point[0] = planner.goalViews[i].pose.position.x;
     point[1] = planner.goalViews[i].pose.position.y;
     point[2] = planner.goalViews[i].pose.position.z;
     idx = planner.xyz_index3(point);
-    if (dist3(planner.position, point) <= dAgentMin) {
-      continue;
-    }
-    if (planner.goalViews[i].cloud.points.size() < planner.minViewCloudSize) { // Filter out goal poses that don't see enough frontier cells
-      continue;
-    }
     if ((idx < 0) || (idx > planner.esdf.size[0]*planner.esdf.size[1]*planner.esdf.size[2])) {
       continue;
     }
     if (planner.reach[idx] > (double)0.0) {
-      // Ignore points that are clearly not in the top
-        // Put the new point in the costs and indices vector
-      // if (planner.updatePath(point)) {
-      // Get the angle between the current robot pose and the path start
-      // int j = min((int)planner.pathmsg.poses.size(), 5);
-      // float start_path_vec[3] = {(float)(planner.pathmsg.poses[j].pose.position.x - planner.pathmsg.poses[0].pose.position.x),
-      //                            (float)(planner.pathmsg.poses[j].pose.position.y - planner.pathmsg.poses[0].pose.position.y),
-      //                            (float)(planner.pathmsg.poses[j].pose.position.z - planner.pathmsg.poses[0].pose.position.z)};
+      // Put the new point in the costs and indices vector
+      // Get angle between current robot position and goal position
       float start_path_vec[3] = {(float)(point[0] - planner.position[0]),
                                  (float)(point[1] - planner.position[1]),
                                  (float)(point[2] - planner.position[2])};
       float start_path_yaw = std::atan2(start_path_vec[1], start_path_vec[0]); // rad
       double cost;
       cost = planner.reach[idx]*(1.0 + std::abs(angle_diff((180.0/M_PI)*start_path_yaw, (180.0/M_PI)*vehicle_yaw)/180.0)*planner.turnPenalty);
-      // ROS_INFO("Vehicle yaw = %0.2f deg, Path yaw = %0.2f deg, cost = %0.2f, cost_turn = %0.2f", (180.0/M_PI)*vehicle_yaw, (180.0/M_PI)*start_path_yaw, planner.reach[idx], cost - planner.reach[idx]);
-      costs.push_back(cost);
+      utilities.push_back(Utility(planner.goalViews[i].gain, cost));
       indices.push_back(i);
-      // }
     }
   }
 
   // Sort costs and indices vectors
-  std::vector<double> costs_sorted;
+  std::vector<double> utilities_sorted;
   std::vector<int> indices_sorted;
-  // ROS_INFO("Goal View Costs:");
-  // std::cout << "[";
-  for (auto i:sort_indexes(costs)) {
-    costs_sorted.push_back(costs[i]);
+  for (auto i:sort_indexes(utilities)) {
+    utilities_sorted.push_back(utilities[i]);
     indices_sorted.push_back(indices[i]);
-    // std::cout << costs[i] << ", ";
   }
-  // std::cout << "]" << std::endl;
 
   // Return the N closest goal views that are at least dMin distance from those above them.
   bool addView = true;
   int addCount = 0;
   int plannerCallCount = 0;
   ROS_INFO("Closest Goal Views:");
-  for (int i=0; i<costs_sorted.size(); i++) {
+  for (int i=(utilities_sorted.size()-1); i>=0; i--) {
     point[0] = planner.goalViews[indices_sorted[i]].pose.position.x;
     point[1] = planner.goalViews[indices_sorted[i]].pose.position.y;
     point[2] = planner.goalViews[indices_sorted[i]].pose.position.z;
@@ -2128,8 +2103,8 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
     }
     if (addView) {
       viewIndices[addCount] = indices_sorted[i];
-      cost[addCount] = costs_sorted[i];
-      ROS_INFO("Cost: %0.2f, @ (%0.2fm, %0.2fm, %0.2fm)", cost[addCount], point[0], point[1], point[2]);
+      utility_list[addCount] = utilities_sorted[i];
+      ROS_INFO("Cost: %0.2f, @ (%0.2fm, %0.2fm, %0.2fm)", utility_list[addCount], point[0], point[1], point[2]);
       addCount++;
     }
     if (addCount == N) {
@@ -2141,7 +2116,7 @@ void closestGoalView(Msfm3d& planner, int *viewIndices, double *cost, const int 
   ROS_INFO("%d Paths calculated in optimization.  Total optimization took %0.3f seconds.", plannerCallCount, (double)(clock() - tStart)/CLOCKS_PER_SEC);
 }
 
-void infoGoalView(Msfm3d& planner, int *viewIndices, double *utility, const int nAgents, const float dMin, const float dAgentMin)
+void infoGoalView(Msfm3d& planner, int *viewIndices, double *utility, const int nAgents, const float dMin)
 {
    // infoGoalView finds the most "informative" View in the planner.goalViews vector.
   float point[3];
@@ -2165,11 +2140,6 @@ void infoGoalView(Msfm3d& planner, int *viewIndices, double *utility, const int 
     point[1] = planner.goalViews[i].pose.position.y;
     point[2] = planner.goalViews[i].pose.position.z;
     idx = planner.xyz_index3(point);
-
-    // Check if the robot's position is within a radius of the goal view
-    if (dist3(planner.position, point) <= dAgentMin) {
-      continue;
-    }
 
     // Check to see if the goal view has a cost to travel to it (if not we can't generate a path anyways)
     if (planner.reach[idx] > (double)0.0) {
@@ -2350,7 +2320,7 @@ void view2MarkerMsg(const View cameraView, const SensorFoV camera, visualization
   marker.points.push_back(BL);
 }
 
-void reach(Msfm3d& planner, const bool usesecond, const bool usecross, const int nFront, bool reachOrigin, const double timeOut = 2.0) {
+void reach(Msfm3d& planner, const bool usesecond, const bool usecross, const int n_neighbors, bool reachOrigin, const double timeOut = 2.0, const float min_goal_separation_dist = 5.0) {
     double tStart = clock();
     /* The input variables */
     double *F;
@@ -2404,16 +2374,14 @@ void reach(Msfm3d& planner, const bool usesecond, const bool usecross, const int
     /* Index */
     int IJK_index, XYZ_index, index;
 
-    /* Frontier View Count */
-    int frontCount = 0;
-
     /* Initialize a matrix with the gain values of the goal poses for terminating the reach function */
+    std::vector<std::pair<pcl::PointXYZ, float>> max_utility_list;
     std::vector<bool> goal (npixels, false); // All values are initially zero
     std::vector<std::pair<float,int>> gain_id_table;
     for (int i_view=0; i_view<planner.goalViews.size(); i_view++) {
       float query[3] = {planner.goalViews[i_view].pose.position.x, planner.goalViews[i_view].pose.position.y, planner.goalViews[i_view].pose.position.z};
       goal[planner.xyz_index3(query)] = true; // Temporary until the gains are actually calculated
-      gain_id_table.push_back(std::make_pair(100.0,planner.xyz_index3(query)));
+      gain_id_table.push_back(std::make_pair(planner.goalViews[i_view].gain,planner.xyz_index3(query)));
     }
     float max_turn_rate_penalty = planner.turnPenalty; // Max cost percent increase to add for heading differences
     float utility_max = 0.0;
@@ -2661,7 +2629,18 @@ void reach(Msfm3d& planner, const bool usesecond, const bool usecross, const int
             // ROS_INFO("Voxel @ [%0.2f, %0.2f, %0.2f] has gain %0.2f.", query[0], query[1], query[2], gain_local);
 
             // Update best utility so far
-            // ***TO-DO, Add in utility function call here***
+            /* THIS IS TO MAKE FAST MARCHING ONLY RUN TO THE BEST N GOALS WITH A MINIMUM DISTANCE BETWEEN THEM
+            for (int i=0; i<std::min(max_utility_list.size(), n_neighbors); i++)
+            {
+              float utility_worst_case = gain_local/(cost_local*(1.0 + max_turn_rate_penalty));  // Best utility so far with max turn rate penalty added in
+              float utility_list_query[3] = {max_utility_list[i].first.x, max_utility_list[i].first.y, max_utility_list[i].first.z};
+              if ((utility_worst_case > max_utility_list[i].second) &&  (dist3(query, utility_list_query) >= min_goal_separation_dist) {
+                // ROS_INFO("Updating best utility so far.");
+                utility_max = utility_worst_case;
+              }
+            }
+            */
+           
             float utility_worst_case = gain_local/(cost_local*(1.0 + max_turn_rate_penalty));  // Best utility so far with max turn rate penalty added in
             if (utility_worst_case > utility_max) {
               // ROS_INFO("Updating best utility so far.");
@@ -2845,7 +2824,7 @@ int main(int argc, char **argv)
 
   // Minimum distance for a goal pose away from current position
   float minGoalDist;
-  n.param("global_planning/minGoalDist", minGoalDist, (float)0.0);
+  n.param("global_planning/minGoalDist", planner.minGoalDist, (float)0.0);
   float goalArrivalDist;
   n.param("global_planning/goalArrivalDist", goalArrivalDist, (float)0.8);
 
@@ -2979,12 +2958,13 @@ int main(int argc, char **argv)
 
   // minViewCloudSize
   n.param("global_planning/minViewCloudSize", planner.minViewCloudSize, 1);
+  n.param<std::string>("global_planning/gain", planner.gain_type, "constant");
 
   // View pose minimum obstacle distance
   n.param("global_planning/viewPoseObstacleDistance", planner.viewPoseObstacleDistance, (float)0.01);
 
   ROS_INFO("Subscribing to Occupancy Grid...");
-  ros::Subscriber sub0 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap, &planner);
+  ros::Subscriber sub0 = n.subscribe("octomap_binary", 1, &Msfm3d::callback_Octomap_Simple, &planner);
 
   ROS_INFO("Subscribing to ESDF or TSDF PointCloud2...");
   ros::Subscriber sub1 = n.subscribe("voxblox_node/tsdf_pointcloud", 1, &Msfm3d::callback, &planner);
@@ -3061,11 +3041,14 @@ int main(int argc, char **argv)
   visualization_msgs::MarkerArray group_marker_msg;
   ros::Publisher pub14 = n.advertise<visualization_msgs::MarkerArray>("goal_views", 5);
   visualization_msgs::MarkerArray goal_views_marker_msg;
+  ros::Publisher pub15 = n.advertise<std_msgs::Float32>("plan_time", 5);
+  std_msgs::Float32 plan_time_msg;
 
   int i = 0;
   bool goalFound = 0;
   ros::Rate r(updateRate); // Hz
   clock_t tStart;
+  clock_t t_plan;
   int npixels;
   int spins = 0;
   int goalViewList[agentCount];
@@ -3087,6 +3070,7 @@ int main(int argc, char **argv)
   {
     r.sleep();
     ros::spinOnce();
+    t_plan = clock();
     ROS_INFO("Planner Okay.");
     if (planner.receivedMap && !planner.esdf_or_octomap){
       planner.parsePointCloud();
@@ -3208,9 +3192,9 @@ int main(int argc, char **argv)
             // ROS_INFO("At least 50 percent of the frontiers at the goal pose are no longer frontiers or %d loops have occurred since last plan.  Replanning...", (int)(replan_ticks % replan_tick_limit));
             // Find goal views with an information-based optimization
             if (goalFunction == "information") {
-              infoGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation, minGoalDist);
+              infoGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation);
             } else {
-              closestGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation, minGoalDist);
+              closestGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation);
             }
 
             // If no reasonable goal views are found, expand search to all frontier cells to see if any goal view can be found
@@ -3221,9 +3205,9 @@ int main(int argc, char **argv)
               reach(planner, 0, 0, (int)planner.frontierCloud->points.size(), false);
               ROS_INFO("Reachability Grid Calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
               if (goalFunction == "information") {
-                infoGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation, minGoalDist);
+                infoGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation);
               } else {
-                closestGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation, minGoalDist);
+                closestGoalView(planner, goalViewList, goalViewCost, agentCount, goalViewSeparation);
               }
             }
 
@@ -3373,7 +3357,8 @@ int main(int argc, char **argv)
 
           // Height debugging
           ROS_INFO("The robot is %0.2f meters off of the ground.  The goal point is %0.2f meters off of the ground.", planner.heightAGL(planner.position), planner.heightAGL(goal));
-
+          plan_time_msg.data = (float)(clock() - t_plan);
+          pub15.publish(plan_time_msg);
         } else {
 
           // Inflate the obstacle map to avoid collisions
