@@ -54,7 +54,7 @@ Frontier ConvertPointCloudToFrontier(pcl::PointCloud<pcl::PointXYZ>::Ptr frontie
     std::pair<bool,int> vMap;
     vMap.first = true;
     vMap.second = frontier.list.size();
-    frontier.map.Query(v.position.x, v.position.y, v.position.z) = vMap;
+    frontier.map.SetVoxel(v.position.x, v.position.y, v.position.z, vMap);
   }
   return frontier;
 }
@@ -73,7 +73,7 @@ Frontier ConvertPointCloudToFrontier(pcl::PointCloud<pcl::PointNormal>::Ptr fron
     std::pair<bool,int> vMap;
     vMap.first = true;
     vMap.second = frontier.list.size();
-    frontier.map.Query(v.position.x, v.position.y, v.position.z) = vMap;
+    frontier.map.SetVoxel(v.position.x, v.position.y, v.position.z, vMap);
   }
   return frontier;
 }
@@ -95,7 +95,10 @@ Frontier ConvertPointCloudToFrontier(pcl::PointCloud<pcl::PointNormal>::Ptr fron
       std::pair<bool,int> vMap;
       vMap.first = true;
       vMap.second = frontier.list.size();
-      frontier.map.Query(v.position.x, v.position.y, v.position.z) = vMap;
+      Point query{v.position.x, v.position.y, v.position.z};
+      if (frontier.map._CheckVoxelPositionInBounds(query)) { // Got a nan for x value so this is a band-aid until I find out why
+        frontier.map.SetVoxel(v.position.x, v.position.y, v.position.z, vMap);
+      }
     }
   }
   return frontier;
@@ -165,43 +168,85 @@ void ConvertOctomapToSeenOccGrid(octomap::OcTree* map, MapGrid3D<std::pair<bool,
   seenOccGrid->voxelSize = map->getResolution();
   map->getMetricMin(xMin, yMin, zMin);
   map->getMetricMax(xMax, yMax, zMax);
-  seenOccGrid->minBounds.x = (float)xMin - 1.5*map->getResolution();
-  seenOccGrid->minBounds.y = (float)yMin - 1.5*map->getResolution();
-  seenOccGrid->minBounds.z = (float)zMin - 1.5*map->getResolution();
-  seenOccGrid->maxBounds.x = (float)xMax + 1.5*map->getResolution();
-  seenOccGrid->maxBounds.y = (float)yMax + 1.5*map->getResolution();
-  seenOccGrid->maxBounds.z = (float)zMax + 1.5*map->getResolution();
-  seenOccGrid->size.x = roundf((seenOccGrid->maxBounds.x - seenOccGrid->minBounds.x)/map->getResolution()) + 1;
-  seenOccGrid->size.y = roundf((seenOccGrid->maxBounds.y - seenOccGrid->minBounds.y)/map->getResolution()) + 1;
-  seenOccGrid->size.z = roundf((seenOccGrid->maxBounds.z - seenOccGrid->minBounds.z)/map->getResolution()) + 1;
-  seenOccGrid->_SetMaxBounds();
-  seenOccGrid->SetAll(std::make_pair(false,false));
+  float minBounds[3] = {xMin - 1.5*seenOccGrid->voxelSize, yMin - 1.5*seenOccGrid->voxelSize, zMin - 1.5*seenOccGrid->voxelSize};
+  float maxBounds[3] = {xMax + 1.5*seenOccGrid->voxelSize, yMax + 1.5*seenOccGrid->voxelSize, zMax + 1.5*seenOccGrid->voxelSize};
+  seenOccGrid->Reset(seenOccGrid->voxelSize, minBounds, maxBounds, std::make_pair(false, false));
+  map->expand();
 
   clock_t tStart = clock();
   for(octomap::OcTree::leaf_iterator it = map->begin_leafs(),
   end=map->end_leafs(); it!=end; ++it) {
-    float x = it.getX();
-  }
-  ROS_INFO("Looping through compressed Octomap took: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
-  map->expand();
-
-  tStart = clock();
-  for(octomap::OcTree::leaf_iterator it = map->begin_leafs(),
-  end=map->end_leafs(); it!=end; ++it) {
-    bool setSuccessful = seenOccGrid->SetVoxel(it.getX(), it.getY(), it.getZ(), std::make_pair(true, (it->getValue()>0.0)), false);
+    seenOccGrid->SetVoxel(it.getX(), it.getY(), it.getZ(), std::make_pair(true, (it->getValue()>0.0)));
   }
   ROS_INFO("Copying data from Octomap took: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
-
-  tStart = clock();
-  for(octomap::OcTree::leaf_iterator it = map->begin_leafs(),
-  end=map->end_leafs(); it!=end; ++it) {
-    float x = it.getX();
-  }
-  ROS_INFO("Looping through data from Octomap took: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
   return;
 }
 
-bool CalculateFrontierRawPCL_fast(MapGrid3D<std::pair<bool, bool>>* seenOccGrid, pcl::PointCloud<pcl::PointXYZ>::Ptr frontier)
+void GetPointCloudBounds(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud, float min[3], float max[3])
+{
+  Point boundsMin{0.0, 0.0, 0.0};
+  Point boundsMax{0.0, 0.0, 0.0};
+
+  // Get the xyz extents of the PCL by running one loop through the data
+  for (int i=0; i<cloud->points.size(); i++) {
+    pcl::PointXYZI query = cloud->points[i];
+    if (i == 0) {
+      boundsMin.x = (double)query.x; boundsMin.y = (double)query.y; boundsMin.z = (double)query.z;
+      boundsMax.x = (double)query.x; boundsMax.y = (double)query.y; boundsMax.z = (double)query.z;
+      continue;
+    }
+    if (query.x < boundsMin.x) boundsMin.x = (double)query.x;
+    if (query.y < boundsMin.y) boundsMin.y = (double)query.y;
+    if (query.z < boundsMin.z) boundsMin.z = (double)query.z;
+    if (query.x > boundsMax.x) boundsMax.x = (double)query.x;
+    if (query.y > boundsMax.y) boundsMax.y = (double)query.y;
+    if (query.z > boundsMax.z) boundsMax.z = (double)query.z;
+  }
+
+  min[0] = boundsMin.x; min[1] = boundsMin.y; min[2] = boundsMin.z;
+  max[0] = boundsMax.x; max[1] = boundsMax.y; max[2] = boundsMax.z;
+  return;
+}
+
+void ConvertPointCloudToSeenOccGrid(pcl::PointCloud<pcl::PointXYZI>::Ptr edt, MapGrid3D<std::pair<bool,bool>>* seenOccGrid, float minDistanceFree)
+{
+  float minBounds[3];
+  float maxBounds[3];
+  GetPointCloudBounds(edt, minBounds, maxBounds);
+  seenOccGrid->Reset(seenOccGrid->voxelSize, minBounds, maxBounds, std::make_pair(false,false));
+
+  for (int i=0; i<edt->points.size(); i++) {
+    pcl::PointXYZI query = edt->points[i];
+    seenOccGrid->SetVoxel(query.x, query.y, query.z, std::make_pair(true, (query.intensity<=minDistanceFree)));
+  }
+
+  return;
+}
+
+bool CheckFrontier(int voxelID, std::vector<int> neighbors, MapGrid3D<std::pair<bool, bool>>* seenOccGrid) {
+  // The voxel is free and seen, check the neighbors. If any are unseen, return true.
+  for (int neighbor=0; neighbor<neighbors.size(); neighbor++) {
+    if (!seenOccGrid->voxels[voxelID+neighbors[neighbor]].first) return true;
+  }
+  return false;
+}
+
+bool CheckFrontierGroundPlane(int voxelID, std::vector<int> neighbors, MapGrid3D<std::pair<bool, bool>>* seenOccGrid) {
+  // This is a function check for frontiers of ground plane maps with a voxel thickness of 2 or more.
+  // Most voxels aren't going to be frontier, so lets eliminate those first
+  int unseenCount = 0;
+  for (int neighbor=0; neighbor<4; neighbor++) { // Only check x and y neighbors
+    // Check if neighbor is occupied, if so, eliminate this as a candidate
+    std::pair<bool,bool> voxel = seenOccGrid->voxels[voxelID + neighbors[neighbor]];
+    if (voxel.second) return false;
+    // If at least two neighbors are unseen and none are occupied, return true.
+    if (!voxel.first) unseenCount++;
+  }
+  if (unseenCount >= 1) return true;
+  else return false;
+}
+
+bool CalculateFrontierRawPCL(MapGrid3D<std::pair<bool, bool>>* seenOccGrid, pcl::PointCloud<pcl::PointXYZ>::Ptr frontier)
 {
   frontier->points.clear();
   std::vector<int> neighbor_deltas;
@@ -218,13 +263,36 @@ bool CalculateFrontierRawPCL_fast(MapGrid3D<std::pair<bool, bool>>* seenOccGrid,
     if (seenOccGrid->voxels[i].first && !seenOccGrid->voxels[i].second) {
       // This section will segfault if any seen and free cells are on the border of the map.
       // Be sure to pad the seenOccGrid with at least one unseen voxel to prevent this.
-      for (int neighbor=0; neighbor<6; neighbor++) {
-        if (!seenOccGrid->voxels[i+neighbor_deltas[neighbor]].first) {
-          Point query = seenOccGrid->_ConvertIndexToPosition(i);
-          pcl::PointXYZ p{query.x, query.y, query.z};
-          frontier->points.push_back(p);
-          break;
-        }
+      if (CheckFrontier(i, neighbor_deltas, seenOccGrid)) {
+        Point query = seenOccGrid->_ConvertIndexToPosition(i);
+        pcl::PointXYZ p{query.x, query.y, query.z};
+        frontier->points.push_back(p);
+      }
+    }
+  }
+}
+
+bool CalculateFrontierRawPCLGroundPlane(MapGrid3D<std::pair<bool, bool>>* seenOccGrid, pcl::PointCloud<pcl::PointXYZ>::Ptr frontier)
+{
+  frontier->points.clear();
+  std::vector<int> neighbor_deltas;
+  neighbor_deltas.push_back(1);
+  neighbor_deltas.push_back(-1);
+  neighbor_deltas.push_back(seenOccGrid->size.x);
+  neighbor_deltas.push_back(-seenOccGrid->size.x);
+  neighbor_deltas.push_back(seenOccGrid->size.x*seenOccGrid->size.y);
+  neighbor_deltas.push_back(-seenOccGrid->size.x*seenOccGrid->size.y);
+  int total_map_size = seenOccGrid->voxels.size();
+  // Check all the map cells for frontier voxels
+  for (int i=0; i<seenOccGrid->voxels.size(); i++){
+    // Check if the voxel is seen and free (not occupied)
+    if (seenOccGrid->voxels[i].first && !seenOccGrid->voxels[i].second) {
+      // This section will segfault if any seen and free cells are on the border of the map.
+      // Be sure to pad the seenOccGrid with at least one unseen voxel to prevent this.
+      if (CheckFrontierGroundPlane(i, neighbor_deltas, seenOccGrid)) {
+        Point query = seenOccGrid->_ConvertIndexToPosition(i);
+        pcl::PointXYZ p{query.x, query.y, query.z};
+        frontier->points.push_back(p);
       }
     }
   }
@@ -241,7 +309,7 @@ Frontier CalculateFrontier(octomap::OcTree* map, bool normalFilterOn=true, bool 
   // Frontier Voxel - A seen and free voxel adjacent to an unseen voxel
   tStart = clock();
   pcl::PointCloud<pcl::PointXYZ>::Ptr frontierCloudRaw(new pcl::PointCloud<pcl::PointXYZ>);
-  CalculateFrontierRawPCL_fast(&seenOcc, frontierCloudRaw);
+  CalculateFrontierRawPCL(&seenOcc, frontierCloudRaw);
   ROS_INFO("Raw frontier computed (fastmode) in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
 
 
@@ -256,6 +324,59 @@ Frontier CalculateFrontier(octomap::OcTree* map, bool normalFilterOn=true, bool 
   pcl::PointCloud<pcl::PointNormal>::Ptr frontierCloudFilteredClustered(new pcl::PointCloud<pcl::PointNormal>);
   std::vector<pcl::PointIndices> frontierClusterIndices;
   FilterFrontierByCluster(frontierCloudFilteredNormals, frontierCloudFilteredClustered, frontierClusterIndices, 1.5*seenOcc.voxelSize, minClusterSize);
+  ROS_INFO("Clusters calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+
+  // Convert PointCloud to Frontier struct
+  tStart = clock();
+  Frontier frontier = ConvertPointCloudToFrontier(frontierCloudFilteredClustered, frontierClusterIndices, &seenOcc);
+  ROS_INFO("PointCloud converted to Frontier struct in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+
+  return frontier;
+}
+
+Frontier CalculateFrontier(pcl::PointCloud<pcl::PointXYZI>::Ptr map, float voxelSize, bool normalFilterOn=true, bool clusteringOn=true, float minNormalZ=0.4, int minClusterSize=50, bool groundMap=false)
+{
+  clock_t tStart = clock();
+  MapGrid3D<std::pair<bool,bool>> seenOcc;
+  seenOcc.voxelSize = voxelSize;
+  ConvertPointCloudToSeenOccGrid(map, &seenOcc, 2.1*voxelSize);
+  ROS_INFO("EDT converted to seenOcc GridMap in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+
+  // Determines which voxels are frontier by rule:
+  // Frontier Voxel - A seen and free voxel adjacent to an unseen voxel
+  tStart = clock();
+  pcl::PointCloud<pcl::PointXYZ>::Ptr frontierCloudRaw(new pcl::PointCloud<pcl::PointXYZ>);
+  if (groundMap) CalculateFrontierRawPCLGroundPlane(&seenOcc, frontierCloudRaw);
+  else CalculateFrontierRawPCL(&seenOcc, frontierCloudRaw);
+  ROS_INFO("Raw frontier computed (fastmode) in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+
+
+  // Calculate frontier normal vectors and filter according to the z-component
+  tStart = clock();
+  pcl::PointCloud<pcl::PointNormal>::Ptr frontierCloudFilteredNormals(new pcl::PointCloud<pcl::PointNormal>);
+  if (normalFilterOn) FilterFrontierByNormal(frontierCloudRaw, frontierCloudFilteredNormals, 2.1*seenOcc.voxelSize, minNormalZ);
+  else {
+    for (int i=0; i<frontierCloudRaw->points.size(); i++) {
+      pcl::PointNormal query;
+      query.x = frontierCloudRaw->points[i].x; query.y = frontierCloudRaw->points[i].y; query.z = frontierCloudRaw->points[i].z;
+      frontierCloudFilteredNormals->points.push_back(query);
+    }
+  }
+  ROS_INFO("Normals filtered in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+
+  // Cluster frontier voxels based on contiguity
+  tStart = clock();
+  pcl::PointCloud<pcl::PointNormal>::Ptr frontierCloudFilteredClustered(new pcl::PointCloud<pcl::PointNormal>);
+  std::vector<pcl::PointIndices> frontierClusterIndices;
+  if (clusteringOn) FilterFrontierByCluster(frontierCloudFilteredNormals, frontierCloudFilteredClustered, frontierClusterIndices, 1.5*seenOcc.voxelSize, minClusterSize);
+  else {
+    pcl::PointIndices ids;
+    for (int i=0; i<frontierCloudFilteredNormals->points.size(); i++) {
+      frontierCloudFilteredClustered->points.push_back(frontierCloudFilteredNormals->points[i]);
+      ids.indices.push_back(i);
+    }
+    frontierClusterIndices.push_back(ids);
+  }
   ROS_INFO("Clusters calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
 
   // Convert PointCloud to Frontier struct

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+  <group ns="X4">
+    <node pkg="msfm3d" type="frontier_planner" name="frontier_planner" output="screen">
+      <!-- Params -->
+      <param name="update_rate" value="2.0"/>
+      <param name="voxel_size" value="0.2"/>
+      <param name="num_agents" value="1"/>
+      <param name="goal_separation_distance" value="3.0"/>
+      <param name="speed_max" value="4.0"/>
+      <param name="speed_safe" value="0.6"/>
+      <param name="marching_timeout" value="0.5"/> <!-- seconds -->
+
+      <!-- Topic remaps -->
+      <remap from="speed_map" to="edt"/>
+      <!-- <remap from="frontier" to="poop"/> -->
+      <remap from="goal_points" to="poop"/>
+    </node>
+  </group>
+</launch>

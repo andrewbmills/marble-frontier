@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 11)
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake_modules/")
 
 find_package(Eigen3 REQUIRED)
+find_package(OpenMP)
 find_package(catkin REQUIRED
   COMPONENTS
     roscpp
@@ -80,5 +81,18 @@ target_link_libraries(depthImageToPointCloud2
 
 add_executable(goal_pose_sampler src/goal_pose_sampler_node.cpp)
 target_link_libraries(goal_pose_sampler
+  ${catkin_LIBRARIES}
+)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(goal_pose_sampler PUBLIC OpenMP::OpenMP_CXX)
+endif()
+
+add_executable(frontier_planner src/frontier_planner_node.cpp)
+target_link_libraries(frontier_planner
+  ${catkin_LIBRARIES}
+)
+
+add_executable(octomap_callback_test src/octomap_callback_test.cpp)
+target_link_libraries(octomap_callback_test
   ${catkin_LIBRARIES}
 )

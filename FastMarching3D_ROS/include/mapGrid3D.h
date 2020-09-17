@@ -1,7 +1,6 @@
 #include <vector>
 #include "math.h"
 #include <iostream>
-#include <pcl/point_types.h>
 
 struct Point {
     float x, y, z;
@@ -25,13 +24,13 @@ class MapGrid3D {
     MapGrid3D(float resolution, Dimensions sizeIn, Point minBoundsIn);
     bool _CheckVoxelPositionInBounds(Point position);
     int _ConvertPositionToIndex(Point position);
-    int _ConvertPositionToIndexNoCheck(Point position);
     Point _ConvertIndexToPosition(int idx);
     void _SetMaxBounds();
-    bool SetVoxel(float x, float y, float z, T data, bool checkValid=true);
+    void Reset(float resolution, float minBoundList[3], float maxBoundList[3], T defaultValue);
+    void SetVoxel(float x, float y, float z, T data);
     void SetAll(T data);
-    T Query(int idx);
-    T Query(float x, float y, float z);
+    T& Query(int idx);
+    T& Query(float x, float y, float z);
     void GetNeighbors26(float x, float y, float z, std::vector<Point> &neighbors, std::vector<T> &data, std::vector<int> &indices);
     void GetNeighbors6(float x, float y, float z, std::vector<Point> &neighbors, std::vector<T> &data, std::vector<int> &indices);
 };
@@ -70,8 +69,12 @@ template <typename T>
 MapGrid3D<T>::MapGrid3D(float resolution, Dimensions sizeIn, Point minBoundsIn)
 {
   voxelSize = resolution;
-  size = sizeIn;
-  minBounds = minBoundsIn;
+  size.x = sizeIn.x;
+  size.y = sizeIn.y;
+  size.z = sizeIn.z;
+  minBounds.x = minBoundsIn.x;
+  minBounds.y = minBoundsIn.y;
+  minBounds.z = minBoundsIn.z;
   _SetMaxBounds();
   voxels.resize(size.x*size.y*size.z);
   return;
@@ -102,25 +105,10 @@ int xyz_index3(const double point[3], double min[3], int size[3], double voxel_s
 template <typename T>
 int MapGrid3D<T>::_ConvertPositionToIndex(Point position)
 {
-  if (_CheckVoxelPositionInBounds(position)) {
-    int id;
-    id = std::round((position.z - minBounds.z)/voxelSize)*size.x*size.y;
-    id += std::round((position.y - minBounds.y)/voxelSize)*size.x;
-    id += std::round((position.x - minBounds.x)/voxelSize);
-    return id;
-  }
-  else {
-    return -1;
-  }
-}
-
-template <typename T>
-int MapGrid3D<T>::_ConvertPositionToIndexNoCheck(Point position)
-{
   int id;
-  id = std::roundf((position.z - minBounds.z)/voxelSize)*size.x*size.y;
-  id += std::roundf((position.y - minBounds.y)/voxelSize)*size.x;
-  id += std::roundf((position.x - minBounds.x)/voxelSize);
+  id = std::round((position.z - minBounds.z)/voxelSize)*size.x*size.y;
+  id += std::round((position.y - minBounds.y)/voxelSize)*size.x;
+  id += std::round((position.x - minBounds.x)/voxelSize);
   return id;
 }
 
@@ -128,15 +116,10 @@ template <typename T>
 Point MapGrid3D<T>::_ConvertIndexToPosition(int idx)
 {
   Point p{0.0, 0.0, 0.0};
-  if ((idx >=0) && (idx < voxels.size())) {
-    p.x = ((idx % (size.y*size.x)) % size.x)*voxelSize + minBounds.x ;
-    p.y = ((idx % (size.y*size.x))/size.x)*voxelSize + minBounds.y;
-    p.z = (idx/(size.y*size.x))*voxelSize + minBounds.z;
-    return p;
-  }
-  else {
-    return p;
-  }
+  p.x = ((idx % (size.y*size.x)) % size.x)*voxelSize + minBounds.x ;
+  p.y = ((idx % (size.y*size.x))/size.x)*voxelSize + minBounds.y;
+  p.z = (idx/(size.y*size.x))*voxelSize + minBounds.z;
+  return p;
 }
 
 template <typename T>
@@ -161,24 +144,26 @@ void MapGrid3D<T>::_SetMaxBounds()
 }
 
 template <typename T>
-bool MapGrid3D<T>::SetVoxel(float x, float y, float z, T data, bool checkValid)
+void MapGrid3D<T>::Reset(float resolution, float minBoundList[3], float maxBoundList[3], T defaultValue)
+{
+  voxels.clear();
+  voxelSize = resolution;
+  minBounds.x = minBoundList[0]; minBounds.y = minBoundList[1]; minBounds.z = minBoundList[2];
+  maxBounds.x = maxBoundList[0]; maxBounds.y = maxBoundList[1]; maxBounds.z = maxBoundList[2];
+  size.x = roundf((maxBounds.x - minBounds.x)/voxelSize) + 1;
+  size.y = roundf((maxBounds.y - minBounds.y)/voxelSize) + 1;
+  size.z = roundf((maxBounds.z - minBounds.z)/voxelSize) + 1;
+  voxels.resize(size.x*size.y*size.z);
+  SetAll(defaultValue);
+  return;
+}
+
+template <typename T>
+void MapGrid3D<T>::SetVoxel(float x, float y, float z, T data)
 {
   Point query{x, y, z};
-  if (checkValid) {
-    int idx = _ConvertPositionToIndex(query);
-    if ((idx >= 0) && (idx < voxels.size())) {
-      voxels[idx] = data;
-      return true;
-    }
-    else {
-      std::cout << "Voxel position out of bounds" << std::endl;
-      return false;
-    }
-  } else {
-    int idx = _ConvertPositionToIndexNoCheck(query);
-    voxels[idx] = data;
-    return true;
-  }
+  int idx = _ConvertPositionToIndex(query);
+  voxels[idx] = data;
 }
 
 template <typename T>
@@ -189,31 +174,17 @@ void MapGrid3D<T>::SetAll(T data)
 }
 
 template <typename T>
-T MapGrid3D<T>::Query(int idx)
+T& MapGrid3D<T>::Query(int idx)
 {
-  if ((idx >= 0) && (idx < voxels.size())) {
-    return voxels[idx];
-  }
-  else {
-    // std::cout << "Voxel id out of bounds" << std::endl;
-    T garbage;
-    return garbage;
-  }
+  return voxels[idx];
 }
 
 template <typename T>
-T MapGrid3D<T>::Query(float x, float y, float z)
+T& MapGrid3D<T>::Query(float x, float y, float z)
 {
   Point query{x, y, z};
   int idx = _ConvertPositionToIndex(query);
-  if ((idx >= 0) && (idx < voxels.size())) {
-    return voxels[idx];
-  }
-  else {
-    // std::cout << "Voxel query position out of bounds" << std::endl;
-    T garbage;
-    return garbage;
-  }
+  return voxels[idx];
 }
 
 template <typename T>

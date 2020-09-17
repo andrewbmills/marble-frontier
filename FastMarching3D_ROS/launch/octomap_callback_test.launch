@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+<group ns="H01">
+  <node pkg="msfm3d" type="octomap_callback_test" name="octomap_callback_test" launch-prefix="valgrind --leak-check=full" output="screen">
+  	<remap from="octomap" to="merged_map"/>
+		<!-- Params -->
+		<param name="update_rate" value="1.0"/>
+  </node>
+</group>
+</launch>
