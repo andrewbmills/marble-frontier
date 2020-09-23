@@ -390,6 +390,14 @@ std::vector<Point> reconstructPath(std::vector<Node> visited, Node end) {
   return path;
 }
 
+std::vector<Point> flipPath(std::vector<Point> path) {
+  std::vector<Point> pathFlipped;
+  for (int i=0; i<path.size(); ++i){
+    pathFlipped.push_back(path[path.size()-i-1]);
+  }
+  return pathFlipped;
+}
+
 std::vector<Point> AStar(const Point start, const Point goal, MapGrid3D<double> *reach, MapGrid3D<double> *speedMap)
 {
   // This is a standard implimentation of A* from goal to start.
@@ -440,9 +448,9 @@ std::vector<Point> AStar(const Point start, const Point goal, MapGrid3D<double> 
     for (int i=0; i<current.neighbors.size(); i++) {
       int neighbor_id = current.neighbors[i].id;
       bool neighbor_is_new = false;
+      Node neighbor;
       if (nodeIdList[neighbor_id] == -1) {
         neighbor_is_new = true;
-        Node neighbor;
         neighbor.id = neighbor_id;
         neighbor.position = reach->_ConvertIndexToPosition(neighbor.id);
         neighbor.h = reach->voxels[neighbor.id];
@@ -454,6 +462,7 @@ std::vector<Point> AStar(const Point start, const Point goal, MapGrid3D<double> 
       int visit_id = nodeIdList[neighbor_id];
       // float tentative_g = current.g + dist3(current.position, visited[visit_id].position)/(speedMap->voxels[neighbor_id]*speedMap->voxelSize);
       float tentative_g = current.g + current.neighbors[i].cost/(speedMap->voxels[neighbor_id]);
+      // float tentative_g = current.g + (current.h - neighbor.h);
       if (visited[visit_id].g > tentative_g) {
         // Change the neighbors parent to the current
         visited[visit_id].parent = nodeIdList[current.id];
@@ -479,6 +488,7 @@ std::vector<Point> followGradientPath(const Point start, const Point goal, MapGr
   // The reach voxel map is the cost-to-go from the goal back to the start.
   // All neighboring voxels to the desired path are inside the map and have a nonzero and noninfinite cost-to-go.
   std::vector<Point> path;
+  path.push_back(goal);
 
   float sobelKernel_x[27] = {1.0, 0.0, -1.0, 2.0, 0.0, -2.0, 1.0, 0.0, -1.0,
                             2.0, 0.0, -2.0, 4.0, 0.0, -4.0, 2.0, 0.0, -2.0,
@@ -502,8 +512,8 @@ std::vector<Point> followGradientPath(const Point start, const Point goal, MapGr
   float reachValue = 0.0;
   while ((dist3(current, start) > 3.0*voxelSize) && (path.size() < 2000) && gradNorm >= 0.001) {
   	// Find the current point's grid indices and it's 26 neighbor voxel indices.
-    // ROS_INFO("Current point is (%0.1f, %0.1f, %0.1f)", point[0], point[1], point[2]);
   	int currentId = reach->_ConvertPositionToIndex(current);
+    // ROS_INFO("Current point is (%0.2f, %0.2f, %0.2f with cost-to-go of %0.2f)", current.x, current.y, current.z, reach->voxels[currentId]);
     Point grad = {0.0, 0.0, 0.0};
     Point neighbor = {0.0, 0.0, 0.0};
     for (int i=0; i<3; i++) {
@@ -550,7 +560,158 @@ std::vector<Point> followGradientPath(const Point start, const Point goal, MapGr
   // Check if the path made it back to the vehicle
   if (dist3(path[path.size()-1], start) > 3.0*reach->voxelSize) {
     ROS_INFO("Path did not make it back to the robot.  Select a different goal point.");
+  } else {
+    path.push_back(start);
   }
+  // ROS_INFO("Path found of length %d", path.size());
+  return flipPath(path);
+}
 
-  return path;
+int indexofSmallestElement(double array[], int size)
+{
+    int index = 0;
+
+    for(int i = 1; i < size; i++)
+    {
+        if(array[i] < array[index])
+            index = i;              
+    }
+
+    return index;
+}
+
+std::vector<std::pair<int,float>> getNeighborIds2D(int id, MapGrid3D<double> *reach)
+{
+  std::vector<int> neighbors;
+  int dx = 1; int dy = reach->size.x; int dz = reach->size.x*reach->size.y;
+  neighbors.push_back(id + dx + dy); neighbors.push_back(id + dy); neighbors.push_back(id - dx + dy);
+  neighbors.push_back(id + dx); neighbors.push_back(id - dx);
+  neighbors.push_back(id + dx - dy); neighbors.push_back(id - dy); neighbors.push_back(id - dx - dy);
+  
+  std::vector<std::pair<int,float>> neighborsMinReach;
+  for (int i=0; i<neighbors.size(); i++) {
+    double zNeighborReachValues[3] = {reach->voxels[neighbors[i]-dz], reach->voxels[neighbors[i]], reach->voxels[neighbors[i]+dz]};
+    int zShift = indexofSmallestElement(zNeighborReachValues, 3) - 1;
+    neighborsMinReach.push_back(std::make_pair(neighbors[i] + zShift*dz, zShift*reach->voxelSize));
+  }
+  return neighborsMinReach;
+}
+
+bool checkDuplicates(std::vector<int> list)
+{
+  std::sort(list.begin(), list.end());
+  for (int i=0; i<list.size()-1; i++) {
+    if (list[i] == list[i+1]) return true;
+  }
+  return false;
+}
+
+std::vector<Point> followGradientPathManifold2D(const Point start, const Point goal, MapGrid3D<double> *reach)
+{
+  std::vector<Point> path;
+  path.push_back(goal);
+  double sobelX[8];
+  sobelX[0] = 1.0; sobelX[1] = 0.0; sobelX[2] = -1.0;
+  sobelX[3] = 2.0; sobelX[4] = -2.0;
+  sobelX[5] = 1.0; sobelX[6] = 0.0; sobelX[7] = -1.0;
+  double sobelY[8];
+  sobelY[0] = 1.0; sobelY[1] = 2.0; sobelY[2] = 1.0;
+  sobelY[3] = 0.0; sobelY[4] = 0.0;
+  sobelY[5] = -1.0; sobelY[6] = -2.0; sobelY[7] = -1.0;
+
+  std::vector<int> neighborIntervals;
+  int dx = 1; int dy = reach->size.x;
+  neighborIntervals.push_back(dx + dy); neighborIntervals.push_back(+dy); neighborIntervals.push_back(dx + dy);
+  neighborIntervals.push_back(dx); neighborIntervals.push_back(-dx);
+  neighborIntervals.push_back(dx - dy); neighborIntervals.push_back(-dy); neighborIntervals.push_back(dx - dy);
+
+  Point current = goal;
+  float gradMag = 100;
+  int itt= 0;
+  int ittMax = (round(dist3(start,goal)/(reach->voxelSize)) + 10)*15;
+  while ((dist3(start, current) > 2.0*reach->voxelSize) && (gradMag > 0.01) && (itt < ittMax)) {
+    float gradX = 0.0, gradY = 0.0;
+    int currentId = reach->_ConvertPositionToIndex(current);
+    std::vector<std::pair<int,float>> neighbors = getNeighborIds2D(currentId, reach);
+    for (int i=0; i<8; i++) {
+      double reachNeighbor = reach->voxels[neighbors[i].first];
+      gradX += sobelX[i]*reachNeighbor;
+      gradY += sobelY[i]*reachNeighbor;
+    }
+    gradMag = std::sqrt(gradX*gradX + gradY*gradY);
+    current.x += 0.5*min(max(gradX,0.05),1.0)*reach->voxelSize;
+    current.y += 0.5*min(max(gradY,0.05),1.0)*reach->voxelSize;
+
+    // Figure out if the current is now a new id and which neighbor voxel it went to.
+    
+    int intermediateId = reach->_ConvertPositionToIndex(current);
+    int diffId = intermediateId - currentId;
+    if (diffId != 0) {
+      for (int i=0; i<8; i++) {
+        if (neighborIntervals[i] == diffId) {
+          current.z += neighbors[i].second;
+          break;
+        }
+      }
+    }
+    path.push_back(current);
+    itt++;
+  }
+  
+  // Check if the path made it back to the vehicle
+  if (dist3(path[path.size()-1], start) > 3.0*reach->voxelSize) {
+    ROS_INFO("Path did not make it back to the robot.  Select a different goal point.");
+  } else {
+    path.push_back(start);
+  }
+  return flipPath(path);
+}
+
+std::vector<Point> followGradientPath2D(const Point start, const Point goal, MapGrid3D<double> *reach)
+{
+  std::vector<Point> emptyPath;
+  if (reach->size.z > 1) return emptyPath; // Expects reach map to be 2D
+  std::vector<Point> path;
+  path.push_back(goal);
+  double sobelX[8];
+  sobelX[0] = 1.0; sobelX[1] = 0.0; sobelX[2] = -1.0;
+  sobelX[3] = 2.0; sobelX[4] = -2.0;
+  sobelX[5] = 1.0; sobelX[6] = 0.0; sobelX[7] = -1.0;
+  double sobelY[8];
+  sobelY[0] = 1.0; sobelY[1] = 2.0; sobelY[2] = 1.0;
+  sobelY[3] = 0.0; sobelY[4] = 0.0;
+  sobelY[5] = -1.0; sobelY[6] = -2.0; sobelY[7] = -1.0;
+
+  Point current = goal;
+  float gradMag = 100;
+  int itt= 0;
+  int ittMax = (round(dist3(start,goal)/(reach->voxelSize)) + 10)*15;
+  while ((dist3(start, current) > 2.0*reach->voxelSize) && (gradMag > 0.01) && (itt < ittMax)) {
+    float gradX = 0.0, gradY = 0.0;
+    int id = reach->_ConvertPositionToIndex(current);
+    std::vector<int> neighbors;
+    int dx = 1; int dy = reach->size.x; int dz = (reach->size.x)*(reach->size.y);
+    neighbors.push_back(id + dx + dy); neighbors.push_back(id + dy); neighbors.push_back(id - dx + dy);
+    neighbors.push_back(id + dx); neighbors.push_back(id - dx);
+    neighbors.push_back(id + dx - dy); neighbors.push_back(id - dy); neighbors.push_back(id - dx - dy);
+
+    for (int i=0; i<8; i++) {
+      double reachNeighbor = reach->voxels[neighbors[i]];
+      gradX += sobelX[i]*reachNeighbor;
+      gradY += sobelY[i]*reachNeighbor;
+    }
+    gradMag = std::sqrt(gradX*gradX + gradY*gradY);
+    current.x += 0.5*min(max(gradX,0.05),1.0)*reach->voxelSize;
+    current.y += 0.5*min(max(gradY,0.05),1.0)*reach->voxelSize;
+    path.push_back(current);
+    itt++;
+  }
+  
+  // Check if the path made it back to the vehicle
+  if (dist3(path[path.size()-1], start) > 3.0*reach->voxelSize) {
+    ROS_INFO("Path did not make it back to the robot.  Select a different goal point.");
+  } else {
+    path.push_back(start);
+  }
+  return flipPath(path);
 }

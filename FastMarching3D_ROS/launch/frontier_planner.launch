@@ -1,20 +1,56 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch>
-  <group ns="X4">
+  <arg name="resolution" default="0.15"/>
+  <group ns="X1">
+    <node pkg="msfm3d" type="goal_pose_sampler" name="goal_pose_sampler">
+      <!-- Params -->
+      <param name="update_rate" value="3.0" />
+      <param name="map_type" value="octomap" />
+      <param name="voxel_size" value="$(arg resolution)"/>
+
+      <!-- Topic remaps -->
+      <remap from="costmap" to="edt"/>
+      <remap from="octomap_full" to="octomap_ignore"/>
+    </node>
+
+    <node pkg="nodelet" type="nodelet" name="pcl_manager_passthrough" args="manager" output="screen" />
+
+    <!-- Run a passthrough filter to clean NaNs -->
+    <node pkg="nodelet" type="nodelet" name="passthrough" args="load pcl/PassThrough pcl_manager_passthrough" output="screen">
+      <remap from="~input" to="frontier" />
+      <remap from="~output" to="frontier_filtered" />
+      <rosparam>
+        filter_field_name: z
+        filter_limit_min: -0.4
+        filter_limit_max: 3.0
+        filter_limit_negative: False
+      </rosparam>
+    </node>
+
     <node pkg="msfm3d" type="frontier_planner" name="frontier_planner" output="screen">
       <!-- Params -->
-      <param name="update_rate" value="2.0"/>
-      <param name="voxel_size" value="0.2"/>
+      <param name="update_rate" value="0.5"/>
+      <param name="voxel_size" value="$(arg resolution)"/>
       <param name="num_agents" value="1"/>
       <param name="goal_separation_distance" value="3.0"/>
-      <param name="speed_max" value="4.0"/>
-      <param name="speed_safe" value="0.6"/>
-      <param name="marching_timeout" value="0.5"/> <!-- seconds -->
+      <param name="speed_max" value="3.0"/>
+      <param name="speed_safe" value="0.4"/>
+      <param name="marching_timeout" value="1.0"/> <!-- seconds -->
+      <param name="path_mode" value="Astar"/>
+      <!-- <param name="path_mode" value="gradient2D"/> -->
 
       <!-- Topic remaps -->
       <remap from="speed_map" to="edt"/>
       <!-- <remap from="frontier" to="poop"/> -->
       <remap from="goal_points" to="poop"/>
+      <remap from="path" to="planned_path"/>
+      <remap from="odometry" to="odometry_stitch"/>
+      <remap from="frontier" to="frontier_filtered"/>
     </node>
+
+    <!-- <include file="$(find marble_guidance)/launch/guidance_air.launch"/> -->
+    <include file="$(find marble_guidance)/launch/guidance.launch"/>
+    <include file="$(find receding_horizon_stitcher)/launch/stitcher.launch"/>
+
   </group>
 </launch>

@@ -195,7 +195,30 @@ void CallbackGoalsMarkers(const visualization_msgs::Marker::ConstPtr msg)
   return;
 }
 
-nav_msgs::Path ConvertPointVectorToPathMsg(std::vector<Point> points)
+struct Quaternion {
+  float w, x, y, z;
+};
+
+Quaternion euler2Quaternion(float yaw, float pitch, float roll) // yaw (Z), pitch (Y), roll (X)
+{
+  // From Wikipedia for 3-2-1 euler angles
+  // Abbreviations for the various angular functions
+  float cy = std::cos(yaw * 0.5);
+  float sy = std::sin(yaw * 0.5);
+  float cp = std::cos(pitch * 0.5);
+  float sp = std::sin(pitch * 0.5);
+  float cr = std::cos(roll * 0.5);
+  float sr = std::sin(roll * 0.5);
+
+  Quaternion q;
+  q.w = cy * cp * cr + sy * sp * sr;
+  q.x = cy * cp * sr - sy * sp * cr;
+  q.y = sy * cp * sr + cy * sp * cr;
+  q.z = sy * cp * cr - cy * sp * sr;
+  return q;
+}
+
+std::pair<nav_msgs::Path, geometry_msgs::PoseStamped> ConvertPointVectorToPathMsg(std::vector<Point> points)
 {
   ROS_INFO("Converting path vector of length %d to path message", points.size());
   nav_msgs::Path path;
@@ -204,7 +227,25 @@ nav_msgs::Path ConvertPointVectorToPathMsg(std::vector<Point> points)
     pose.pose.position.x = points[i].x; pose.pose.position.y = points[i].y; pose.pose.position.z = points[i].z;
     path.poses.push_back(pose);
   }
-  return path;
+
+  geometry_msgs::PoseStamped goalPose;
+  assert(points.size()>1);
+  Point goalVec = {points[points.size()-1].x - points[points.size()-2].x, 
+                   points[points.size()-1].y - points[points.size()-2].y,
+                   points[points.size()-1].z - points[points.size()-2].z};
+  float yaw = atan2(goalVec.y, goalVec.x);
+  Point zeroVec = {0.0, 0.0, 0.0};
+  float pitch = asin(goalVec.z/dist3(goalVec, zeroVec));
+  Quaternion q = euler2Quaternion(yaw, pitch, 0.0);
+  goalPose.pose.position.x = points[points.size()-1].x;
+  goalPose.pose.position.y = points[points.size()-1].y;
+  goalPose.pose.position.z = points[points.size()-1].z;
+  goalPose.pose.orientation.w = q.w;
+  goalPose.pose.orientation.x = q.x;
+  goalPose.pose.orientation.y = q.y;
+  goalPose.pose.orientation.z = q.z;
+
+  return std::make_pair(path, goalPose);
 }
 
 sensor_msgs::PointCloud2 ConvertReachMapToPointCloud2(MapGrid3D<double>* map)
@@ -239,6 +280,7 @@ int main(int argc, char **argv)
   ros::Publisher pubPath = n.advertise<nav_msgs::Path>("path", 5);
   ros::Publisher pubGoalArray = n.advertise<msfm3d::GoalArray>("goalArray", 5);
   ros::Publisher pubReach = n.advertise<sensor_msgs::PointCloud2>("reach_grid", 5);
+  ros::Publisher pubGoalPose = n.advertise<geometry_msgs::PoseStamped>("goal_pose", 5);
 
   // Params
   int numGoals;
@@ -253,6 +295,8 @@ int main(int argc, char **argv)
   ROS_INFO("Voxel size set to %0.2f", voxelSize);
   float update_rate;
   n.param("frontier_planner/update_rate", update_rate, (float)1.0);
+  std::string pathMode;
+  n.param<std::string>("frontier_planner/path_mode", pathMode, "Astar");
   
   ros::Rate r(update_rate); // 5 Hz
   ROS_INFO("Finished reading params.");
@@ -288,25 +332,27 @@ int main(int argc, char **argv)
       msfm3d::GoalArray goalArrayMsg;
       for (int i=0; i<goalsRanked.size(); i++) {
         Point goal = {goalsRanked[i].x, goalsRanked[i].y, goalsRanked[i].z};
-        std::vector<Point> path = AStar(robotPosition, goal, &reachMap, &speedMap);
+        std::vector<Point> path;
+        if (pathMode == "gradient") path = followGradientPath(robotPosition, goal, &reachMap, &speedMap);
+        else if (pathMode == "gradient2D") path = followGradientPathManifold2D(robotPosition, goal, &reachMap);
+        else path = AStar(robotPosition, goal, &reachMap, &speedMap);
         msfm3d::Goal goalMsg;
-        geometry_msgs::PoseStamped goalPose;
-        goalPose.header = pathMsgHeader;
-        goalPose.pose.position.x = goal.x; goalPose.pose.position.y = goal.y; goalPose.pose.position.z = goal.z;
-        goalPose.pose.orientation.x = 0.0; goalPose.pose.orientation.y = 0.0; goalPose.pose.orientation.z = 0.0; goalPose.pose.orientation.w = 1.0;
-        goalMsg.pose = goalPose;
-        nav_msgs::Path pathMsg = ConvertPointVectorToPathMsg(path);
-        pathMsg.header = pathMsgHeader;
-        goalMsg.path = pathMsg;
+        std::pair<nav_msgs::Path, geometry_msgs::PoseStamped> pathPoseMsg = ConvertPointVectorToPathMsg(path);
+        pathPoseMsg.second.header = pathMsgHeader;
+        goalMsg.pose = pathPoseMsg.second;
+        pathPoseMsg.first.header = pathMsgHeader;
+        goalMsg.path = pathPoseMsg.first;
         goalMsg.cost.data = goalsRanked[i].intensity;
         goalArrayMsg.goals.push_back(goalMsg);
         goalArrayMsg.costHome.data = -1.0;
 
         if (i==0) {
-          pubPath.publish(pathMsg);
+          pubPath.publish(pathPoseMsg.first);
+          pubGoalPose.publish(pathPoseMsg.second);
           ROS_INFO("Path published!");
         }
       }
+      pubGoalArray.publish(goalArrayMsg);
       ROS_INFO("Plan generated in: %.3fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
     }
   }

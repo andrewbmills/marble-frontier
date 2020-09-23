@@ -53,8 +53,14 @@ int main(int argc, char **argv)
   n.param<std::string>("goal_pose_sampler/map_type", mapType, "octomap");
   // n.param<std::string>("goal_pose_sampler/map_type", mapType, "edt");
   // n.param<std::string>("goal_pose_sampler/map_type", mapType, "edt_ground");
-  float voxelSize;
+  int clusterSize;
+  n.param("goal_pose_sampler/cluster_size", clusterSize, 30);
+  float voxelSize, normalZ;
   n.param("goal_pose_sampler/voxel_size", voxelSize, (float)0.2);
+  n.param("goal_pose_sampler/normal_z_filter", normalZ, (float)0.4);
+  bool filterByNormal, filterByCluster;
+  n.param("goal_pose_sampler/filterByNormal", filterByNormal, true);
+  n.param("goal_pose_sampler/filterByCluster", filterByCluster, true);
 
   float update_rate;
   n.param("goal_pose_sampler/update_rate", update_rate, (float)1.0);
@@ -70,9 +76,9 @@ int main(int argc, char **argv)
       mapUpdated = false;
       clock_t tStart = clock();
       Frontier frontier;
-      if (mapType == "octomap") frontier = CalculateFrontier(map);
-      else if (mapType == "edt") frontier = CalculateFrontier(edtCloud, voxelSize, true, true, 0.4, 30);
-      else if (mapType == "edt_ground") frontier = CalculateFrontier(edtCloud, voxelSize, true, true, 0.4, 30, true);
+      if (mapType == "octomap") frontier = CalculateFrontier(map, filterByNormal, filterByCluster, normalZ, clusterSize);
+      else if (mapType == "edt") frontier = CalculateFrontier(edtCloud, voxelSize, filterByNormal, filterByCluster, normalZ, clusterSize);
+      else if (mapType == "edt_ground") frontier = CalculateFrontier(edtCloud, voxelSize, filterByNormal, filterByCluster, normalZ, clusterSize, true);
       ROS_INFO("Frontier calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
       tStart = clock();
       frontierMsg = ConvertFrontierToROSMsg(frontier);
