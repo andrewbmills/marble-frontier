@@ -138,7 +138,7 @@ def find_Lookahead_Discrete_3D(path, p_AC, R, gamma_max, Mstar, reverse=False):
     i = i_max - 1
     while (t_hat < 0) or (t_hat > 1):
         # Break loop when you reach the last path index
-        if (i == i_max):
+        if (i == 0):
             intersection = False
             break
 
