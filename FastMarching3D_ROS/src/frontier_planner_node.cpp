@@ -8,6 +8,8 @@
 #include <msfm3d/GoalArray.h>
 #include <pcl/point_types.h>
 #include <pcl/io/pcd_io.h>
+#include <pcl/kdtree/kdtree_flann.h>
+#include <pcl/filters/passthrough.h>
 // pcl ROS
 #include <pcl_conversions/pcl_conversions.h>
 // local packages
@@ -15,6 +17,7 @@
 
 // Cost map global
 MapGrid3D<double> speedMap;
+pcl::PointCloud<pcl::PointXYZI>::Ptr speedMapCloud(new pcl::PointCloud<pcl::PointXYZI>);
 float voxelSize = 0.2;
 bool mapUpdated = false;
 bool firstMapReceived = false;
@@ -88,7 +91,6 @@ void CallbackSpeedMap(const sensor_msgs::PointCloud2::ConstPtr msg)
   if (msg->data.size() == 0) return;
   speedMap.voxels.clear();
 
-  pcl::PointCloud<pcl::PointXYZI>::Ptr speedMapCloud(new pcl::PointCloud<pcl::PointXYZI>);
   pcl::fromROSMsg(*msg, *speedMapCloud);
   // Get bounds
   float boundsMin[3], boundsMax[3];
@@ -137,6 +139,39 @@ Point ProjectPointToSpeedMapZ(Point p, MapGrid3D<double> map)
     itt++;
   }
   return pProjected;
+}
+
+Point ProjectPointToSpeedCloudMap(Point p, pcl::PointCloud<pcl::PointXYZI>::Ptr cloud, float intensityMin=0.0)
+{
+  // Finds the closest voxel coordinates in the map to the point p.
+
+  // Filter out all points below intensityMin in cloud
+  pcl::PointCloud<pcl::PointXYZI>::Ptr cloudFiltered (new pcl::PointCloud<pcl::PointXYZI>);
+  pcl::PassThrough<pcl::PointXYZI> passThroughFilter;
+  passThroughFilter.setInputCloud(cloud);
+  passThroughFilter.setFilterFieldName("intensity");
+  passThroughFilter.setFilterLimits(intensityMin, 100.0);
+  passThroughFilter.filter(*cloudFiltered);
+
+  // Use KdTree PCL to do binary search and find the closest voxel to p
+  pcl::KdTreeFLANN<pcl::PointXYZI> kdtree;
+  kdtree.setInputCloud(cloudFiltered);
+  pcl::PointXYZI searchPoint;
+  searchPoint.x = p.x; searchPoint.y = p.y; searchPoint.z = p.z; searchPoint.intensity = 0.0;
+  std::vector<int> pointIdxNKNSearch(1);
+  std::vector<float> pointNKNSquaredDistance(1);
+  Point closestPoint;
+
+  if (kdtree.nearestKSearch (searchPoint, 1, pointIdxNKNSearch, pointNKNSquaredDistance) > 0) {
+    closestPoint.x = cloudFiltered->points[pointIdxNKNSearch[0]].x;
+    closestPoint.y = cloudFiltered->points[pointIdxNKNSearch[0]].y;
+    closestPoint.z = cloudFiltered->points[pointIdxNKNSearch[0]].z;
+  } else {
+    // If no point is found, return the original
+    closestPoint = p;
+  }
+
+  return closestPoint;
 }
 
 void CallbackFrontier(const sensor_msgs::PointCloud2::ConstPtr msg)
@@ -313,7 +348,8 @@ int main(int argc, char **argv)
       // Project Robot position to speedMap
       ROS_INFO("Projecting robot position onto map...");
       Point robotPosition = {robot.position.x, robot.position.y, robot.position.z};
-      robotPosition = ProjectPointToSpeedMapZ(robotPosition, speedMap);
+      // robotPosition = ProjectPointToSpeedMapZ(robotPosition, speedMap);
+      robotPosition = ProjectPointToSpeedCloudMap(robotPosition, speedMapCloud, speedSafe + speedMap.voxelSize);
       robot.position.x = robotPosition.x; robot.position.y = robotPosition.y; robot.position.z = robotPosition.z;
       int robotPositionIds[3] = {std::roundf((robot.position.x - speedMap.minBounds.x)/speedMap.voxelSize),
           std::roundf((robot.position.y - speedMap.minBounds.y)/speedMap.voxelSize),
