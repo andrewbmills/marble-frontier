@@ -25,6 +25,11 @@
 // local packages
 #include <mapGrid3D.h>
 #include <gain.h>
+#include <fibonacci_sphere.h>
+#include <bresenham3d.cpp>
+
+// Fibonacci sphere global lookup tables
+extern Eigen::MatrixXf fibonacciSphere50(50,3);
 
 // Group relative pose sampling queue
 
@@ -97,7 +102,7 @@ pcl::PointCloud<pcl::PointNormal>::Ptr cloudInliers)
 }
 
 void greedyGrouping(const float radius, const pcl::PointCloud<pcl::PointNormal>::Ptr cloud, std::vector<pcl::PointIndices> clusterIndices,
-std::vector<Group> &groups, const bool print2File)
+std::vector<Group> &groups)
 {
   // greedGrouping generates a vector of (pcl::PointIndices) where each entry in the vector is a greedily sampled group of points within radius of a randomly sampled frontier member.
   // Algorithm:
@@ -181,8 +186,152 @@ std::vector<Group> &groups, const bool print2File)
   ROS_INFO("%d groups generated from the frontier clusters.", groupCount);
 }
 
-std::vector<View> SampleGoals()
+bool CheckView(View v, pcl::PointNormal p, MapGrid3D<float> map, float d) 
 {
-  std::vector<View> views;
-  return views;
+  // Check if the view is in the map
+  Point v_position = {v.pose.position.x, v.pose.position.y, v.pose.position.z};
+  if (!(map._CheckVoxelPositionInBounds(v_position))) return false;
+
+  // Check if the point is within d of obstacle
+  if (map.Query(v.pose.position.x, v.pose.position.y, v.pose.position.z) < d) return false;
+
+  // Check that line-of-sight from v to p is unoccluded
+  int v_ids[3];
+  v_ids[0] = roundf((v.pose.position.x - map.minBounds.x)/map.voxelSize);
+  v_ids[1] = roundf((v.pose.position.y - map.minBounds.y)/map.voxelSize);
+  v_ids[2] = roundf((v.pose.position.z - map.minBounds.z)/map.voxelSize);
+  int p_ids[3];
+  p_ids[0] = roundf((p.x - map.minBounds.x)/map.voxelSize);
+  p_ids[1] = roundf((p.y - map.minBounds.y)/map.voxelSize);
+  p_ids[2] = roundf((p.z - map.minBounds.z)/map.voxelSize);
+  std::vector<int> lineOfSightIds = Bresenham3D(v_ids[0], v_ids[1], v_ids[2], p_ids[0], p_ids[1], p_ids[2]);
+  for (int i=0; i<lineOfSightIds.size(); i=i+3) {
+    int id = lineOfSightIds[i] + lineOfSightIds[i+1]*map.size.x + lineOfSightIds[i+2]*map.size.x*map.size.y;
+    if (map.Query(id) < map.voxelSize*0.8) return false;
+  }
+  return true;
+}
+
+std::vector<View> SampleGoals(std::vector<Group> groups, SensorFoV sensor, MapGrid3D<float> map, int sampleLimit, float minObstacleProximity)
+{
+  std::vector<View> goals;
+  for (int i=0; i<groups.size(); i++) {
+    View v;
+    for (int j=0; j<sampleLimit; j++) {
+      v = SampleGoalRandomUniform(groups[i].centroid, sensor);
+      float radius = (sensor.rMax - sensor.rMin)*0.8 + sensor.rMin;
+      v = SampleGoalRandomGaussian(groups[i].centroid, radius);
+      v = SampleGoalFibonacciList(groups[i].centroid, j, radius);
+      if (CheckView(v, groups[i].centroid, map, minObstacleProximity)) {
+        goals.push_back(v);
+        break;
+      }
+    }
+  }
+  return goals;
+}
+
+Eigen::Matrix3f RotationMatrixBetweenVectors(Eigen::Vector3f a, Eigen::Vector3f b)
+{
+  // Derived from https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d
+  // R will be a rotation matrix such that b = R*a
+  Eigen::Matrix3f R;
+  a = a/a.norm();
+  b = b/b.norm();
+  Eigen::Vector3f v = a.cross3(b);
+  float s = v.norm();
+  float c = a.dot(b);
+  Eigen::MatrixXf v_x(3,3);
+  v_x(0,0) = 0.0; v_x(0,1) = -v(2); v_x(0,2) = v(1);
+  v_x(1,0) = v(2); v_x(1,1) = 0.0; v_x(1,2) = -v(0);
+  v_x(2,0) = -v(1); v_x(2,1) = v(0); v_x(2,2) = 0.0;
+  R = Eigen::Matrix3f::Identity() + v_x + ((v_x*v_x)*(1.0 - c)/(s*s));
+  return R;
+}
+
+View SampleGoalRandomUniform(pcl::PointNormal source, SensorFoV sensor)
+{
+  // RNG
+  std::random_device rd;
+  std::mt19937 mt(rd());
+
+  // Uniform continuous distributions over spherical coordinates
+  std::uniform_real_distribution<float> radius_dist(sensor.rMin, sensor.rMax);
+  std::uniform_real_distribution<float> azimuth_dist(0, 2*M_PI);
+  std::uniform_real_distribution<float> elevation_dist((M_PI - (M_PI/180.0)*sensor.verticalFoV)/2.0, (M_PI + (M_PI/180.0)*sensor.verticalFoV)/2.0); // Assumes a sensor aligned with the vehicle's orientation
+
+  // Sample in spherical coordinates
+  float radius_sample = radius_dist(mt);
+  float azimuth_sample = azimuth_dist(mt);
+  float elevation_sample = elevation_dist(mt);
+
+  // Generate view
+  View v;
+  v.pose.position.x = source.x + radius_sample*std::sin(elevation_sample)*std::cos(azimuth_sample);
+  v.pose.position.y = source.y + radius_sample*std::sin(elevation_sample)*std::sin(azimuth_sample);
+  v.pose.position.z = source.z + radius_sample*std::cos(elevation_sample);
+  v.pose.q = euler2Quaternion(M_PI + azimuth_sample, 0.0, 0.0);
+  return v;
+}
+
+std::pair<float, float> Vector2AzimuthElevation(Eigen::Vector3f v)
+{
+  float az, el;
+  az = std::atan2(v(1), v(0));
+  el = std::asin(v(1)/v.norm());
+  return std::make_pair(az, el);
+}
+
+View SampleGoalRandomGaussian(pcl::PointNormal source, float radius)
+{
+  // RNG
+  std::random_device rd;
+  std::mt19937 mt(rd());
+
+  // Uniform continuous distributions over spherical coordinates
+  std::normal_distribution<float> azimuth_dist(0, M_PI/6); // 3sigma bounds are 90deg (99% of samples are less than +/-90deg)
+  std::normal_distribution<float> elevation_dist(0, M_PI/6); // Assumes a sensor aligned with the vehicle's orientation
+
+  // Get azimuth and elevation of current view from [1;0;0]
+  Eigen::Vector3f normal(source.normal_x, source.normal_y, source.normal_z);
+  std::pair<float,float> azi_ele = Vector2AzimuthElevation(normal);
+
+  // Sample in spherical coordinates
+  float azimuth_sample = azimuth_dist(mt) + azi_ele.first;
+  float elevation_sample = elevation_dist(mt) + azi_ele.second;
+
+  // Generate view
+  View v;
+  v.pose.position.x = source.x + radius*std::sin(elevation_sample)*std::cos(azimuth_sample);
+  v.pose.position.y = source.y + radius*std::sin(elevation_sample)*std::sin(azimuth_sample);
+  v.pose.position.z = source.z + radius*std::cos(elevation_sample);
+  v.pose.q = euler2Quaternion(M_PI + azimuth_sample, 0.0, 0.0);
+  // v.pose.q = euler2Quaternion(M_PI + azi_ele.first, -azi_ele.second, 0.0);
+  return v;
+}
+
+View SampleGoalFibonacciList(pcl::PointNormal source, int sample, float radius)
+{
+  Eigen::Vector3f normal;
+  normal << source.normal_x, source.normal_y, source.normal_z;
+  Eigen::Vector3f x; // Unit vector along the x-axis (origin of fibonacci spread)
+  x << 1.0, 0.0, 0.0;
+  Eigen::Matrix3f R = RotationMatrixBetweenVectors(x, normal); // normal = R*x
+
+  // Get the sample'th row of the fibonacci sphere 
+  Eigen::Vector3f v_fib; // vector is a deviation from the x-axis
+  v_fib << fibonacciSphere50(sample, 0), fibonacciSphere50(sample, 1), fibonacciSphere50(sample, 2);
+  // Rotate sample into the normal vector frame
+  v_fib = radius*(R*v_fib);
+  std::pair<float, float> azi_ele = Vector2AzimuthElevation(v_fib);
+
+  // Grabs the ith row of the view relative to source orientation
+  View v;
+  v.pose.position.x = source.x + v_fib(0);
+  v.pose.position.y = source.y + v_fib(1);
+  v.pose.position.z = source.z + v_fib(2);
+  v.pose.q = euler2Quaternion(M_PI + azi_ele.first, 0.0, 0.0);
+  // v.pose.q = euler2Quaternion(M_PI + azi_ele.first, -azi_ele.second, 0.0);
+
+  return v;
 }
