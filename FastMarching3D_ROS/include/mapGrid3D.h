@@ -1,6 +1,9 @@
+#ifndef MAP_GRID_H
+#define MAP_GRID_H
 #include <vector>
 #include "math.h"
 #include <iostream>
+#include <bresenham3d.cpp>
 
 struct Point {
     float x, y, z;
@@ -33,6 +36,8 @@ class MapGrid3D {
     T& Query(float x, float y, float z);
     void GetNeighbors26(float x, float y, float z, std::vector<Point> &neighbors, std::vector<T> &data, std::vector<int> &indices);
     void GetNeighbors6(float x, float y, float z, std::vector<Point> &neighbors, std::vector<T> &data, std::vector<int> &indices);
+    std::vector<int> Raycast(Point a, Point b);
+    std::vector<int> Raycast(float x1, float y1, float z1, float x2, float y2, float z2);
 };
 
 template <typename T>
@@ -239,3 +244,33 @@ void MapGrid3D<T>::GetNeighbors6(float x, float y, float z, std::vector<Point> &
   }
   return;
 }
+
+template <typename T>
+std::vector<int> MapGrid3D<T>::Raycast(Point a, Point b) {
+  // Takes two points in 3D and returns the voxel ids and locations
+  int idx1, idx2, idy1, idy2, idz1, idz2;
+  idx1 = std::round(a.x - minBounds.x);
+  idx2 = std::round(b.x - minBounds.x);
+  idy1 = std::round(a.y - minBounds.y);
+  idy2 = std::round(b.y - minBounds.y);
+  idz1 = std::round(a.z - minBounds.z);
+  idz2 = std::round(b.z - minBounds.z);
+  std::vector<int> ids = Bresenham3D(idx1, idy1, idz1, idx2, idy2, idz2);
+  return ids;
+}
+
+template <typename T>
+std::vector<int> MapGrid3D<T>::Raycast(float x1, float y1, float z1, float x2, float y2, float z2) {
+  // Takes two points in 3D and returns the voxel ids and locations
+  int idx1, idx2, idy1, idy2, idz1, idz2;
+  idx1 = std::round(x1 - minBounds.x);
+  idx2 = std::round(x2 - minBounds.x);
+  idy1 = std::round(y1 - minBounds.y);
+  idy2 = std::round(y2 - minBounds.y);
+  idz1 = std::round(z1 - minBounds.z);
+  idz2 = std::round(z2 - minBounds.z);
+  std::vector<int> ids = Bresenham3D(idx1, idy1, idz1, idx2, idy2, idz2);
+  return ids;
+}
+
+#endif

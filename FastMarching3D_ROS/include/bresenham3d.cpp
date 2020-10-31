@@ -1,4 +1,7 @@
+#ifndef BRESENHAM_H
+#define BRESENHAM_H
 #include "math.h"
+#include <vector>
 
 std::vector<int> Bresenham3D(int x1, int y1, int z1, const int x2, const int y2, const int z2)
 {
@@ -106,3 +109,5 @@ if ((l >= m) && (l >= n)) {
   result.push_back(point[2]);
   return result;
 }
+
+#endif

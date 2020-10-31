@@ -223,6 +223,21 @@ void ConvertPointCloudToSeenOccGrid(pcl::PointCloud<pcl::PointXYZI>::Ptr edt, Ma
   return;
 }
 
+void ConvertPointCloudToEDTGrid(pcl::PointCloud<pcl::PointXYZI>::Ptr edt, MapGrid3D<float>* edtGrid)
+{
+  float minBounds[3];
+  float maxBounds[3];
+  GetPointCloudBounds(edt, minBounds, maxBounds);
+  edtGrid->Reset(edtGrid->voxelSize, minBounds, maxBounds, 0.0);
+
+  for (int i=0; i<edt->points.size(); i++) {
+    pcl::PointXYZI query = edt->points[i];
+    edtGrid->SetVoxel(query.x, query.y, query.z, query.intensity);
+  }
+
+  return;
+}
+
 bool CheckFrontier(int voxelID, std::vector<int> neighbors, MapGrid3D<std::pair<bool, bool>>* seenOccGrid) {
   // The voxel is free and seen, check the neighbors. If any are unseen, return true.
   for (int neighbor=0; neighbor<neighbors.size(); neighbor++) {
@@ -389,9 +404,17 @@ Frontier CalculateFrontier(pcl::PointCloud<pcl::PointXYZI>::Ptr map, float voxel
 
 sensor_msgs::PointCloud2 ConvertFrontierToROSMsg(Frontier frontier)
 {
-  pcl::PointCloud<pcl::PointXYZ>::Ptr frontierList(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierList(new pcl::PointCloud<pcl::PointXYZLNormal>);
   for (int i=0; i<frontier.list.size(); i++){
-    frontierList->points.push_back(frontier.list[i].position);
+    pcl::PointXYZLNormal p;
+    p.x = frontier.list[i].position.x;
+    p.y = frontier.list[i].position.y;
+    p.z = frontier.list[i].position.z;
+    p.normal_x = frontier.list[i].normal.normal_x;
+    p.normal_y = frontier.list[i].normal.normal_y;
+    p.normal_z = frontier.list[i].normal.normal_z;
+    p.label = frontier.list[i].cluster;
+    frontierList->points.push_back(p);
   }
   sensor_msgs::PointCloud2 msg;
   pcl::toROSMsg(*frontierList, msg);

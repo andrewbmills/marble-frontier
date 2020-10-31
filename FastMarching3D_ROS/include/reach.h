@@ -5,6 +5,7 @@
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
 #include "msfm3d.c" // This header does not play well with eigen.
+#include <utility.h>
 #include <mapGrid3D.h>
 
 float dist3(const float a[3], const float b[3]){
@@ -21,8 +22,8 @@ float dist3(const Point a, const Point b){
   return std::sqrt(sum);
 }
 
-std::vector<pcl::PointXYZI> reach(int source[3], MapGrid3D<double> *speedMap, std::vector<bool> goals, MapGrid3D<double> *reachOut, const bool usesecond,
-const bool usecross, const int nGoalStop, const double timeOut = 0.5, const float minGoalSeparationDistance = 5.0)
+std::vector<pcl::PointXYZI> reach(int source[3], MapGrid3D<double> *speedMap, std::vector<float> goals, MapGrid3D<double> *reachOut,
+const bool usesecond, const bool usecross, const int nGoalStop, const double timeOut = 1.0, const float minGoalSeparationDistance = 5.0)
 {
     // ROS_INFO("Fast marching from (%0.2f, %0.2f, %0.2f)", (source[0]*speedMap->voxelSize)+speedMap->minBounds.x, (source[1]*speedMap->voxelSize)+speedMap->minBounds.y, (source[2]*speedMap->voxelSize)+speedMap->minBounds.z);
     // ROS_INFO("Speed map details - ");
@@ -99,13 +100,22 @@ const bool usecross, const int nGoalStop, const double timeOut = 0.5, const floa
     dims[0] = speedMap->size.x;
     dims[1] = speedMap->size.y;
     dims[2] = speedMap->size.z;
-    std::vector<pcl::PointXYZI> goalsListSorted;
+    std::vector<pcl::PointXYZI> goalsReachedSorted;
     F = &speedMap->voxels[0]; // Source esdf
     dims_sp[0] = 3;
     dims_sp[1] = 1;
     dims_sp[2] = 1;
     Ed = 0;
     T = &reachOut->voxels[0];
+
+    // Initialize termination cost to very large number
+    float terminationCost = 1e10;
+    float NthBestUtilityReached = 0.0;
+    std::vector<float> gainsUnreached;
+    for (i=0; i < goals.size(); i++){
+      if (goals[i] > 0.01) gainsUnreached.push_back(goals[i]);
+    }
+    std::sort(gainsUnreached.begin(), gainsUnreached.end()); // Sorts lowest to highest for binary search
 
     /* Pixels which are processed and have a final distance are frozen */
     Frozen = new bool [npixels];
@@ -282,40 +292,68 @@ const bool usecross, const int nGoalStop, const double timeOut = 0.5, const floa
             }
         }
         // Check if the current voxel is a frontier and how far it is from the others reached so far
-        if (goals[XYZ_index]) {
-          if (goalsListSorted.size() == 0) {
+        if (goals[XYZ_index] > 0.1) {
+          // Remove goal from list of unreached gains
+          float gain = goals[XYZ_index];
+          int unreachId = std::binary_search(gainsUnreached.begin(), gainsUnreached.end(), gain);
+          if (unreachId) gainsUnreached.erase(gainsUnreached.begin() + unreachId);
+          float utility = Utility(gain, T[XYZ_index]);
+
+          // Add point to goalsReached
+          if (goalsReachedSorted.size() == 0) {
             Point newGoalPosition = speedMap->_ConvertIndexToPosition(XYZ_index);
             pcl::PointXYZI newGoal;
             newGoal.x = newGoalPosition.x;
             newGoal.y = newGoalPosition.y;
             newGoal.z = newGoalPosition.z;
-            newGoal.intensity = T[XYZ_index];
-            goalsListSorted.push_back(newGoal);
+            newGoal.intensity = utility;
+            goalsReachedSorted.push_back(newGoal);
           }
           else {
             // If the current cell is outside minGoalSeparationDistance of the others in the list, then add it.
+            // Erase all reached goals if their utilities are worse and they're not separated enough from the current goal.
             Point newGoalPosition = speedMap->_ConvertIndexToPosition(XYZ_index);
-            bool addGoal = true;
-            for (int i=0; i < goalsListSorted.size(); i++) {
-              pcl::PointXYZI lastGoal = goalsListSorted[i];
-              Point lastGoalPosition = {lastGoal.x, lastGoal.y, lastGoal.z};
-              if (dist3(lastGoalPosition, newGoalPosition) <= minGoalSeparationDistance) {
-                addGoal = false;
-                break;
+            bool addGoal = false;
+            std::vector<bool> separated(goalsReachedSorted.size());
+            std::vector<bool> smallerUtility(goalsReachedSorted.size());
+            int insertId = -1;
+            std::vector<int> eraseIds;
+            for (int i=0; i < goalsReachedSorted.size(); i++) {
+              pcl::PointXYZI listGoal = goalsReachedSorted[i];
+              Point listtGoalPosition = {listGoal.x, listGoal.y, listGoal.z};
+              separated[i] = dist3(listtGoalPosition, newGoalPosition) <= minGoalSeparationDistance;
+              smallerUtility[i] = (utility > goalsReachedSorted[i].intensity);
+            }
+            for (int i=0; i < goalsReachedSorted.size(); i++) {
+              if (smallerUtility[i]) {
+                if (separated[i]&& (insertId == i)) insertId = i;
+                if (!separated[i]) eraseIds.push_back(i);
+              } else {
+                continue;
               }
             }
-            if (addGoal) {
-              pcl::PointXYZI newGoal;
-              newGoal.x = newGoalPosition.x;
-              newGoal.y = newGoalPosition.y;
-              newGoal.z = newGoalPosition.z;
-              newGoal.intensity = T[XYZ_index];
-              goalsListSorted.push_back(newGoal);
+            for (int i=0; i<eraseIds.size(); i++) {
+              goalsReachedSorted.erase(goalsReachedSorted.begin() + eraseIds[eraseIds.size() - i - 1]); // Erase in reverse order
             }
+          }
+          // Assign termination cost
+          if (gainsUnreached.size() > 0) {
+            if (goalsReachedSorted.size() >= nGoalStop) {
+              // Cost associated with nth best utility and best remaining gain guarantees the best n goals have been found.
+              terminationCost = CostFromUtilityGain(gainsUnreached[0], goalsReachedSorted[nGoalStop-1].intensity);
+            }
+            else {
+              terminationCost = 1e10;
+            }
+          }
+          else {
+            // No unreached goals, end fast marching
+            terminationCost = 0.0;
           }
         }
 
-        if (goalsListSorted.size() >= nGoalStop) {
+
+        if (terminationCost < T[XYZ_index]) {
           ROS_INFO("Reachability calculation reached %d goals after %0.3f seconds.", nGoalStop, (double)(clock() - tStart)/CLOCKS_PER_SEC);
           break;
         }
@@ -331,7 +369,7 @@ const bool usecross, const int nGoalStop, const double timeOut = 0.5, const floa
     free(neg_listy);
     free(neg_listz);
     delete[] Frozen;
-    return goalsListSorted;
+    return goalsReachedSorted;
 }
 
 struct Neighbor
