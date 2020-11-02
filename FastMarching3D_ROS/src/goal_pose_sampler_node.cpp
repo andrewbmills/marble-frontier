@@ -4,9 +4,10 @@
 #include <nav_msgs/Odometry.h>
 #include <algorithm>
 
-octomap::OcTree* map;
+octomap_msgs::Octomap::ConstPtr octomapMsg;
 bool mapUpdated = false;
 bool frontierUpdated = false;
+bool firstPose = false;
 std_msgs::Header goalsMsgHeader;
 pcl::PointCloud<pcl::PointXYZI>::Ptr edtCloud (new pcl::PointCloud<pcl::PointXYZI>);
 pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierCloud (new pcl::PointCloud<pcl::PointXYZLNormal>);
@@ -16,8 +17,8 @@ Pose robot;
 void CallbackOctomapBinary(const octomap_msgs::Octomap::ConstPtr msg)
 {
   if (msg->data.size() == 0) return;
-  delete map;
-  map = (octomap::OcTree*)octomap_msgs::binaryMsgToMap(*msg);
+  ROS_INFO("Reading octomap msg...");
+  octomapMsg = msg;
   mapUpdated = true;
   return;
 }
@@ -25,8 +26,8 @@ void CallbackOctomapBinary(const octomap_msgs::Octomap::ConstPtr msg)
 void CallbackOctomapFull(const octomap_msgs::Octomap::ConstPtr msg)
 {
   if (msg->data.size() == 0) return;
-  delete map;
-  map = (octomap::OcTree*)octomap_msgs::fullMsgToMap(*msg);
+  ROS_INFO("Reading octomap msg...");
+  octomapMsg = msg;
   mapUpdated = true;
   return;
 }
@@ -34,6 +35,7 @@ void CallbackOctomapFull(const octomap_msgs::Octomap::ConstPtr msg)
 void CallbackEDTPointCloud(const sensor_msgs::PointCloud2::ConstPtr msg)
 {
   if (msg->data.size() == 0) return;
+  ROS_INFO("Reading in EDT PointCloud...");
   pcl::fromROSMsg(*msg, *edtCloud);
   mapUpdated = true;
   return;
@@ -60,6 +62,7 @@ void ParseFrontierClusters()
 void CallbackFrontier(const sensor_msgs::PointCloud2::ConstPtr msg)
 {
   if (msg->data.size() == 0) return;
+  ROS_INFO("Frontier callback...");
   pcl::fromROSMsg(*msg, *frontierCloud);
   ROS_INFO("Parsing Frontier into clusters...");
   ParseFrontierClusters();
@@ -78,6 +81,7 @@ void CallbackPose(const geometry_msgs::PoseStamped msg)
   robot.q.y = msg.pose.orientation.y;
   robot.q.z = msg.pose.orientation.z;
   robot.q.w = msg.pose.orientation.w;
+  firstPose = true;
   return;
 }
 
@@ -90,6 +94,7 @@ void CallbackOdometry(const nav_msgs::Odometry msg)
   robot.q.y = msg.pose.pose.orientation.y;
   robot.q.z = msg.pose.pose.orientation.z;
   robot.q.w = msg.pose.pose.orientation.w;
+  firstPose = true;
   return;
 }
 
@@ -176,10 +181,11 @@ int main(int argc, char **argv)
   geometry_msgs::PoseArray goalsPoseArrayMsg;
 
   // Params
-  float voxelSize;
+  float voxelSize, robotProximityFilterRadius;
   n.param("goal_pose_sampler/voxel_size", voxelSize, (float)0.2);
+  n.param("goal_pose_sampler/robot_proximity_filter_radius", robotProximityFilterRadius, (float) 1.0);
   float groupRadius, minObstacleProximity;
-  n.param("goal_pose_sampler/group_radius", groupRadius, (float)5.0*voxelSize);
+  n.param("goal_pose_sampler/group_radius", groupRadius, (float)7.0*voxelSize);
   n.param("goal_pose_sampler/min_obstacle_proximity", minObstacleProximity, (float)3.0*voxelSize);
   int sampleLimit;
   n.param("goal_pose_sampler/pose_sampling_limit", sampleLimit, 100);
@@ -189,9 +195,10 @@ int main(int argc, char **argv)
   n.param("goal_pose_sampler/sensor_rMin", robotSensor.rMin, (float)1.0);
   n.param("goal_pose_sampler/sensor_rMax", robotSensor.rMax, (float)3.0);
   n.param<std::string>("goal_pose_sampler/sensor_type", robotSensor.type, "camera");
-  std::string sampleMode, gainType;
+  std::string sampleMode, gainType, gainDebugMode;
   n.param<std::string>("goal_pose_sampler/sample_mode", sampleMode, "gaussian");
   n.param<std::string>("goal_pose_sampler/gain_type", gainType, "frontier");
+  n.param<std::string>("goal_pose_sampler/gain_debug_mode", gainDebugMode, "normal");
 
   float update_rate;
   n.param("goal_pose_sampler/update_rate", update_rate, (float)1.0);
@@ -210,6 +217,9 @@ int main(int argc, char **argv)
       frontierUpdated = false;
       mapUpdated = false;
       clock_t tStart = clock();
+      ROS_INFO("Converting octomap msg to octomap...");
+      octomap::OcTree* map = (octomap::OcTree*)octomap_msgs::fullMsgToMap(*octomapMsg);
+      map->expand();
       MapGrid3D<float> edtGrid;
       edtGrid.voxelSize = voxelSize;
       ROS_INFO("Converting edt pointcloud to gridmap...");
@@ -227,12 +237,25 @@ int main(int argc, char **argv)
       tStart = clock();
       for (int i=0; i<goals.size(); i++) {
         pcl::PointCloud<pcl::PointXYZI>::Ptr seenCloud (new pcl::PointCloud<pcl::PointXYZI>);
-        goals[i].gain = Gain(goals[i].pose, robotSensor, map, seenCloud, gainType);
+        goals[i].gain = Gain(goals[i].pose, robotSensor, map, seenCloud, gainType, gainDebugMode);
         for (int j=0; j<seenCloud->points.size(); j++) {
           goals[i].cloud.points.push_back(seenCloud->points[j]);
           pcl::toROSMsg(*seenCloud, goals[i].cloud_msg);
         }
       }
+
+      // Filter out goal poses within r of the current position since they probably don't add new info
+      if (firstPose) {
+        for (int i=(goals.size()-1); i>=0; i--) {
+          float d2_robot = (goals[i].pose.position.x - robot.position.x)*(goals[i].pose.position.x - robot.position.x) +
+                           (goals[i].pose.position.y - robot.position.y)*(goals[i].pose.position.y - robot.position.y) +
+                           (goals[i].pose.position.z - robot.position.z)*(goals[i].pose.position.z - robot.position.z);
+          if (d2_robot < (robotProximityFilterRadius*robotProximityFilterRadius)) {
+            goals.erase(goals.begin() + i);
+          }
+        }
+      }
+
       ROS_INFO("Gains calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
       goalsMsg = ConvertGoalsToPointCloud2(goals);
       goalsMsg.header = goalsMsgHeader;
@@ -253,6 +276,7 @@ int main(int argc, char **argv)
       // if (goals.size() > 7) pubGainCloud8.publish(goals[7].cloud_msg);
       // if (goals.size() > 8) pubGainCloud9.publish(goals[8].cloud_msg);
       // if (goals.size() > 9) pubGainCloud10.publish(goals[9].cloud_msg);
+      delete map;
     }
   }
 

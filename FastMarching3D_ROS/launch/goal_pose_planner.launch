@@ -20,7 +20,7 @@
       <remap from="~output" to="frontier_filtered" />
       <rosparam>
         filter_field_name: z
-        filter_limit_min: -0.4
+        filter_limit_min: 0.0
         filter_limit_max: 3.0
         filter_limit_negative: False
       </rosparam>
@@ -42,25 +42,28 @@
     </node> -->
 
     <node pkg="msfm3d" type="goal_pose_sampler" name="goal_pose_sampler" output="screen">
-      <param name="update_rate" value="0.5" />
+      <param name="update_rate" value="0.4" />
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="sample_mode" type="string" value="fibonacci"/>
       <param name="pose_sampling_limit" value="10"/>
 
       <param name="sensor_rMin" value="0.5"/>
       <param name="sensor_rMax" value="3.0"/>
-      <param name="sensor_vertical_FoV" value="40.0"/>
-      <param name="sensor_horizontal_FoV" value="80.0"/>
+      <param name="sensor_vertical_FoV" value="30.0"/>
+      <param name="sensor_horizontal_FoV" value="60.0"/>
       <param name="sensor_type" type="string" value="camera"/>
       <param name="gain_type" type="string" value="frontier"/>
+      <param name="gain_debug_mode" type="string" value="normal"/>
+      <param name="robot_proximity_filter_radius" value="1.0"/>
 
       <remap from="octomap_binary" to="octomap_ignore"/>
       <remap from="edt" to="voxblox_node/esdf_pointcloud"/>
       <remap from="frontier" to="frontier_filtered"/>
+      <!-- <remap from="odometry" to="odometry_stitch"/> -->
     </node>
 
-    <node pkg="msfm3d" type="frontier_planner" name="frontier_planner">
-      <param name="update_rate" value="0.5"/>
+    <node pkg="msfm3d" type="goal_pose_planner" name="goal_pose_planner">
+      <param name="update_rate" value="2.0"/>
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="num_agents" value="1"/>
       <param name="goal_separation_distance" value="3.0"/>
@@ -72,10 +75,9 @@
       <param name="path_mode" value="gradient"/>
 
       <remap from="speed_map" to="voxblox_node/esdf_pointcloud"/>
-      <remap from="goal_points" to="poop"/>
       <remap from="path" to="planned_path"/>
       <remap from="odometry" to="odometry_stitch"/>
-      <remap from="frontier" to="goals"/>
+      <!-- <remap from="odometry" to="odometry"/> -->
     </node>
 
     <include file="$(find marble_guidance)/launch/guidance_air.launch"/>

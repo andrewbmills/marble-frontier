@@ -1,4 +1,5 @@
 #include <math.h>
+#include <iostream>
 #include <numeric>
 #include <vector>
 #include <ros/ros.h>
@@ -25,20 +26,20 @@ float dist3(const Point a, const Point b){
 std::vector<pcl::PointXYZI> reach(int source[3], MapGrid3D<double> *speedMap, std::vector<float> goals, MapGrid3D<double> *reachOut,
 const bool usesecond, const bool usecross, const int nGoalStop, const double timeOut = 1.0, const float minGoalSeparationDistance = 5.0)
 {
-    // ROS_INFO("Fast marching from (%0.2f, %0.2f, %0.2f)", (source[0]*speedMap->voxelSize)+speedMap->minBounds.x, (source[1]*speedMap->voxelSize)+speedMap->minBounds.y, (source[2]*speedMap->voxelSize)+speedMap->minBounds.z);
-    // ROS_INFO("Speed map details - ");
-    // ROS_INFO("Size = %d x %d x %d", speedMap->size.x, speedMap->size.y, speedMap->size.z);
-    // ROS_INFO("Total voxels = %d", speedMap->voxels.size());
-    // ROS_INFO("Min bounds: (%0.2f, %0.2f, %0.2f)", speedMap->minBounds.x, speedMap->minBounds.y, speedMap->minBounds.z);
-    // ROS_INFO("Max bounds: (%0.2f, %0.2f, %0.2f)", speedMap->maxBounds.x, speedMap->maxBounds.y, speedMap->maxBounds.z);
-    // ROS_INFO("goals details - ");
-    // ROS_INFO("Total voxels = %d", goals.size());
-    // ROS_INFO("Reach map details - ");
-    // ROS_INFO("Size = %d x %d x %d", reachOut->size.x, reachOut->size.y, reachOut->size.z);
-    // ROS_INFO("Total voxels = %d", reachOut->voxels.size());
-    // ROS_INFO("Min bounds: (%0.2f, %0.2f, %0.2f)", reachOut->minBounds.x, reachOut->minBounds.y, reachOut->minBounds.z);
-    // ROS_INFO("Max bounds: (%0.2f, %0.2f, %0.2f)", reachOut->maxBounds.x, reachOut->maxBounds.y, reachOut->maxBounds.z);
-    // ROS_INFO("Max number of goals =  %d", nGoalStop);
+    ROS_INFO("Fast marching from (%0.2f, %0.2f, %0.2f)", (source[0]*speedMap->voxelSize)+speedMap->minBounds.x, (source[1]*speedMap->voxelSize)+speedMap->minBounds.y, (source[2]*speedMap->voxelSize)+speedMap->minBounds.z);
+    ROS_INFO("Speed map details - ");
+    ROS_INFO("Size = %d x %d x %d", speedMap->size.x, speedMap->size.y, speedMap->size.z);
+    ROS_INFO("Total voxels = %d", speedMap->voxels.size());
+    ROS_INFO("Min bounds: (%0.2f, %0.2f, %0.2f)", speedMap->minBounds.x, speedMap->minBounds.y, speedMap->minBounds.z);
+    ROS_INFO("Max bounds: (%0.2f, %0.2f, %0.2f)", speedMap->maxBounds.x, speedMap->maxBounds.y, speedMap->maxBounds.z);
+    ROS_INFO("goals details - ");
+    ROS_INFO("Total voxels = %d", goals.size());
+    ROS_INFO("Reach map details - ");
+    ROS_INFO("Size = %d x %d x %d", reachOut->size.x, reachOut->size.y, reachOut->size.z);
+    ROS_INFO("Total voxels = %d", reachOut->voxels.size());
+    ROS_INFO("Min bounds: (%0.2f, %0.2f, %0.2f)", reachOut->minBounds.x, reachOut->minBounds.y, reachOut->minBounds.z);
+    ROS_INFO("Max bounds: (%0.2f, %0.2f, %0.2f)", reachOut->maxBounds.x, reachOut->maxBounds.y, reachOut->maxBounds.z);
+    ROS_INFO("Max number of goals =  %d", nGoalStop);
 
     /* The input variables */
     double *F;
@@ -110,12 +111,17 @@ const bool usesecond, const bool usecross, const int nGoalStop, const double tim
 
     // Initialize termination cost to very large number
     float terminationCost = 1e10;
-    float NthBestUtilityReached = 0.0;
     std::vector<float> gainsUnreached;
     for (i=0; i < goals.size(); i++){
       if (goals[i] > 0.01) gainsUnreached.push_back(goals[i]);
     }
     std::sort(gainsUnreached.begin(), gainsUnreached.end()); // Sorts lowest to highest for binary search
+    ROS_INFO("Planning to %d goals.", gainsUnreached.size());
+    ROS_INFO("Goals have gains:");
+    for (int i=0; i < gainsUnreached.size(); i++) {
+      if (i == (gainsUnreached.size()-1)) std::cout << gainsUnreached[i] << std::endl;
+      else std::cout << gainsUnreached[i] << ", ";
+    }
 
     /* Pixels which are processed and have a final distance are frozen */
     Frozen = new bool [npixels];
@@ -295,10 +301,11 @@ const bool usesecond, const bool usecross, const int nGoalStop, const double tim
         if (goals[XYZ_index] > 0.1) {
           // Remove goal from list of unreached gains
           float gain = goals[XYZ_index];
-          int unreachId = std::binary_search(gainsUnreached.begin(), gainsUnreached.end(), gain);
-          if (unreachId) gainsUnreached.erase(gainsUnreached.begin() + unreachId);
+          int unreachId = std::find(gainsUnreached.begin(), gainsUnreached.end(), gain) - gainsUnreached.begin();
           float utility = Utility(gain, T[XYZ_index]);
-
+          // ROS_INFO("Found voxel with gain %0.1f, cost %0.1f and utility %0.1f.  Erased goal with id %d and gain %0.1f.", gain, T[XYZ_index], utility, unreachId, gainsUnreached[unreachId]);
+          if ((unreachId >= 0) && (unreachId < gainsUnreached.size())) gainsUnreached.erase(gainsUnreached.begin() + unreachId);
+          
           // Add point to goalsReached
           if (goalsReachedSorted.size() == 0) {
             Point newGoalPosition = speedMap->_ConvertIndexToPosition(XYZ_index);
@@ -308,30 +315,45 @@ const bool usesecond, const bool usecross, const int nGoalStop, const double tim
             newGoal.z = newGoalPosition.z;
             newGoal.intensity = utility;
             goalsReachedSorted.push_back(newGoal);
+            // ROS_INFO("Added first reached goal to list");
           }
           else {
             // If the current cell is outside minGoalSeparationDistance of the others in the list, then add it.
             // Erase all reached goals if their utilities are worse and they're not separated enough from the current goal.
             Point newGoalPosition = speedMap->_ConvertIndexToPosition(XYZ_index);
-            bool addGoal = false;
             std::vector<bool> separated(goalsReachedSorted.size());
             std::vector<bool> smallerUtility(goalsReachedSorted.size());
             int insertId = -1;
             std::vector<int> eraseIds;
             for (int i=0; i < goalsReachedSorted.size(); i++) {
               pcl::PointXYZI listGoal = goalsReachedSorted[i];
-              Point listtGoalPosition = {listGoal.x, listGoal.y, listGoal.z};
-              separated[i] = dist3(listtGoalPosition, newGoalPosition) <= minGoalSeparationDistance;
+              Point listGoalPosition = {listGoal.x, listGoal.y, listGoal.z};
+              separated[i] = (dist3(listGoalPosition, newGoalPosition) <= minGoalSeparationDistance);
               smallerUtility[i] = (utility > goalsReachedSorted[i].intensity);
             }
+            // ROS_INFO("Compared current goal to all others in reach list");
             for (int i=0; i < goalsReachedSorted.size(); i++) {
+              if ((!smallerUtility[i]) && (!separated[i])) {
+                // Goal is too close to one that is better, don't add it
+                break;
+              }
               if (smallerUtility[i]) {
-                if (separated[i]&& (insertId == i)) insertId = i;
+                if (separated[i] && (insertId == -1)) insertId = i;
                 if (!separated[i]) eraseIds.push_back(i);
               } else {
                 continue;
               }
             }
+            if (insertId >= 0) {
+              pcl::PointXYZI newGoal;
+              newGoal.x = newGoalPosition.x;
+              newGoal.y = newGoalPosition.y;
+              newGoal.z = newGoalPosition.z;
+              newGoal.intensity = utility;
+              goalsReachedSorted.insert(goalsReachedSorted.begin() + insertId, newGoal);
+              // ROS_INFO("Added new reached goal at position %d", insertId);
+            }
+            // ROS_INFO("Erasing %d goals that are worse and too close to current goal.", eraseIds.size());
             for (int i=0; i<eraseIds.size(); i++) {
               goalsReachedSorted.erase(goalsReachedSorted.begin() + eraseIds[eraseIds.size() - i - 1]); // Erase in reverse order
             }
@@ -340,7 +362,7 @@ const bool usesecond, const bool usecross, const int nGoalStop, const double tim
           if (gainsUnreached.size() > 0) {
             if (goalsReachedSorted.size() >= nGoalStop) {
               // Cost associated with nth best utility and best remaining gain guarantees the best n goals have been found.
-              terminationCost = CostFromUtilityGain(gainsUnreached[0], goalsReachedSorted[nGoalStop-1].intensity);
+              terminationCost = CostFromUtilityGain(gainsUnreached.back(), goalsReachedSorted[nGoalStop-1].intensity);
             }
             else {
               terminationCost = 1e10;
@@ -350,9 +372,8 @@ const bool usesecond, const bool usecross, const int nGoalStop, const double tim
             // No unreached goals, end fast marching
             terminationCost = 0.0;
           }
+          // ROS_INFO("Termination cost is %0.2f", terminationCost);
         }
-
-
         if (terminationCost < T[XYZ_index]) {
           ROS_INFO("Reachability calculation reached %d goals after %0.3f seconds.", nGoalStop, (double)(clock() - tStart)/CLOCKS_PER_SEC);
           break;

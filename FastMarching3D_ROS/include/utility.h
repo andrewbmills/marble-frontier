@@ -42,7 +42,7 @@ double CostFromUtilityGain(double gain, double utility, double param = 0.0, std:
 {
   if (type == "linear") return CostFromUtilityGainLinear(gain, utility, param);
   else if (type == "exponential") return CostFromUtilityGainExponential(gain, utility, param);
-  else if (type == "efficiency") return CostFromUtilityGain(gain, utility);
+  else if (type == "efficiency") return CostFromUtilityGainEfficiency(gain, utility);
 }
 
 double CostFromUtilityGainLinear(double gain, double utility, double alpha)

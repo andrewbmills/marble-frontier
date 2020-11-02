@@ -251,22 +251,32 @@ std::pair<nav_msgs::Path, geometry_msgs::PoseStamped> ConvertPointVectorToPathMs
     path.poses.push_back(pose);
   }
 
+  // Find the pose of the last point in the path.
   geometry_msgs::PoseStamped goalPose;
   assert(points.size()>1);
-  Point goalVec = {points[points.size()-1].x - points[points.size()-2].x, 
-                   points[points.size()-1].y - points[points.size()-2].y,
-                   points[points.size()-1].z - points[points.size()-2].z};
-  float yaw = atan2(goalVec.y, goalVec.x);
-  Point zeroVec = {0.0, 0.0, 0.0};
-  float pitch = asin(goalVec.z/dist3(goalVec, zeroVec));
-  Quaternion q = euler2Quaternion(yaw, pitch, 0.0);
-  goalPose.pose.position.x = points[points.size()-1].x;
-  goalPose.pose.position.y = points[points.size()-1].y;
-  goalPose.pose.position.z = points[points.size()-1].z;
-  goalPose.pose.orientation.w = q.w;
-  goalPose.pose.orientation.x = q.x;
-  goalPose.pose.orientation.y = q.y;
-  goalPose.pose.orientation.z = q.z;
+  pcl::KdTreeFLANN<pcl::PointXYZINormal> kdtree;
+  std::vector<int> pointIdxNKNSearch(1);
+  std::vector<float> pointNKNSquaredDistance(1);
+  pcl::PointXYZINormal searchPoint;
+  searchPoint.x = points[points.size()-1].x;
+  searchPoint.y = points[points.size()-1].y;
+  searchPoint.z = points[points.size()-1].z;
+  kdtree.setInputCloud(goalsCloud);
+  if ( kdtree.nearestKSearch (searchPoint, 1, pointIdxNKNSearch, pointNKNSquaredDistance) > 0 ) {
+    int id = pointIdxNKNSearch[0];
+    goalsCloud->points[id].normal_x;
+    float yaw = atan2(goalsCloud->points[id].normal_y, goalsCloud->points[id].normal_x);
+    Point zeroVec = {0.0, 0.0, 0.0};
+    float pitch = asin(goalsCloud->points[id].normal_z);
+    Quaternion q = euler2Quaternion(yaw, pitch, 0.0);
+    goalPose.pose.position.x = points[points.size()-1].x;
+    goalPose.pose.position.y = points[points.size()-1].y;
+    goalPose.pose.position.z = points[points.size()-1].z;
+    goalPose.pose.orientation.w = q.w;
+    goalPose.pose.orientation.x = q.x;
+    goalPose.pose.orientation.y = q.y;
+    goalPose.pose.orientation.z = q.z;
+  }
 
   return std::make_pair(path, goalPose);
 }

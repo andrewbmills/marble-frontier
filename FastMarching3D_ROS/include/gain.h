@@ -197,8 +197,8 @@ void CopyOctomapBbxToPointCloud(octomap::OcTree* map, pcl::PointCloud<pcl::Point
 }
 
 MapGrid3D<float> CopyOctomapBBxToMapGrid3D(octomap::OcTree* map, float bbx_min_array[3], float bbx_max_array[3]) {
-  ROS_INFO("Set bbx limits (%0.2f, %0.2f, %0.2f) to (%0.2f, %0.2f, %0.2f)", bbx_min_array[0], bbx_min_array[1], bbx_min_array[2],
-                                                                            bbx_max_array[0], bbx_max_array[1], bbx_max_array[2]);
+  // ROS_INFO("Set bbx limits (%0.2f, %0.2f, %0.2f) to (%0.2f, %0.2f, %0.2f)", bbx_min_array[0], bbx_min_array[1], bbx_min_array[2],
+                                                                            // bbx_max_array[0], bbx_max_array[1], bbx_max_array[2]);
   octomap::point3d bbx_min_octomap(bbx_min_array[0], bbx_min_array[1], bbx_min_array[2]);
   octomap::point3d bbx_max_octomap(bbx_max_array[0], bbx_max_array[1], bbx_max_array[2]);
   // ROS_INFO("Iterating through Octomap");
@@ -210,18 +210,20 @@ MapGrid3D<float> CopyOctomapBBxToMapGrid3D(octomap::OcTree* map, float bbx_min_a
       it != map->end_leafs_bbx(); ++it) {
     if (first_voxel) {
       Point min_bounds;
-      min_bounds.x = it.getX() - voxel_size*((std::round(it.getX() - bbx_min_array[0])/voxel_size) + 1);
-      min_bounds.y = it.getY() - voxel_size*((std::round(it.getY() - bbx_min_array[1])/voxel_size) + 1);
-      min_bounds.z = it.getZ() - voxel_size*((std::round(it.getZ() - bbx_min_array[2])/voxel_size) + 1);
+      min_bounds.x = it.getX() - voxel_size*(std::round((it.getX() - bbx_min_array[0])/voxel_size) + 2);
+      min_bounds.y = it.getY() - voxel_size*(std::round((it.getY() - bbx_min_array[1])/voxel_size) + 2);
+      min_bounds.z = it.getZ() - voxel_size*(std::round((it.getZ() - bbx_min_array[2])/voxel_size) + 2);
       Dimensions map_sizes;
-      map_sizes.x = std::round((bbx_max_array[0] - min_bounds.x)/voxel_size) + 1;
-      map_sizes.y = std::round((bbx_max_array[1] - min_bounds.y)/voxel_size) + 1;
-      map_sizes.z = std::round((bbx_max_array[2] - min_bounds.z)/voxel_size) + 1;
+      map_sizes.x = std::round((bbx_max_array[0] - min_bounds.x)/voxel_size) + 2;
+      map_sizes.y = std::round((bbx_max_array[1] - min_bounds.y)/voxel_size) + 2;
+      map_sizes.z = std::round((bbx_max_array[2] - min_bounds.z)/voxel_size) + 2;
       map_grid.minBounds = min_bounds;
       map_grid.voxelSize = voxel_size;
       map_grid.size = map_sizes;
       map_grid._SetMaxBounds();
       map_grid.voxels.resize(map_sizes.x*map_sizes.y*map_sizes.z);
+      // ROS_INFO("Set gridmap limits (%0.2f, %0.2f, %0.2f) to (%0.2f, %0.2f, %0.2f)", map_grid.minBounds.x, map_grid.minBounds.y, map_grid.minBounds.z,
+                                                                                    // map_grid.maxBounds.x, map_grid.maxBounds.y, map_grid.maxBounds.z);
       map_grid.SetAll(0.5);
       first_voxel = false;
     }
@@ -278,7 +280,7 @@ float GainUnseen(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud)
   return gain;
 }
 
-float Gain(Pose pose, SensorFoV sensor, octomap::OcTree* map, pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_seen, std::string type="frontier")
+float Gain(Pose pose, SensorFoV sensor, octomap::OcTree* map, pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_seen, std::string type="frontier", std::string mode="normal")
 {
   // Calculates the gain value of a sensor at a pose within an occupancy grid map.
   // Also returns the voxels seen by the sensor at a pose in the cloud_seen PointCloud.
@@ -289,23 +291,23 @@ float Gain(Pose pose, SensorFoV sensor, octomap::OcTree* map, pcl::PointCloud<pc
   pcl::PointCloud<pcl::PointXYZI>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZI>);
   float bbx_min[3] = {pose.position.x - ((float)1.1)*sensor.rMax, pose.position.y - ((float)1.1)*sensor.rMax, pose.position.z - ((float)1.1)*sensor.rMax};
   float bbx_max[3] = {pose.position.x + ((float)1.1)*sensor.rMax, pose.position.y + ((float)1.1)*sensor.rMax, pose.position.z + ((float)1.1)*sensor.rMax};
-  // ROS_INFO("Copying octomap bounding box voxels into pointcloud.");
+  if (mode == "debug") ROS_INFO("Copying octomap bounding box voxels into pointcloud.");
   // CopyOctomapBbxToPointCloud(map, cloud, bbx_min, bbx_max);
   MapGrid3D<float> map_grid = CopyOctomapBBxToMapGrid3D(map, bbx_min, bbx_max);
-  // ROS_INFO("Map grid initialized with resolution %0.1f, sizes [%d, %d, %d], and min bounds [%0.2f, %0.2f, %0.2f]", map_grid.voxelSize,
-            // map_grid.size.x, map_grid.size.y, map_grid.size.z, map_grid.minBounds.x, map_grid.minBounds.y, map_grid.minBounds.z);
+  if (mode == "debug") ROS_INFO("Map grid initialized with resolution %0.1f, sizes [%d, %d, %d], and min bounds [%0.2f, %0.2f, %0.2f]", map_grid.voxelSize,
+            map_grid.size.x, map_grid.size.y, map_grid.size.z, map_grid.minBounds.x, map_grid.minBounds.y, map_grid.minBounds.z);
   CopyMapGrid3DToPointCloud(map_grid, cloud);
-  // ROS_INFO("%d points copied from octomap to local pointcloud.", cloud->points.size());
+  if (mode == "debug") ROS_INFO("%d points copied from octomap to local pointcloud.", cloud->points.size());
 
   // Get cloud of voxels inside of sensor FoV
-  // ROS_INFO("Getting points inside geometric sensor field of view.");
+  if (mode == "debug") ROS_INFO("Getting points inside geometric sensor field of view.");
   pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_fov(new pcl::PointCloud<pcl::PointXYZI>);
   GetPointsInFieldOfView(pose, sensor, cloud, cloud_fov);
-  // ROS_INFO("%d points possibly in camera field of view.", cloud_fov->points.size());
+  if (mode == "debug") ROS_INFO("%d points possibly in camera field of view.", cloud_fov->points.size());
 
   // Check Line-of-sight on cloud_fov points
   bool include_unseen = false;
-  // ROS_INFO("Checking for occlusions.");
+  if (mode == "debug") ROS_INFO("Checking for occlusions.");
   if (type == "frontier") {
     CheckLineOfSight(pose, map, cloud_fov, cloud_seen, false); // Consider the value of only the frontier
   }
@@ -315,6 +317,6 @@ float Gain(Pose pose, SensorFoV sensor, octomap::OcTree* map, pcl::PointCloud<pc
 
   // Calculate gain for the seen voxels
   float gain = GainUnseen(cloud_seen);
-  // ROS_INFO("Calculated gain of %0.1f unseen voxels.", gain);
+  if (mode == "debug") ROS_INFO("Calculated gain of %0.1f unseen voxels.", gain);
   return gain;
 }
