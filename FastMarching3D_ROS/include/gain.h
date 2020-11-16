@@ -1,3 +1,6 @@
+#ifndef GAIN_H
+#define GAIN_H
+
 #include <math.h>
 #include <ros/ros.h>
 #include <string>
@@ -92,6 +95,7 @@ struct View {
   Pose pose;
   pcl::PointCloud<pcl::PointXYZI> cloud;
   sensor_msgs::PointCloud2 cloud_msg;
+  pcl::PointXYZLNormal source;
   int index = -1;
   float gain = 0.0;
 };
@@ -320,3 +324,5 @@ float Gain(Pose pose, SensorFoV sensor, octomap::OcTree* map, pcl::PointCloud<pc
   if (mode == "debug") ROS_INFO("Calculated gain of %0.1f unseen voxels.", gain);
   return gain;
 }
+
+#endif

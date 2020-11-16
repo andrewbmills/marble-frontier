@@ -1,13 +1,15 @@
-#define eps 2.2204460492503131e-16
+// #define eps 2.2204460492503131e-16
+#include <math.h>
+const double eps = 2.2204460492503131e-16;
 #define doublemax 1e50
 #define INF 2e50
 #define listINF 2.345e50
-#ifndef min
-#define min(a,b)        ((a) < (b) ? (a): (b))
-#endif
-#ifndef max
-#define max(a,b)        ((a) > (b) ? (a): (b))
-#endif
+// #ifndef min
+// #define min(a,b)        ((a) < (b) ? (a): (b))
+// #endif
+// #ifndef max
+// #define max(a,b)        ((a) > (b) ? (a): (b))
+// #endif
 
 /* Find minimum value of an array and return its index */
 int minarray(double *A, int l) {
@@ -29,7 +31,7 @@ void roots(double* Coeff, double* ans) {
     double r1, r2;
     double d;
     
-    d=max(pow2(b)-4.0*a*c,0);
+    d=std::max(pow2(b)-4.0*a*c,0.0);
     if(isnotzero(a)) {
         ans[0]= (-b - sqrt(d)) / (2.0*a);
         ans[1]= (-b + sqrt(d)) / (2.0*a);
@@ -150,7 +152,7 @@ void list_add(double ** listval, int *listprop, double val) {
             for(j=p2x(i); j<p2x(i+1); j++) { listval[i][j]=listINF;  }
         }
         listval[0]=(double *)malloc(2*sizeof(double));
-        listval[0][0]=min(listval[1][0], listval[1][1]);
+        listval[0][0]=std::min(listval[1][0], listval[1][1]);
         listval[0][1]=listINF;
         list_orde++;
     }

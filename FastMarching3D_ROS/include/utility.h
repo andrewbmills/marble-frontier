@@ -1,3 +1,6 @@
+#ifndef UTILITY_H
+#define UTILITY_H
+
 #include <math.h>
 #include <string>
 
@@ -64,3 +67,5 @@ double CostFromUtilityGainEfficiency(double gain, double utility)
     return 1e10;
   }
 }
+
+#endif

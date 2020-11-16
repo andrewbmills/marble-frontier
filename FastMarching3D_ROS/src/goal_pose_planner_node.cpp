@@ -14,7 +14,7 @@
 // pcl ROS
 #include <pcl_conversions/pcl_conversions.h>
 // local packages
-#include <reach.h>
+#include "reach.h"
 
 // Cost map global
 MapGrid3D<double> speedMap;
@@ -113,7 +113,7 @@ void CallbackSpeedMap(const sensor_msgs::PointCloud2::ConstPtr msg)
     pcl::PointXYZI query = speedMapCloud->points[i];
     // Consider the hyperbolic tan function from the btraj paper
     // esdf = v_max*(tanh(d - e) + 1)/2
-    if (query.intensity >= speedSafe) speedMap.SetVoxel(query.x, query.y, query.z, min((double)query.intensity, speedMax));
+    if (query.intensity >= speedSafe) speedMap.SetVoxel(query.x, query.y, query.z, std::min((double)query.intensity, speedMax));
   }
   
   mapUpdated = true;
@@ -129,11 +129,11 @@ Point ProjectPointToSpeedMapZ(Point p, MapGrid3D<double> map)
   int itt = 0;
   while ((map.Query(pProjected.x, pProjected.y, pProjected.z) < map.voxelSize) && (itt < 50)) {
     if (positive) {
-      pProjected.z = min(p.z + dVoxel*map.voxelSize, map.maxBounds.z);
+      pProjected.z = std::min(p.z + dVoxel*map.voxelSize, map.maxBounds.z);
       positive = false;
     }
     else {
-      pProjected.z = max(p.z - dVoxel*map.voxelSize, map.minBounds.z);
+      pProjected.z = std::max(p.z - dVoxel*map.voxelSize, map.minBounds.z);
       positive = true;
       dVoxel++;
     }
@@ -218,39 +218,8 @@ MapGrid3D<float> ConvertPointCloudToMap(pcl::PointCloud<pcl::PointXYZINormal>::P
   return goalsMapNew;
 }
 
-struct Quaternion {
-  float w, x, y, z;
-};
-
-Quaternion euler2Quaternion(float yaw, float pitch, float roll) // yaw (Z), pitch (Y), roll (X)
+geometry_msgs::PoseStamped PoseStampedFromPath(std::vector<Point> points)
 {
-  // From Wikipedia for 3-2-1 euler angles
-  // Abbreviations for the various angular functions
-  float cy = std::cos(yaw * 0.5);
-  float sy = std::sin(yaw * 0.5);
-  float cp = std::cos(pitch * 0.5);
-  float sp = std::sin(pitch * 0.5);
-  float cr = std::cos(roll * 0.5);
-  float sr = std::sin(roll * 0.5);
-
-  Quaternion q;
-  q.w = cy * cp * cr + sy * sp * sr;
-  q.x = cy * cp * sr - sy * sp * cr;
-  q.y = sy * cp * sr + cy * sp * cr;
-  q.z = sy * cp * cr - cy * sp * sr;
-  return q;
-}
-
-std::pair<nav_msgs::Path, geometry_msgs::PoseStamped> ConvertPointVectorToPathMsg(std::vector<Point> points)
-{
-  ROS_INFO("Converting path vector of length %d to path message", points.size());
-  nav_msgs::Path path;
-  for (int i=0; i<points.size(); i++) {
-    geometry_msgs::PoseStamped pose;
-    pose.pose.position.x = points[i].x; pose.pose.position.y = points[i].y; pose.pose.position.z = points[i].z;
-    path.poses.push_back(pose);
-  }
-
   // Find the pose of the last point in the path.
   geometry_msgs::PoseStamped goalPose;
   assert(points.size()>1);
@@ -277,8 +246,33 @@ std::pair<nav_msgs::Path, geometry_msgs::PoseStamped> ConvertPointVectorToPathMs
     goalPose.pose.orientation.y = q.y;
     goalPose.pose.orientation.z = q.z;
   }
+  return goalPose;
+}
 
-  return std::make_pair(path, goalPose);
+nav_msgs::Path ConvertPointVectorToPathMsg(std::vector<Point> points)
+{
+  ROS_INFO("Converting path vector of length %d to path message", points.size());
+  nav_msgs::Path path;
+  for (int i=0; i<points.size(); i++) {
+    geometry_msgs::PoseStamped pose;
+    pose.pose.position.x = points[i].x; pose.pose.position.y = points[i].y; pose.pose.position.z = points[i].z;
+    path.poses.push_back(pose);
+  }
+
+  return path;
+}
+
+bool CompareUtility(GoalPath g1, GoalPath g2) { return (g1.utility < g2.utility);}
+
+std::vector<GoalPath> SortWithTrueCosts(std::vector<GoalPath> goals, float turnRate, float utility_param = 0.0, std::string utility_type = "efficiency")
+{
+  // Recalculate costs and utilities for points in list
+  for (int i=0; i<goals.size(); i++) {
+    goals[i].cost = CalculatePathCost(goals[i].path) + CostToTurnPath(robot, goals[i].goal, goals[i].path, turnRate);
+    goals[i].utility = Utility(goals[i].gain, goals[i].cost, utility_param, utility_type);
+  }
+  std::sort(goals.begin(), goals.end(), CompareUtility);
+  return goals;
 }
 
 sensor_msgs::PointCloud2 ConvertReachMapToPointCloud2(MapGrid3D<double>* map)
@@ -317,16 +311,17 @@ int main(int argc, char **argv)
   // Params
   int numGoals;
   n.param("goal_pose_planner/num_agents", numGoals, (int)1);
-  float goalSeparationDistance;
-  n.param("goal_pose_planner/goal_separation_distance", goalSeparationDistance, (float)5.0);
-  n.param("goal_pose_planner/voxel_size", voxelSize, (float)0.2);
-  n.param("goal_pose_planner/speed_max", speedMax, (double)10.0);
-  n.param("goal_pose_planner/speed_safe", speedSafe, (double)0.4);
+  float goalSeparationDistance, turnRate;
+  n.param("goal_pose_planner/goal_separation_distance", goalSeparationDistance, (float)5.0); // meters
+  n.param("goal_pose_planner/turn_rate", turnRate, (float)90.0); // deg/s
+  n.param("goal_pose_planner/voxel_size", voxelSize, (float)0.2); // meters
+  n.param("goal_pose_planner/speed_max", speedMax, (double)10.0); // m/s
+  n.param("goal_pose_planner/speed_safe", speedSafe, (double)0.4); // m/s
   double marchingTimeOut;
-  n.param("goal_pose_planner/marching_timeout", marchingTimeOut, (double)0.5);
+  n.param("goal_pose_planner/marching_timeout", marchingTimeOut, (double)0.5); // seconds
   ROS_INFO("Voxel size set to %0.2f", voxelSize);
   float update_rate;
-  n.param("goal_pose_planner/update_rate", update_rate, (float)1.0);
+  n.param("goal_pose_planner/update_rate", update_rate, (float)1.0); // hz
   std::string pathMode;
   n.param<std::string>("goal_pose_planner/path_mode", pathMode, "Astar");
   
@@ -357,34 +352,36 @@ int main(int argc, char **argv)
       MapGrid3D<double> reachMap(voxelSize, speedMap.size, speedMap.minBounds);
       reachMap.SetAll(0.0);
       ROS_INFO("Calculating cost to goals...");
-      std::vector<pcl::PointXYZI> goalsRanked = reach(robotPositionIds, &speedMap, goals.voxels, &reachMap, true, true, min(goalsCloud->points.size(), numGoals), marchingTimeOut, goalSeparationDistance);
+      std::vector<GoalPath> goalsRanked = reach(robotPositionIds, robot, &speedMap, goals.voxels, &reachMap, true, true, std::min((int)goalsCloud->points.size(),
+                                                numGoals), turnRate, marchingTimeOut, goalSeparationDistance);
       pubReach.publish(ConvertReachMapToPointCloud2(&reachMap));
 
       // Get paths using A* or gradient following and publish them
       ROS_INFO("Tracing paths from goals back to robot...");
       msfm3d::GoalArray goalArrayMsg;
       for (int i=0; i<goalsRanked.size(); i++) {
-        Point goal = {goalsRanked[i].x, goalsRanked[i].y, goalsRanked[i].z};
-        std::vector<Point> path;
-        if (pathMode == "gradient") path = followGradientPath(robotPosition, goal, &reachMap, &speedMap);
-        else if (pathMode == "gradient2D") path = followGradientPathManifold2D(robotPosition, goal, &reachMap);
-        else path = AStar(robotPosition, goal, &reachMap, &speedMap);
+        goalsRanked[i].goal = PoseStampedFromPath(goalsRanked[i].path).pose;
+      }
+      goalsRanked = SortWithTrueCosts(goalsRanked, turnRate);
+
+      // Convert path and pose info into messages
+      for (int i=0; i<goalsRanked.size(); i++) {
+        int j=goalsRanked.size()-i-1;
         msfm3d::Goal goalMsg;
-        std::pair<nav_msgs::Path, geometry_msgs::PoseStamped> pathPoseMsg = ConvertPointVectorToPathMsg(path);
-        pathPoseMsg.second.header = pathMsgHeader;
-        goalMsg.pose = pathPoseMsg.second;
-        pathPoseMsg.first.header = pathMsgHeader;
-        goalMsg.path = pathPoseMsg.first;
-        goalMsg.cost.data = goalsRanked[i].intensity;
+        nav_msgs::Path pathMsg = ConvertPointVectorToPathMsg(goalsRanked[j].path);
+        goalMsg.pose.pose = goalsRanked[j].goal;
+        goalMsg.pose.header = pathMsgHeader;
+        pathMsg.header = pathMsgHeader;
+        goalMsg.path = pathMsg;
+        goalMsg.cost.data = goalsRanked[j].utility;
         goalArrayMsg.goals.push_back(goalMsg);
         goalArrayMsg.costHome.data = -1.0;
-
-        if (i==0) {
-          pubPath.publish(pathPoseMsg.first);
-          pubGoalPose.publish(pathPoseMsg.second);
-          ROS_INFO("Path published!");
-        }
       }
+
+      pubPath.publish(goalArrayMsg.goals[0].path);
+      pubGoalPose.publish(goalArrayMsg.goals[0].pose);
+      ROS_INFO("Path published!");
+
       pubGoalArray.publish(goalArrayMsg);
       ROS_INFO("Plan generated in: %.3fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
     }

@@ -1,4 +1,3 @@
-#include "math.h"
 #include "common.c"
 
 /*This function MSFM3D calculates the shortest distance from a list of */
@@ -28,7 +27,7 @@ double second_derivative(double Txm1, double Txm2, double Txp1, double Txp2) {
     double Tm;
     Tm=INF;
     ch1=(Txm2<Txm1)&&IsFinite(Txm1); ch2=(Txp2<Txp1)&&IsFinite(Txp1);
-    if(ch1&&ch2) { Tm =min( (4.0*Txm1-Txm2)/3.0 , (4.0*Txp1-Txp2)/3.0);}
+    if(ch1&&ch2) { Tm =std::min( (4.0*Txm1-Txm2)/3.0 , (4.0*Txp1-Txp2)/3.0);}
     else if(ch1) { Tm =(4.0*Txm1-Txm2)/3.0; }
     else if(ch2) { Tm =(4.0*Txp1-Txp2)/3.0; }
     return Tm;
@@ -132,31 +131,31 @@ double CalculateDistance(double *T, double Fijk, int *dims, int i, int j, int k,
     
     
     /*Make 1e order derivatives in x and y direction */
-    Tm[0] = min( Txm1 , Txp1); if(IsFinite(Tm[0])){ Order[0]=1; } else { Order[0]=0; }
-    Tm[1] = min( Tym1 , Typ1); if(IsFinite(Tm[1])){ Order[1]=1; } else { Order[1]=0; }
-    Tm[2] = min( Tzm1 , Tzp1); if(IsFinite(Tm[2])){ Order[2]=1; } else { Order[2]=0; }
+    Tm[0] = std::min( Txm1 , Txp1); if(IsFinite(Tm[0])){ Order[0]=1; } else { Order[0]=0; }
+    Tm[1] = std::min( Tym1 , Typ1); if(IsFinite(Tm[1])){ Order[1]=1; } else { Order[1]=0; }
+    Tm[2] = std::min( Tzm1 , Tzp1); if(IsFinite(Tm[2])){ Order[2]=1; } else { Order[2]=0; }
     
     /*Make 1e order derivatives in cross directions */
     if(usecross) {
         Tm[3] = Tm[0]; Order[3]=Order[0];
-        Tm[4] = min( Tr2t2m1 , Tr2t2p1); if(IsFinite(Tm[4])){ Order[4]=1; } else { Order[4]=0; }
-        Tm[5] = min( Tr2t3m1 , Tr2t3p1); if(IsFinite(Tm[5])){ Order[5]=1; } else { Order[5]=0; }
+        Tm[4] = std::min( Tr2t2m1 , Tr2t2p1); if(IsFinite(Tm[4])){ Order[4]=1; } else { Order[4]=0; }
+        Tm[5] = std::min( Tr2t3m1 , Tr2t3p1); if(IsFinite(Tm[5])){ Order[5]=1; } else { Order[5]=0; }
         
         Tm[6] = Tm[1]; Order[6]=Order[1];
-        Tm[7] = min( Tr3t2m1 , Tr3t2p1); if(IsFinite(Tm[7])){ Order[7]=1; } else { Order[7]=0; }
-        Tm[8] = min( Tr3t3m1 , Tr3t3p1); if(IsFinite(Tm[8])){ Order[8]=1; } else { Order[8]=0; }
+        Tm[7] = std::min( Tr3t2m1 , Tr3t2p1); if(IsFinite(Tm[7])){ Order[7]=1; } else { Order[7]=0; }
+        Tm[8] = std::min( Tr3t3m1 , Tr3t3p1); if(IsFinite(Tm[8])){ Order[8]=1; } else { Order[8]=0; }
         
         Tm[9] = Tm[2]; Order[9]=Order[2];
-        Tm[10] = min( Tr4t2m1 , Tr4t2p1); if(IsFinite(Tm[10])){ Order[10]=1; } else { Order[10]=0; }
-        Tm[11] = min( Tr4t3m1 , Tr4t3p1); if(IsFinite(Tm[11])){ Order[11]=1; } else { Order[11]=0; }
+        Tm[10] = std::min( Tr4t2m1 , Tr4t2p1); if(IsFinite(Tm[10])){ Order[10]=1; } else { Order[10]=0; }
+        Tm[11] = std::min( Tr4t3m1 , Tr4t3p1); if(IsFinite(Tm[11])){ Order[11]=1; } else { Order[11]=0; }
         
         Tm[12] = Tm[8]; Order[12]=Order[8];
-        Tm[13] = min( Tr5t2m1 , Tr5t2p1); if(IsFinite(Tm[13])){ Order[13]=1; } else { Order[13]=0; }
-        Tm[14] = min( Tr5t3m1 , Tr5t3p1); if(IsFinite(Tm[14])){ Order[14]=1; } else { Order[14]=0; }
+        Tm[13] = std::min( Tr5t2m1 , Tr5t2p1); if(IsFinite(Tm[13])){ Order[13]=1; } else { Order[13]=0; }
+        Tm[14] = std::min( Tr5t3m1 , Tr5t3p1); if(IsFinite(Tm[14])){ Order[14]=1; } else { Order[14]=0; }
         
         Tm[15] = Tm[7]; Order[15]=Order[7];
-        Tm[16] = min( Tr6t2m1 , Tr6t2p1); if(IsFinite(Tm[16])){ Order[16]=1; } else { Order[16]=0; }
-        Tm[17] = min( Tr6t3m1 , Tr6t3p1); if(IsFinite(Tm[17])){ Order[17]=1; } else { Order[17]=0; }
+        Tm[16] = std::min( Tr6t2m1 , Tr6t2p1); if(IsFinite(Tm[16])){ Order[16]=1; } else { Order[16]=0; }
+        Tm[17] = std::min( Tr6t3m1 , Tr6t3p1); if(IsFinite(Tm[17])){ Order[17]=1; } else { Order[17]=0; }
     }
     
     /*Make 2e order derivatives */
@@ -236,7 +235,7 @@ double CalculateDistance(double *T, double Fijk, int *dims, int i, int j, int k,
     }
     
     /*Calculate the distance using x and y direction */
-    Coeff[0]=0; Coeff[1]=0; Coeff[2]=-1/(max(pow2(Fijk),eps));
+    Coeff[0]=0; Coeff[1]=0; Coeff[2]=-1/(std::max(pow2(Fijk),eps));
     
     for (t=0; t<3; t++) {
         switch(Order[t]) {
@@ -251,15 +250,15 @@ double CalculateDistance(double *T, double Fijk, int *dims, int i, int j, int k,
     
     
     roots(Coeff, ansroot);
-    Tt=max(ansroot[0], ansroot[1]);
+    Tt=std::max(ansroot[0], ansroot[1]);
     
     /*Calculate the distance using the cross directions */
     if(usecross) {
         
         for(q=1; q<6; q++) {
             /* Original Equation */
-            /*    Coeff[0]=0; Coeff[1]=0; Coeff[2]=-1/(max(pow2(Fijk),eps)) */
-            Coeff[0]+=0; Coeff[1]+=0; Coeff[2]+=-1/(max(pow2(Fijk),eps));
+            /*    Coeff[0]=0; Coeff[1]=0; Coeff[2]=-1/(std::max(pow2(Fijk),eps)) */
+            Coeff[0]+=0; Coeff[1]+=0; Coeff[2]+=-1/(std::max(pow2(Fijk),eps));
             
             for (t=q*3; t<((q+1)*3); t++) {
                 switch(Order[t]) {
@@ -272,7 +271,7 @@ double CalculateDistance(double *T, double Fijk, int *dims, int i, int j, int k,
                 }
             }
             /*Select maximum root solution and minimum distance value of both stensils */
-            if(Coeff[0]>0) { roots(Coeff, ansroot); Tt2=max(ansroot[0], ansroot[1]); Tt=min(Tt, Tt2); }
+            if(Coeff[0]>0) { roots(Coeff, ansroot); Tt2=std::max(ansroot[0], ansroot[1]); Tt=std::min(Tt, Tt2); }
         }
     }
     
@@ -280,10 +279,10 @@ double CalculateDistance(double *T, double Fijk, int *dims, int i, int j, int k,
     /*then direct neighbours used in solution */
     /*(Will this ever happen?) */
     if(usecross) {
-        for(q=0; q<18; q++) { if(IsFinite(Tm[q])&&(Tt<Tm[q])) { Tt=Tm[minarray(Tm, 18)]+(1/(max(Fijk,eps)));}}
+        for(q=0; q<18; q++) { if(IsFinite(Tm[q])&&(Tt<Tm[q])) { Tt=Tm[minarray(Tm, 18)]+(1/(std::max(Fijk,eps)));}}
     }
     else {
-        for(q=0; q<3; q++) { if(IsFinite(Tm[q])&&(Tt<Tm[q])) { Tt=Tm[minarray(Tm, 3)]+(1/(max(Fijk,eps)));}}
+        for(q=0; q<3; q++) { if(IsFinite(Tm[q])&&(Tt<Tm[q])) { Tt=Tm[minarray(Tm, 3)]+(1/(std::max(Fijk,eps)));}}
     }
     
     return Tt;

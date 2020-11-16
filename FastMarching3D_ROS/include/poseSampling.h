@@ -1,3 +1,6 @@
+#ifndef POSE_SAMPLING_H
+#define POSE_SAMPLING_H
+
 #include <vector>
 #include "math.h"
 #include <iostream>
@@ -258,6 +261,7 @@ View SampleGoalRandomUniform(pcl::PointXYZLNormal source, SensorFoV sensor)
   v.pose.position.z = source.z + radius_sample*std::cos(elevation_sample);
   v.pose.q = euler2Quaternion(M_PI + azimuth_sample, 0.0, 0.0);
   v.pose.R = Quaternion2RotationMatrix(v.pose.q);
+  v.source = source;
   return v;
 }
 
@@ -296,6 +300,7 @@ View SampleGoalRandomGaussian(pcl::PointXYZLNormal source, float radius)
   v.pose.q = euler2Quaternion(M_PI + azimuth_sample, 0.0, 0.0);
   // v.pose.q = euler2Quaternion(M_PI + azi_ele.first, -azi_ele.second, 0.0);
   v.pose.R = Quaternion2RotationMatrix(v.pose.q);
+  v.source = source;
   return v;
 }
 
@@ -330,14 +335,14 @@ View SampleGoalFibonacciList(pcl::PointXYZLNormal source, int sample, float radi
   v.pose.q = euler2Quaternion(M_PI + azi_ele.first, 0.0, 0.0);
   // v.pose.q = euler2Quaternion(M_PI + azi_ele.first, -azi_ele.second, 0.0);
   v.pose.R = Quaternion2RotationMatrix(v.pose.q);
-
+  v.source = source;
   return v;
 }
 
 std::vector<View> SampleGoals(std::vector<Group> groups, SensorFoV sensor, MapGrid3D<float> map, int sampleLimit, float minObstacleProximity, std::string mode="uniform")
 {
   std::vector<View> goals;
-  float radius = (sensor.rMax - sensor.rMin)*0.8 + sensor.rMin;
+  float radius = (sensor.rMax - sensor.rMin)*0.5 + sensor.rMin;
   ROS_INFO("Sampling goal views for %d groups.", groups.size());
   for (int i=0; i<groups.size(); i++) {
     View v;
@@ -408,3 +413,109 @@ geometry_msgs::PoseArray ConvertGoalsToPoseArray(std::vector<View> goals)
   }
   return msg;
 }
+
+std::vector<View> FilterGoalsFrontiersBBX(std::vector<View> goals, pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontier,
+                                          pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierFiltered, std::vector<Eigen::Vector4f> extremes) 
+{
+  // Setup CropBox PCL filter
+  pcl::CropBox<pcl::PointXYZLNormal> boxFilter;
+  boxFilter.setMin(extremes[0]);
+  boxFilter.setMax(extremes[1]);
+  boxFilter.setInputCloud(frontier);
+  boxFilter.filter(*frontierFiltered);
+
+  // Store goal source points for another CropBox
+  pcl::PointCloud<pcl::PointXYZLNormal>::Ptr sources (new pcl::PointCloud<pcl::PointXYZLNormal>);
+  pcl::PointCloud<pcl::PointXYZLNormal>::Ptr sources_filtered (new pcl::PointCloud<pcl::PointXYZLNormal>);
+  pcl::PointIndices::Ptr goalsRemovedIds (new pcl::PointIndices());
+  for (int i=0; i<goals.size(); i++) sources->points.push_back(goals[i].source);
+  boxFilter.setInputCloud(sources);
+  boxFilter.filter(*sources_filtered);
+  boxFilter.getRemovedIndices(*goalsRemovedIds);
+
+  // Iterate through removed indices and 
+  std::sort(goalsRemovedIds->indices.begin(), goalsRemovedIds->indices.end());
+  for (int i=(goalsRemovedIds->indices.size()-1); i<0; i--) {
+    goals.erase(goals.begin() + goalsRemovedIds->indices[i]);
+  }
+  return goals;
+}
+
+std::vector<View> FilterGoalsNewFrontier(std::vector<View> goals, float voxelSize, pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierOld,
+                                         pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierNew, pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierDiff,
+                                         std::vector<pcl::PointIndices> &clusterIndices)
+{
+  // Convert frontierNew into a gridMap3D
+  ROS_INFO("Converting frontier clouds into a gridMap3D");
+  float min_new[3], max_new[3];
+  GetPointCloudBounds(frontierNew, min_new, max_new);
+  ROS_INFO("New frontier has bounds (%0.1f, %0.1f, %0.1f) to (%0.1f, %0.1f, %0.1f)", min_new[0], min_new[1], min_new[2], max_new[0], max_new[1], max_new[2]);
+  float min_old[3], max_old[3];
+  GetPointCloudBounds(frontierOld, min_old, max_old);
+  ROS_INFO("Old frontier has bounds (%0.1f, %0.1f, %0.1f) to (%0.1f, %0.1f, %0.1f)", min_old[0], min_old[1], min_old[2], max_old[0], max_old[1], max_old[2]);
+  float min[3], max[3];
+  for (int i=0; i<3; i++) {
+    min[i] = std::min(min_new[i], min_old[i]) - voxelSize;
+    max[i] = std::max(max_new[i], max_old[i]) + voxelSize;
+  }
+  MapGrid3D<int> frontierNewMap;
+  frontierNewMap.Reset(voxelSize, min, max, -1);
+  ROS_INFO("Frontier map initialized with bounds (%0.1f, %0.1f, %0.1f) to (%0.1f, %0.1f, %0.1f) and sizes (%d, %d, %d)", frontierNewMap.minBounds.x,
+           frontierNewMap.minBounds.y, frontierNewMap.minBounds.z, frontierNewMap.maxBounds.x, frontierNewMap.maxBounds.y, frontierNewMap.maxBounds.z,
+           frontierNewMap.size.x, frontierNewMap.size.y, frontierNewMap.size.z);
+  // ROS_INFO("Copying over new frontier data into gridMap3D");
+  for (int i=0; i<frontierNew->points.size(); i++) {
+    Point p = {frontierNew->points[i].x, frontierNew->points[i].y, frontierNew->points[i].z};
+    if (frontierNewMap._CheckVoxelPositionInBounds(p)) frontierNewMap.SetVoxel(p.x, p.y, p.z, i);
+    else ROS_INFO("(%0.1f, %0.1f, %0.1f) voxel with id %d is outside of map bounds.", p.x, p.y, p.z, i);
+  }
+
+  // Remove all goals whose source voxel is no longer a frontier
+  ROS_INFO("%d goals from last sampler run.  Erasing goal poses sourced at non-frontier voxels", goals.size());
+  int goalsErased = 0;
+  if (goals.size() > 0) {
+    for (int i=(goals.size()-1); i>=0; i--) {
+      // if (i > (goals.size()-5)) {
+      //   ROS_INFO("Goal with source (%0.1f, %0.1f, %0.1f) corresponds to frontier voxel with id %d", goals[i].source.x, goals[i].source.y, goals[i].source.z, 
+      //            frontierNewMap.Query(goals[i].source.x, goals[i].source.y, goals[i].source.z));
+      // }
+      if (frontierNewMap.Query(goals[i].source.x, goals[i].source.y, goals[i].source.z) < 0) {
+        goals.erase(goals.begin() + i);
+        goalsErased++;
+        // ROS_INFO("Erasing goal # %d", i);
+      }
+    }
+  }
+  ROS_INFO("%d goal poses removed because their sources have been observed", goalsErased);
+
+  // Create a frontierDiff gridMap by taking an XOR on frontierNew and frontierOld
+  ROS_INFO("Creating diff map between new and old frontiers");
+  for (int i=0; i<frontierOld->points.size(); i++) {
+    frontierNewMap.SetVoxel(frontierOld->points[i].x, frontierOld->points[i].y, frontierOld->points[i].z, -1);
+  }
+
+  // Copy frontierDiff gridMap3D into frontierDiff
+  clusterIndices.clear();
+  ROS_INFO("Copying GridMap points to diff cloud");
+  int num_clusters = 0;
+  for (int i=0; i<frontierNewMap.voxels.size(); i++) {
+    int id = frontierNewMap.voxels[i];
+    if (id >= 0) {
+      pcl::PointXYZLNormal p = frontierNew->points[id];
+      frontierDiff->points.push_back(p);
+      int cluster = (int)p.label;
+      if ((cluster+1) > num_clusters) {
+        for (int i=num_clusters; i<(cluster+1); i++){
+          pcl::PointIndices newCluster;
+          clusterIndices.push_back(newCluster);
+        }
+        num_clusters = (cluster+1);
+      }
+      clusterIndices[cluster].indices.push_back(frontierDiff->points.size()-1);// cluster id is stored in the label field
+    }
+  }
+
+  return goals;  
+}
+
+#endif

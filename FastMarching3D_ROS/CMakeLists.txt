@@ -79,12 +79,12 @@ target_link_libraries(depthImageToPointCloud2
   ${catkin_LIBRARIES}
 )
 
-add_executable(goal_pose_sampler src/goal_pose_sampler_node.cpp)
-target_link_libraries(goal_pose_sampler
+add_executable(frontier src/frontier_node.cpp)
+target_link_libraries(frontier
   ${catkin_LIBRARIES}
 )
 if(OpenMP_CXX_FOUND)
-    target_link_libraries(goal_pose_sampler PUBLIC OpenMP::OpenMP_CXX)
+    target_link_libraries(frontier PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
 add_executable(frontier_planner src/frontier_planner_node.cpp)
@@ -92,7 +92,12 @@ target_link_libraries(frontier_planner
   ${catkin_LIBRARIES}
 )
 
-add_executable(octomap_callback_test src/octomap_callback_test.cpp)
-target_link_libraries(octomap_callback_test
+add_executable(goal_pose_sampler src/goal_pose_sampler_node.cpp)
+target_link_libraries(goal_pose_sampler
+  ${catkin_LIBRARIES}
+)
+
+add_executable(goal_pose_planner src/goal_pose_planner_node.cpp)
+target_link_libraries(goal_pose_planner
   ${catkin_LIBRARIES}
 )

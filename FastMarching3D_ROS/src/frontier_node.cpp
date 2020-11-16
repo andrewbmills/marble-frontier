@@ -61,6 +61,16 @@ int main(int argc, char **argv)
   bool filterByNormal, filterByCluster;
   n.param("frontier_node/filterByNormal", filterByNormal, true);
   n.param("frontier_node/filterByCluster", filterByCluster, true);
+  bool filterByBbox;
+  pcl::PointXYZ bboxMin, bboxMax;
+  n.param("frontier_node/filter_by_bbox", filterByBbox, false);
+  n.param("frontier_node/bbox_min_x", bboxMin.x, (float)-1000.0);
+  n.param("frontier_node/bbox_max_x", bboxMax.x, (float)1000.0);
+  n.param("frontier_node/bbox_min_y", bboxMin.y, (float)-1000.0);
+  n.param("frontier_node/bbox_max_y", bboxMax.y, (float)1000.0);
+  n.param("frontier_node/bbox_min_z", bboxMin.z, (float)-1000.0);
+  n.param("frontier_node/bbox_max_z", bboxMax.z, (float)1000.0);
+  if (filterByBbox) ROS_INFO("Frontier bbox limits set to {%0.2f, %0.2f, %0.2f} and {%0.2f, %0.2f, %0.2f}", bboxMin.x, bboxMin.y, bboxMin.z, bboxMax.x, bboxMax.y, bboxMax.z);
 
   float update_rate;
   n.param("frontier_node/update_rate", update_rate, (float)1.0);
@@ -76,9 +86,9 @@ int main(int argc, char **argv)
       mapUpdated = false;
       clock_t tStart = clock();
       Frontier frontier;
-      if (mapType == "octomap") frontier = CalculateFrontier(map, filterByNormal, filterByCluster, normalZ, clusterSize);
-      else if (mapType == "edt") frontier = CalculateFrontier(edtCloud, voxelSize, filterByNormal, filterByCluster, normalZ, clusterSize);
-      else if (mapType == "edt_ground") frontier = CalculateFrontier(edtCloud, voxelSize, filterByNormal, filterByCluster, normalZ, clusterSize, true);
+      if (mapType == "octomap") frontier = CalculateFrontier(map, bboxMin, bboxMax, filterByBbox, filterByNormal, filterByCluster, normalZ, clusterSize);
+      else if (mapType == "edt") frontier = CalculateFrontier(edtCloud, voxelSize, bboxMin, bboxMax, filterByBbox, filterByNormal, filterByCluster, normalZ, clusterSize);
+      else if (mapType == "edt_ground") frontier = CalculateFrontier(edtCloud, voxelSize, bboxMin, bboxMax, filterByBbox, filterByNormal, filterByCluster, normalZ, clusterSize, true);
       ROS_INFO("Frontier calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
       tStart = clock();
       frontierMsg = ConvertFrontierToROSMsg(frontier);

@@ -11,8 +11,10 @@ bool firstPose = false;
 std_msgs::Header goalsMsgHeader;
 pcl::PointCloud<pcl::PointXYZI>::Ptr edtCloud (new pcl::PointCloud<pcl::PointXYZI>);
 pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierCloud (new pcl::PointCloud<pcl::PointXYZLNormal>);
+pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierOld (new pcl::PointCloud<pcl::PointXYZLNormal>);
 std::vector<pcl::PointIndices> clusterIndices;
 Pose robot;
+std::vector<View> goals;
 
 void CallbackOctomapBinary(const octomap_msgs::Octomap::ConstPtr msg)
 {
@@ -55,7 +57,7 @@ void ParseFrontierClusters()
       }
       num_clusters = (cluster+1);
     }
-    clusterIndices[cluster].indices.push_back(i);// cluster id is stored in the curvature field
+    clusterIndices[cluster].indices.push_back(i);// cluster id is stored in the label field
   }
 }
 
@@ -87,6 +89,7 @@ void CallbackPose(const geometry_msgs::PoseStamped msg)
 
 void CallbackOdometry(const nav_msgs::Odometry msg)
 {
+  ROS_INFO("Received updated vehicle pose.");
   robot.position.x = msg.pose.pose.position.x;
   robot.position.y = msg.pose.pose.position.y;
   robot.position.z = msg.pose.pose.position.z;
@@ -165,18 +168,10 @@ int main(int argc, char **argv)
   ros::Subscriber subEDTPointCloud = n.subscribe("edt", 1, &CallbackEDTPointCloud);
   ros::Subscriber subOctomapBinary = n.subscribe("octomap_binary", 1, &CallbackOctomapBinary);
   ros::Subscriber subOctomapFull = n.subscribe("octomap_full", 1, &CallbackOctomapFull);
+  // ros::Subscriber subReSampleBool = n.subscribe("resample_trigger", 1, &CallbackResampleBool);
   ros::Publisher pubGoalPoses = n.advertise<sensor_msgs::PointCloud2>("goals", 5);
   ros::Publisher pubGoalPoseArray = n.advertise<geometry_msgs::PoseArray>("goal_poses", 5);
-  // ros::Publisher pubGainCloud1 = n.advertise<sensor_msgs::PointCloud2>("gain_cloud1", 5);
-  // ros::Publisher pubGainCloud2 = n.advertise<sensor_msgs::PointCloud2>("gain_cloud2", 5);
-  // ros::Publisher pubGainCloud3 = n.advertise<sensor_msgs::PointCloud2>("gain_cloud3", 5);
-  // ros::Publisher pubGainCloud4 = n.advertise<sensor_msgs::PointCloud2>("gain_cloud4", 5);
-  // ros::Publisher pubGainCloud5 = n.advertise<sensor_msgs::PointCloud2>("gain_cloud5", 5);
-  // ros::Publisher pubGainCloud6 = n.advertise<sensor_msgs::PointCloud2>("gain_cloud6", 5);
-  // ros::Publisher pubGainCloud7 = n.advertise<sensor_msgs::PointCloud2>("gain_cloud7", 5);
-  // ros::Publisher pubGainCloud8 = n.advertise<sensor_msgs::PointCloud2>("gain_cloud8", 5);
-  // ros::Publisher pubGainCloud9 = n.advertise<sensor_msgs::PointCloud2>("gain_cloud9", 5);
-  // ros::Publisher pubGainCloud10 = n.advertise<sensor_msgs::PointCloud2>("gain_cloud10", 5);
+  ros::Publisher pubFrontierDiff = n.advertise<sensor_msgs::PointCloud2>("frontier_diff", 5);
   sensor_msgs::PointCloud2 goalsMsg;
   geometry_msgs::PoseArray goalsPoseArrayMsg;
 
@@ -185,8 +180,8 @@ int main(int argc, char **argv)
   n.param("goal_pose_sampler/voxel_size", voxelSize, (float)0.2);
   n.param("goal_pose_sampler/robot_proximity_filter_radius", robotProximityFilterRadius, (float) 1.0);
   float groupRadius, minObstacleProximity;
-  n.param("goal_pose_sampler/group_radius", groupRadius, (float)7.0*voxelSize);
-  n.param("goal_pose_sampler/min_obstacle_proximity", minObstacleProximity, (float)3.0*voxelSize);
+  n.param("goal_pose_sampler/group_radius", groupRadius, (float)4.1*voxelSize);
+  n.param("goal_pose_sampler/min_obstacle_proximity", minObstacleProximity, (float)4.0*voxelSize);
   int sampleLimit;
   n.param("goal_pose_sampler/pose_sampling_limit", sampleLimit, 100);
   SensorFoV robotSensor;
@@ -225,36 +220,54 @@ int main(int argc, char **argv)
       ROS_INFO("Converting edt pointcloud to gridmap...");
       ConvertPointCloudToEDTGrid(edtCloud, &edtGrid);
       ROS_INFO("Success!");
+      // Get new frontier pointcloud
+      pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierDiff (new pcl::PointCloud<pcl::PointXYZLNormal>);
+      goals = FilterGoalsNewFrontier(goals, voxelSize, frontierOld, frontierCloud, frontierDiff, clusterIndices);
+      ROS_INFO("%d goals remaining after frontier difference checking.", goals.size());
+      if (frontierDiff->points.size() < 5) {
+        ROS_INFO("Frontier cloud is unchanged.");
+        goalsMsg = ConvertGoalsToPointCloud2(goals);
+        goalsMsg.header = goalsMsgHeader;
+        pubGoalPoses.publish(goalsMsg);
+        goalsPoseArrayMsg = ConvertGoalsToPoseArray(goals);
+        goalsPoseArrayMsg.header = goalsMsgHeader;
+        pubGoalPoseArray.publish(goalsPoseArrayMsg);
+        delete map;
+        continue;
+      }
       // Group frontiers within clusters
       ROS_INFO("Grouping frontiers based on proximity...");
       std::vector<Group> groups;
-      greedyGrouping(groupRadius, frontierCloud, clusterIndices, groups);
+      greedyGrouping(groupRadius, frontierDiff, clusterIndices, groups);
       ROS_INFO("Success!");
-      // Sample goal poses
+      // // Sample goal poses
       ROS_INFO("Converting edt pointcloud to gridmap...");
-      std::vector<View> goals = SampleGoals(groups, robotSensor, edtGrid, sampleLimit, minObstacleProximity, sampleMode);
-      ROS_INFO("Groups made and goal Poses sampled in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+      std::vector<View> goalsNew = SampleGoals(groups, robotSensor, edtGrid, sampleLimit, minObstacleProximity, sampleMode);
+      ROS_INFO("Frontier diff created, groups made, and goal poses sampled in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
       tStart = clock();
-      for (int i=0; i<goals.size(); i++) {
+      for (int i=0; i<goalsNew.size(); i++) {
         pcl::PointCloud<pcl::PointXYZI>::Ptr seenCloud (new pcl::PointCloud<pcl::PointXYZI>);
-        goals[i].gain = Gain(goals[i].pose, robotSensor, map, seenCloud, gainType, gainDebugMode);
+        goalsNew[i].gain = Gain(goalsNew[i].pose, robotSensor, map, seenCloud, gainType, gainDebugMode);
         for (int j=0; j<seenCloud->points.size(); j++) {
-          goals[i].cloud.points.push_back(seenCloud->points[j]);
-          pcl::toROSMsg(*seenCloud, goals[i].cloud_msg);
+          goalsNew[i].cloud.points.push_back(seenCloud->points[j]);
+          pcl::toROSMsg(*seenCloud, goalsNew[i].cloud_msg);
         }
       }
 
+      // Append goals vector with the newly sampled goals
+      goals.insert(goals.end(), goalsNew.begin(), goalsNew.end());
+
       // Filter out goal poses within r of the current position since they probably don't add new info
-      if (firstPose) {
-        for (int i=(goals.size()-1); i>=0; i--) {
-          float d2_robot = (goals[i].pose.position.x - robot.position.x)*(goals[i].pose.position.x - robot.position.x) +
-                           (goals[i].pose.position.y - robot.position.y)*(goals[i].pose.position.y - robot.position.y) +
-                           (goals[i].pose.position.z - robot.position.z)*(goals[i].pose.position.z - robot.position.z);
-          if (d2_robot < (robotProximityFilterRadius*robotProximityFilterRadius)) {
-            goals.erase(goals.begin() + i);
-          }
-        }
-      }
+      // if (firstPose) {
+      //   for (int i=(goals.size()-1); i>=0; i--) {
+      //     float d2_robot = (goals[i].pose.position.x - robot.position.x)*(goals[i].pose.position.x - robot.position.x) +
+      //                      (goals[i].pose.position.y - robot.position.y)*(goals[i].pose.position.y - robot.position.y) +
+      //                      (goals[i].pose.position.z - robot.position.z)*(goals[i].pose.position.z - robot.position.z);
+      //     if (d2_robot < (robotProximityFilterRadius*robotProximityFilterRadius)) {
+      //       goals.erase(goals.begin() + i);
+      //     }
+      //   }
+      // }
 
       ROS_INFO("Gains calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
       goalsMsg = ConvertGoalsToPointCloud2(goals);
@@ -265,18 +278,18 @@ int main(int argc, char **argv)
       goalsPoseArrayMsg.header = goalsMsgHeader;
       pubGoalPoseArray.publish(goalsPoseArrayMsg);
 
-      // Publish gain clouds for debugging
-      // if (goals.size() > 0) pubGainCloud1.publish(goals[0].cloud_msg);
-      // if (goals.size() > 1) pubGainCloud2.publish(goals[1].cloud_msg);
-      // if (goals.size() > 2) pubGainCloud3.publish(goals[2].cloud_msg);
-      // if (goals.size() > 3) pubGainCloud4.publish(goals[3].cloud_msg);
-      // if (goals.size() > 4) pubGainCloud5.publish(goals[4].cloud_msg);
-      // if (goals.size() > 5) pubGainCloud6.publish(goals[5].cloud_msg);
-      // if (goals.size() > 6) pubGainCloud7.publish(goals[6].cloud_msg);
-      // if (goals.size() > 7) pubGainCloud8.publish(goals[7].cloud_msg);
-      // if (goals.size() > 8) pubGainCloud9.publish(goals[8].cloud_msg);
-      // if (goals.size() > 9) pubGainCloud10.publish(goals[9].cloud_msg);
+      sensor_msgs::PointCloud2 frontierDiffMsg;
+      pcl::toROSMsg(*frontierDiff, frontierDiffMsg);
+      frontierDiffMsg.header = goalsMsgHeader;
+      pubFrontierDiff.publish(frontierDiffMsg);
+
+      // // Copy frontierCloud to frontierCloudOld
+      frontierOld->points.clear();
+      pcl::copyPointCloud(*frontierCloud, *frontierOld);
+
+      // Delete ocTree to prevent memory leaks
       delete map;
+      ROS_INFO("***_____________________________________***");
     }
   }
 

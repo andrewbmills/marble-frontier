@@ -14,6 +14,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 // local packages
 #include <reach.h>
+#include <gain.h>
 
 // Cost map global
 MapGrid3D<double> speedMap;
@@ -112,7 +113,7 @@ void CallbackSpeedMap(const sensor_msgs::PointCloud2::ConstPtr msg)
     pcl::PointXYZI query = speedMapCloud->points[i];
     // Consider the hyperbolic tan function from the btraj paper
     // esdf = v_max*(tanh(d - e) + 1)/2
-    if (query.intensity >= speedSafe) speedMap.SetVoxel(query.x, query.y, query.z, min((double)query.intensity, speedMax));
+    if (query.intensity >= speedSafe) speedMap.SetVoxel(query.x, query.y, query.z, std::min((double)query.intensity, speedMax));
   }
   
   mapUpdated = true;
@@ -128,11 +129,11 @@ Point ProjectPointToSpeedMapZ(Point p, MapGrid3D<double> map)
   int itt = 0;
   while ((map.Query(pProjected.x, pProjected.y, pProjected.z) < map.voxelSize) && (itt < 50)) {
     if (positive) {
-      pProjected.z = min(p.z + dVoxel*map.voxelSize, map.maxBounds.z);
+      pProjected.z = std::min(p.z + dVoxel*map.voxelSize, map.maxBounds.z);
       positive = false;
     }
     else {
-      pProjected.z = max(p.z - dVoxel*map.voxelSize, map.minBounds.z);
+      pProjected.z = std::max(p.z - dVoxel*map.voxelSize, map.minBounds.z);
       positive = true;
       dVoxel++;
     }
@@ -230,29 +231,6 @@ void CallbackGoalsMarkers(const visualization_msgs::Marker::ConstPtr msg)
   return;
 }
 
-struct Quaternion {
-  float w, x, y, z;
-};
-
-Quaternion euler2Quaternion(float yaw, float pitch, float roll) // yaw (Z), pitch (Y), roll (X)
-{
-  // From Wikipedia for 3-2-1 euler angles
-  // Abbreviations for the various angular functions
-  float cy = std::cos(yaw * 0.5);
-  float sy = std::sin(yaw * 0.5);
-  float cp = std::cos(pitch * 0.5);
-  float sp = std::sin(pitch * 0.5);
-  float cr = std::cos(roll * 0.5);
-  float sr = std::sin(roll * 0.5);
-
-  Quaternion q;
-  q.w = cy * cp * cr + sy * sp * sr;
-  q.x = cy * cp * sr - sy * sp * cr;
-  q.y = sy * cp * sr + cy * sp * cr;
-  q.z = sy * cp * cr - cy * sp * sr;
-  return q;
-}
-
 std::pair<nav_msgs::Path, geometry_msgs::PoseStamped> ConvertPointVectorToPathMsg(std::vector<Point> points)
 {
   ROS_INFO("Converting path vector of length %d to path message", points.size());
@@ -320,11 +298,12 @@ int main(int argc, char **argv)
   // Params
   int numGoals;
   n.param("frontier_planner/num_agents", numGoals, (int)1);
-  float goalSeparationDistance;
+  float goalSeparationDistance, turnRate;
   n.param("frontier_planner/goal_separation_distance", goalSeparationDistance, (float)5.0);
   n.param("frontier_planner/voxel_size", voxelSize, (float)0.2);
   n.param("frontier_planner/speed_max", speedMax, (double)10.0);
   n.param("frontier_planner/speed_safe", speedSafe, (double)0.4);
+  n.param("frontier_planner/turn_rate", turnRate, (float)1.0);
   double marchingTimeOut;
   n.param("frontier_planner/marching_timeout", marchingTimeOut, (double)0.5);
   ROS_INFO("Voxel size set to %0.2f", voxelSize);
@@ -360,25 +339,25 @@ int main(int argc, char **argv)
       MapGrid3D<double> reachMap(voxelSize, speedMap.size, speedMap.minBounds);
       reachMap.SetAll(0.0);
       ROS_INFO("Calculating cost to frontiers...");
-      std::vector<pcl::PointXYZI> goalsRanked = reach(robotPositionIds, &speedMap, frontier.voxels, &reachMap, true, true, min(frontierCloud->size(), numGoals), marchingTimeOut, goalSeparationDistance);
+      std::vector<GoalPath> goalsRanked = reach(robotPositionIds, robot, &speedMap, frontier.voxels, &reachMap, true, true, std::min((int)frontierCloud->size(), numGoals), turnRate, marchingTimeOut, goalSeparationDistance);
       pubReach.publish(ConvertReachMapToPointCloud2(&reachMap));
 
       // Get paths using A* and publish them
       ROS_INFO("Tracing paths from goals back to robot...");
       msfm3d::GoalArray goalArrayMsg;
       for (int i=0; i<goalsRanked.size(); i++) {
-        Point goal = {goalsRanked[i].x, goalsRanked[i].y, goalsRanked[i].z};
+        Point goal = {goalsRanked[i].goal.position.x, goalsRanked[i].goal.position.y, goalsRanked[i].goal.position.z};
         std::vector<Point> path;
-        if (pathMode == "gradient") path = followGradientPath(robotPosition, goal, &reachMap, &speedMap);
-        else if (pathMode == "gradient2D") path = followGradientPathManifold2D(robotPosition, goal, &reachMap);
-        else path = AStar(robotPosition, goal, &reachMap, &speedMap);
+        if (pathMode == "gradient") goalsRanked[i].path = followGradientPath(robotPosition, goal, &reachMap);
+        else if (pathMode == "gradient2D") goalsRanked[i].path = followGradientPathManifold2D(robotPosition, goal, &reachMap);
+        else goalsRanked[i].path = AStar(robotPosition, goal, &reachMap, &speedMap);
         msfm3d::Goal goalMsg;
-        std::pair<nav_msgs::Path, geometry_msgs::PoseStamped> pathPoseMsg = ConvertPointVectorToPathMsg(path);
+        std::pair<nav_msgs::Path, geometry_msgs::PoseStamped> pathPoseMsg = ConvertPointVectorToPathMsg(goalsRanked[i].path);
         pathPoseMsg.second.header = pathMsgHeader;
         goalMsg.pose = pathPoseMsg.second;
         pathPoseMsg.first.header = pathMsgHeader;
         goalMsg.path = pathPoseMsg.first;
-        goalMsg.cost.data = goalsRanked[i].intensity;
+        goalMsg.cost.data = goalsRanked[i].cost;
         goalArrayMsg.goals.push_back(goalMsg);
         goalArrayMsg.costHome.data = -1.0;
 

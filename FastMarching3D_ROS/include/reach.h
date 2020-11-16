@@ -1,13 +1,18 @@
-#include <math.h>
+#ifndef REACH_H
+#define REACH_H
+
 #include <iostream>
-#include <numeric>
+// #include <numeric>
 #include <vector>
 #include <ros/ros.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
 #include "msfm3d.c" // This header does not play well with eigen.
-#include <utility.h>
-#include <mapGrid3D.h>
+#include "utility.h"
+#include "gain.h"
+
+std::vector<Point> followGradientPath(const Point start, const Point goal, MapGrid3D<double> *reach);
 
 float dist3(const float a[3], const float b[3]){
   float sum = 0.0;
@@ -23,23 +28,98 @@ float dist3(const Point a, const Point b){
   return std::sqrt(sum);
 }
 
-std::vector<pcl::PointXYZI> reach(int source[3], MapGrid3D<double> *speedMap, std::vector<float> goals, MapGrid3D<double> *reachOut,
-const bool usesecond, const bool usecross, const int nGoalStop, const double timeOut = 1.0, const float minGoalSeparationDistance = 5.0)
+struct GoalPath {
+  geometry_msgs::Pose goal;
+  std::vector<Point> path;
+  float gain, utility, cost;
+};
+
+float CostToTurnPath(geometry_msgs::Pose robot, geometry_msgs::Pose goal, std::vector<Point> path, float turn_rate) {
+  if (path.size() < 5) return 0.0;
+
+  // Get unity vectors at the start and end of the path
+  Eigen::Vector3f path_start_vec, path_end_vec;
+  path_start_vec << path[5].x - path[0].x,
+                    path[5].y - path[0].y,
+                    path[5].z - path[0].z;
+  path_start_vec = path_start_vec/path_start_vec.norm();
+  path_end_vec << path[path.size() - 1].x - path[path.size() - 6].x, 
+                  path[path.size() - 1].y - path[path.size() - 6].y,
+                  path[path.size() - 1].z - path[path.size() - 6].z;
+  path_end_vec = path_end_vec/path_end_vec.norm();
+
+  // Convert quaternion poses to unit vectors
+  Quaternion q_robot, q_goal;
+  q_robot.w = robot.orientation.w;
+  q_robot.x = robot.orientation.x;
+  q_robot.y = robot.orientation.y;
+  q_robot.z = robot.orientation.z;
+  q_goal.w = goal.orientation.w;
+  q_goal.x = goal.orientation.x;
+  q_goal.y = goal.orientation.y;
+  q_goal.z = goal.orientation.z;
+  Eigen::Matrix3f R_robot = Quaternion2RotationMatrix(q_robot);
+  Eigen::Matrix3f R_goal = Quaternion2RotationMatrix(q_goal);
+  Eigen::Vector3f robot_vec;
+  robot_vec << R_robot(0,0), R_robot(1,0), R_robot(2,0);
+  Eigen::Vector3f goal_vec;
+  goal_vec << R_goal(0,0), R_goal(1,0), R_goal(2,0);
+  
+  float robot_to_start_angle = std::acos(robot_vec.dot(path_start_vec));
+  float goal_to_end_angle = std::acos(goal_vec.dot(path_end_vec));
+
+  return ((robot_to_start_angle + goal_to_end_angle)*(180.0/M_PI)/turn_rate);
+}
+
+float CostToTurnPath(geometry_msgs::Pose robot, std::vector<Point> path, float turn_rate) {
+  if (path.size() < 5) return 0.0;
+
+  // Get unity vectors at the start and end of the path
+  Eigen::Vector3f path_start_vec;
+  path_start_vec << path[5].x - path[0].x,
+                    path[5].y - path[0].y,
+                    path[5].z - path[0].z;
+  path_start_vec = path_start_vec/path_start_vec.norm();
+
+  // Convert quaternion poses to unit vectors
+  Quaternion q_robot;
+  q_robot.w = robot.orientation.w;
+  q_robot.x = robot.orientation.x;
+  q_robot.y = robot.orientation.y;
+  q_robot.z = robot.orientation.z;
+  Eigen::Matrix3f R_robot = Quaternion2RotationMatrix(q_robot);
+  Eigen::Vector3f robot_vec;
+  robot_vec << R_robot(0,0), R_robot(1,0), R_robot(2,0);
+  
+  float robot_to_start_angle = std::acos(robot_vec.dot(path_start_vec));
+
+  return ((robot_to_start_angle)*(180.0/M_PI)/turn_rate);
+}
+
+float CalculatePathCost(std::vector<Point> path)
 {
-    ROS_INFO("Fast marching from (%0.2f, %0.2f, %0.2f)", (source[0]*speedMap->voxelSize)+speedMap->minBounds.x, (source[1]*speedMap->voxelSize)+speedMap->minBounds.y, (source[2]*speedMap->voxelSize)+speedMap->minBounds.z);
-    ROS_INFO("Speed map details - ");
-    ROS_INFO("Size = %d x %d x %d", speedMap->size.x, speedMap->size.y, speedMap->size.z);
-    ROS_INFO("Total voxels = %d", speedMap->voxels.size());
-    ROS_INFO("Min bounds: (%0.2f, %0.2f, %0.2f)", speedMap->minBounds.x, speedMap->minBounds.y, speedMap->minBounds.z);
-    ROS_INFO("Max bounds: (%0.2f, %0.2f, %0.2f)", speedMap->maxBounds.x, speedMap->maxBounds.y, speedMap->maxBounds.z);
-    ROS_INFO("goals details - ");
-    ROS_INFO("Total voxels = %d", goals.size());
-    ROS_INFO("Reach map details - ");
-    ROS_INFO("Size = %d x %d x %d", reachOut->size.x, reachOut->size.y, reachOut->size.z);
-    ROS_INFO("Total voxels = %d", reachOut->voxels.size());
-    ROS_INFO("Min bounds: (%0.2f, %0.2f, %0.2f)", reachOut->minBounds.x, reachOut->minBounds.y, reachOut->minBounds.z);
-    ROS_INFO("Max bounds: (%0.2f, %0.2f, %0.2f)", reachOut->maxBounds.x, reachOut->maxBounds.y, reachOut->maxBounds.z);
-    ROS_INFO("Max number of goals =  %d", nGoalStop);
+  float cost = 0.0;
+  for (int i=1; i<path.size(); i++) cost += dist3(path[1], path[0]);
+  return cost;
+}
+
+std::vector<GoalPath> reach(int source[3], geometry_msgs::Pose start, MapGrid3D<double> *speedMap, std::vector<float> goals, MapGrid3D<double> *reachOut,
+const bool usesecond, const bool usecross, const int nGoalStop, const float turnRate = 1.0, const double timeOut = 1.0, const float minGoalSeparationDistance = 5.0)
+{
+    // ROS_INFO("Fast marching from (%0.2f, %0.2f, %0.2f)", (source[0]*speedMap->voxelSize)+speedMap->minBounds.x, (source[1]*speedMap->voxelSize)+speedMap->minBounds.y, (source[2]*speedMap->voxelSize)+speedMap->minBounds.z);
+    // ROS_INFO("Speed map details - ");
+    // ROS_INFO("Size = %d x %d x %d", speedMap->size.x, speedMap->size.y, speedMap->size.z);
+    // ROS_INFO("Total voxels = %d", speedMap->voxels.size());
+    // ROS_INFO("Min bounds: (%0.2f, %0.2f, %0.2f)", speedMap->minBounds.x, speedMap->minBounds.y, speedMap->minBounds.z);
+    // ROS_INFO("Max bounds: (%0.2f, %0.2f, %0.2f)", speedMap->maxBounds.x, speedMap->maxBounds.y, speedMap->maxBounds.z);
+    // ROS_INFO("goals details - ");
+    // ROS_INFO("Total voxels = %d", goals.size());
+    // ROS_INFO("Reach map details - ");
+    // ROS_INFO("Size = %d x %d x %d", reachOut->size.x, reachOut->size.y, reachOut->size.z);
+    // ROS_INFO("Total voxels = %d", reachOut->voxels.size());
+    // ROS_INFO("Min bounds: (%0.2f, %0.2f, %0.2f)", reachOut->minBounds.x, reachOut->minBounds.y, reachOut->minBounds.z);
+    // ROS_INFO("Max bounds: (%0.2f, %0.2f, %0.2f)", reachOut->maxBounds.x, reachOut->maxBounds.y, reachOut->maxBounds.z);
+    // ROS_INFO("Max number of goals =  %d", nGoalStop);
 
     /* The input variables */
     double *F;
@@ -101,7 +181,7 @@ const bool usesecond, const bool usecross, const int nGoalStop, const double tim
     dims[0] = speedMap->size.x;
     dims[1] = speedMap->size.y;
     dims[2] = speedMap->size.z;
-    std::vector<pcl::PointXYZI> goalsReachedSorted;
+    std::vector<GoalPath> goalsReachedSorted;
     F = &speedMap->voxels[0]; // Source esdf
     dims_sp[0] = 3;
     dims_sp[1] = 1;
@@ -111,17 +191,18 @@ const bool usesecond, const bool usecross, const int nGoalStop, const double tim
 
     // Initialize termination cost to very large number
     float terminationCost = 1e10;
+    Point startPosition = {start.position.x, start.position.y, start.position.z};
     std::vector<float> gainsUnreached;
     for (i=0; i < goals.size(); i++){
       if (goals[i] > 0.01) gainsUnreached.push_back(goals[i]);
     }
     std::sort(gainsUnreached.begin(), gainsUnreached.end()); // Sorts lowest to highest for binary search
     ROS_INFO("Planning to %d goals.", gainsUnreached.size());
-    ROS_INFO("Goals have gains:");
-    for (int i=0; i < gainsUnreached.size(); i++) {
-      if (i == (gainsUnreached.size()-1)) std::cout << gainsUnreached[i] << std::endl;
-      else std::cout << gainsUnreached[i] << ", ";
-    }
+    // ROS_INFO("Goals have gains:");
+    // for (int i=0; i < gainsUnreached.size(); i++) {
+    //   if (i == (gainsUnreached.size()-1)) std::cout << gainsUnreached[i] << std::endl;
+    //   else std::cout << gainsUnreached[i] << ", ";
+    // }
 
     /* Pixels which are processed and have a final distance are frozen */
     Frozen = new bool [npixels];
@@ -188,7 +269,7 @@ const bool usesecond, const bool usecross, const int nGoalStop, const double tim
 
             /*picture */
             if(isntfrozen3d(i, j, k, dims, Frozen)) {
-                Tt=(1/(max(F[IJK_index],eps)));
+                Tt=(1/(std::max(F[IJK_index],eps)));
                 /*Update distance in neigbour list or add to neigbour list */
                 if(T[IJK_index]>0) {
                     if(neg_listv[(int)T[IJK_index]]>Tt) {
@@ -302,34 +383,44 @@ const bool usesecond, const bool usecross, const int nGoalStop, const double tim
           // Remove goal from list of unreached gains
           float gain = goals[XYZ_index];
           int unreachId = std::find(gainsUnreached.begin(), gainsUnreached.end(), gain) - gainsUnreached.begin();
-          float utility = Utility(gain, T[XYZ_index]);
-          // ROS_INFO("Found voxel with gain %0.1f, cost %0.1f and utility %0.1f.  Erased goal with id %d and gain %0.1f.", gain, T[XYZ_index], utility, unreachId, gainsUnreached[unreachId]);
+          ROS_INFO("Found voxel with gain %0.1f.  Erased goal with id %d and gain %0.1f.", gain, unreachId, gainsUnreached[unreachId]);
           if ((unreachId >= 0) && (unreachId < gainsUnreached.size())) gainsUnreached.erase(gainsUnreached.begin() + unreachId);
           
+          // Calculate path, cost and utility from the path to get there
+          Point newGoalPosition = speedMap->_ConvertIndexToPosition(XYZ_index);
+          std::vector<Point> newPath = followGradientPath(startPosition, newGoalPosition, reachOut);
+          float cost;
+          if (newPath.size() == 0) cost = 1e10;
+          // else cost = CalculatePathCost(newPath) + CostToTurnPath(start, newPath, turnRate);
+          else cost = T[XYZ_index] + CostToTurnPath(start, newPath, turnRate);
+          ROS_INFO("Fast Marching cost: %0.1f, true cost: %0.1f (path = %0.1f, turn = %0.1f)", T[XYZ_index], cost, CalculatePathCost(newPath), CostToTurnPath(start, newPath, turnRate));
+          float utility = Utility(gain, cost);
+
           // Add point to goalsReached
           if (goalsReachedSorted.size() == 0) {
-            Point newGoalPosition = speedMap->_ConvertIndexToPosition(XYZ_index);
-            pcl::PointXYZI newGoal;
-            newGoal.x = newGoalPosition.x;
-            newGoal.y = newGoalPosition.y;
-            newGoal.z = newGoalPosition.z;
-            newGoal.intensity = utility;
+            GoalPath newGoal;
+            newGoal.goal.position.x = newGoalPosition.x;
+            newGoal.goal.position.y = newGoalPosition.y;
+            newGoal.goal.position.z = newGoalPosition.z;
+            newGoal.utility = utility;
+            newGoal.gain = gain;
+            newGoal.cost = cost;
+            newGoal.path = newPath;
             goalsReachedSorted.push_back(newGoal);
             // ROS_INFO("Added first reached goal to list");
           }
           else {
             // If the current cell is outside minGoalSeparationDistance of the others in the list, then add it.
             // Erase all reached goals if their utilities are worse and they're not separated enough from the current goal.
-            Point newGoalPosition = speedMap->_ConvertIndexToPosition(XYZ_index);
             std::vector<bool> separated(goalsReachedSorted.size());
             std::vector<bool> smallerUtility(goalsReachedSorted.size());
             int insertId = -1;
             std::vector<int> eraseIds;
             for (int i=0; i < goalsReachedSorted.size(); i++) {
-              pcl::PointXYZI listGoal = goalsReachedSorted[i];
-              Point listGoalPosition = {listGoal.x, listGoal.y, listGoal.z};
+              GoalPath listGoal = goalsReachedSorted[i];
+              Point listGoalPosition = {listGoal.goal.position.x, listGoal.goal.position.y, listGoal.goal.position.z};
               separated[i] = (dist3(listGoalPosition, newGoalPosition) <= minGoalSeparationDistance);
-              smallerUtility[i] = (utility > goalsReachedSorted[i].intensity);
+              smallerUtility[i] = (utility > goalsReachedSorted[i].utility);
             }
             // ROS_INFO("Compared current goal to all others in reach list");
             for (int i=0; i < goalsReachedSorted.size(); i++) {
@@ -345,11 +436,14 @@ const bool usesecond, const bool usecross, const int nGoalStop, const double tim
               }
             }
             if (insertId >= 0) {
-              pcl::PointXYZI newGoal;
-              newGoal.x = newGoalPosition.x;
-              newGoal.y = newGoalPosition.y;
-              newGoal.z = newGoalPosition.z;
-              newGoal.intensity = utility;
+              GoalPath newGoal;
+              newGoal.goal.position.x = newGoalPosition.x;
+              newGoal.goal.position.y = newGoalPosition.y;
+              newGoal.goal.position.z = newGoalPosition.z;
+              newGoal.utility = utility;
+              newGoal.gain = gain;
+              newGoal.cost = cost;
+              newGoal.path = newPath;
               goalsReachedSorted.insert(goalsReachedSorted.begin() + insertId, newGoal);
               // ROS_INFO("Added new reached goal at position %d", insertId);
             }
@@ -362,7 +456,7 @@ const bool usesecond, const bool usecross, const int nGoalStop, const double tim
           if (gainsUnreached.size() > 0) {
             if (goalsReachedSorted.size() >= nGoalStop) {
               // Cost associated with nth best utility and best remaining gain guarantees the best n goals have been found.
-              terminationCost = CostFromUtilityGain(gainsUnreached.back(), goalsReachedSorted[nGoalStop-1].intensity);
+              terminationCost = CostFromUtilityGain(gainsUnreached.back(), goalsReachedSorted[nGoalStop-1].utility);
             }
             else {
               terminationCost = 1e10;
@@ -541,7 +635,7 @@ std::vector<Point> AStar(const Point start, const Point goal, MapGrid3D<double> 
   return emptyPath;
 }
 
-std::vector<Point> followGradientPath(const Point start, const Point goal, MapGrid3D<double> *reach, MapGrid3D<double> *speedMap)
+std::vector<Point> followGradientPath(const Point start, const Point goal, MapGrid3D<double> *reach)
 {
   // Assumptions:
   // The reach voxel map is the cost-to-go from the goal back to the start.
@@ -569,7 +663,8 @@ std::vector<Point> followGradientPath(const Point start, const Point goal, MapGr
   Point current = goal;
   float gradNorm = 1.0;
   float reachValue = 0.0;
-  while ((dist3(current, start) > 3.0*voxelSize) && (path.size() < 2000) && gradNorm >= 0.001) {
+  float cost = 0.0;
+  while ((dist3(current, start) > 2.0*voxelSize) && (path.size() < 2000) && gradNorm >= 0.001) {
   	// Find the current point's grid indices and it's 26 neighbor voxel indices.
   	int currentId = reach->_ConvertPositionToIndex(current);
     // ROS_INFO("Current point is (%0.2f, %0.2f, %0.2f with cost-to-go of %0.2f)", current.x, current.y, current.z, reach->voxels[currentId]);
@@ -610,6 +705,8 @@ std::vector<Point> followGradientPath(const Point start, const Point goal, MapGr
       grad.z = std::sqrt(0.05)*grad.z/gradNorm;
     }
 
+    cost += step*std::sqrt(grad.x*grad.x + grad.y*grad.y + grad.z*grad.z);
+
     current.x += step*grad.x;
     current.y += step*grad.y;
     current.z += step*grad.z;
@@ -618,7 +715,9 @@ std::vector<Point> followGradientPath(const Point start, const Point goal, MapGr
 
   // Check if the path made it back to the vehicle
   if (dist3(path[path.size()-1], start) > 3.0*reach->voxelSize) {
+    std::vector<Point> errorPath;
     ROS_INFO("Path did not make it back to the robot.  Select a different goal point.");
+    return errorPath;
   } else {
     path.push_back(start);
   }
@@ -698,8 +797,8 @@ std::vector<Point> followGradientPathManifold2D(const Point start, const Point g
       gradY += sobelY[i]*reachNeighbor;
     }
     gradMag = std::sqrt(gradX*gradX + gradY*gradY);
-    current.x += 0.5*min(max(gradX,0.05),1.0)*reach->voxelSize;
-    current.y += 0.5*min(max(gradY,0.05),1.0)*reach->voxelSize;
+    current.x += 0.5*std::min(std::max((double)gradX,0.05),1.0)*reach->voxelSize;
+    current.y += 0.5*std::min(std::max((double)gradY,0.05),1.0)*reach->voxelSize;
 
     // Figure out if the current is now a new id and which neighbor voxel it went to.
     
@@ -760,8 +859,8 @@ std::vector<Point> followGradientPath2D(const Point start, const Point goal, Map
       gradY += sobelY[i]*reachNeighbor;
     }
     gradMag = std::sqrt(gradX*gradX + gradY*gradY);
-    current.x += 0.5*min(max(gradX,0.05),1.0)*reach->voxelSize;
-    current.y += 0.5*min(max(gradY,0.05),1.0)*reach->voxelSize;
+    current.x += 0.5*std::min(std::max((double)gradX,0.05),1.0)*reach->voxelSize;
+    current.y += 0.5*std::min(std::max((double)gradY,0.05),1.0)*reach->voxelSize;
     path.push_back(current);
     itt++;
   }
@@ -774,3 +873,5 @@ std::vector<Point> followGradientPath2D(const Point start, const Point goal, Map
   }
   return flipPath(path);
 }
+
+#endif
