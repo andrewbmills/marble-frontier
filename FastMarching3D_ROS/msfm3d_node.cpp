@@ -935,7 +935,11 @@ void Msfm3d::updateGoalPoses()
     float posePoint[3] = {goalPose.position.x, goalPose.position.y, goalPose.position.z};
     sampleView.index = xyz_index3(posePoint);
     for (int i = 0; i < viewed_cloud->points.size(); i++) {
-      sampleView.cloud.points.push_back(viewed_cloud->points[i]);
+      pcl::PointXYZI p;
+      p.x = viewed_cloud->points[i].x;
+      p.y = viewed_cloud->points[i].y;
+      p.z = viewed_cloud->points[i].z;
+      sampleView.cloud.points.push_back(p);
     }
     pcl::PointCloud<pcl::PointXYZI>::Ptr gain_cloud(new pcl::PointCloud<pcl::PointXYZI>);
     sampleView.gain = Gain(sampleView.pose, camera, mytree, gain_cloud, gain_type);
@@ -2165,7 +2169,7 @@ void infoGoalView(Msfm3d& planner, int *viewIndices, double *utility, const int 
         // Calculate the feasability and path to arrive at the current goal view
         if (planner.updatePath(point)) {
           // Get the angle between the current robot pose and the path start
-          int j = min((int)planner.pathmsg.poses.size(), 10);
+          int j = std::min((int)planner.pathmsg.poses.size(), 10);
           float start_path_vec[3] = {(float)(planner.pathmsg.poses[j].pose.position.x - planner.pathmsg.poses[0].pose.position.x),
                                      (float)(planner.pathmsg.poses[j].pose.position.y - planner.pathmsg.poses[0].pose.position.y),
                                      (float)(planner.pathmsg.poses[j].pose.position.z - planner.pathmsg.poses[0].pose.position.z)};
@@ -2477,7 +2481,7 @@ void reach(Msfm3d& planner, const bool usesecond, const bool usecross, const int
 
             /*picture */
             if(isntfrozen3d(i, j, k, dims, Frozen)) {
-                Tt=(1/(max(F[IJK_index],eps)));
+                Tt=(1/(std::max(F[IJK_index],eps)));
                 /*Update distance in neigbour list or add to neigbour list */
                 if(T[IJK_index]>0) {
                     if(neg_listv[(int)T[IJK_index]]>Tt) {
@@ -3108,7 +3112,7 @@ int main(int argc, char **argv)
           } else if (replanTrigger == "frontier") {
             int viewableFrontierCount = (int)planner.goalViews[goalViewList[0]].cloud.size();
             for (int i = 0; i < viewableFrontierCount; i++) {
-              pcl::PointXYZ _query = planner.goalViews[goalViewList[0]].cloud.points[i];
+              pcl::PointXYZI _query = planner.goalViews[goalViewList[0]].cloud.points[i];
               float query[3] = {_query.x, _query.y, _query.z};
               int idx = planner.xyz_index3(query);
               if (planner.frontier[idx]) {
