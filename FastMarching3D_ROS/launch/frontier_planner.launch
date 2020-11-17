@@ -32,7 +32,7 @@
       </rosparam>
     </node>
 
-    <node pkg="msfm3d" type="frontier_planner" name="frontier_planner" output="screen">
+    <node pkg="msfm3d" type="frontier_planner" name="frontier_planner">
       <param name="update_rate" value="1.0"/>
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="num_agents" value="1"/>

@@ -303,7 +303,7 @@ int main(int argc, char **argv)
   n.param("frontier_planner/voxel_size", voxelSize, (float)0.2);
   n.param("frontier_planner/speed_max", speedMax, (double)10.0);
   n.param("frontier_planner/speed_safe", speedSafe, (double)0.4);
-  n.param("frontier_planner/turn_rate", turnRate, (float)1.0);
+  n.param("frontier_planner/turn_rate", turnRate, (float)15.0); // deg/s
   double marchingTimeOut;
   n.param("frontier_planner/marching_timeout", marchingTimeOut, (double)0.5);
   ROS_INFO("Voxel size set to %0.2f", voxelSize);
@@ -347,10 +347,6 @@ int main(int argc, char **argv)
       msfm3d::GoalArray goalArrayMsg;
       for (int i=0; i<goalsRanked.size(); i++) {
         Point goal = {goalsRanked[i].goal.position.x, goalsRanked[i].goal.position.y, goalsRanked[i].goal.position.z};
-        std::vector<Point> path;
-        if (pathMode == "gradient") goalsRanked[i].path = followGradientPath(robotPosition, goal, &reachMap);
-        else if (pathMode == "gradient2D") goalsRanked[i].path = followGradientPathManifold2D(robotPosition, goal, &reachMap);
-        else goalsRanked[i].path = AStar(robotPosition, goal, &reachMap, &speedMap);
         msfm3d::Goal goalMsg;
         std::pair<nav_msgs::Path, geometry_msgs::PoseStamped> pathPoseMsg = ConvertPointVectorToPathMsg(goalsRanked[i].path);
         pathPoseMsg.second.header = pathMsgHeader;
