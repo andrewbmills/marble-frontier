@@ -2,80 +2,51 @@
 <launch>
   <arg name="resolution" default="0.2"/>
   <group ns="X4">
-    <node pkg="msfm3d" type="frontier" name="frontier">
+    <node pkg="msfm3d" type="frontier" name="frontier_node">
       <param name="update_rate" value="3.0" />
-      <param name="map_type" value="octomap" />
+      <param name="map_type" value="edt" />
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="cluster_size" value="100"/>
 
-      <remap from="costmap" to="voxblox_node/esdf_pointcloud"/>
-      <remap from="octomap_full" to="octomap_ignore"/>
-    </node>
+      <param name="filter_by_bbox" value="true"/>
+      <param name="bbox_min_z" value = "0.0"/>
+      <param name="bbox_max_z" value = "2.5"/>
 
-    <node pkg="nodelet" type="nodelet" name="pcl_manager_passthrough" args="manager" output="screen" />
-
-    <!-- Run a passthrough filter to clean NaNs -->
-    <node pkg="nodelet" type="nodelet" name="passthrough" args="load pcl/PassThrough pcl_manager_passthrough" output="screen">
-      <remap from="~input" to="frontier" />
-      <remap from="~output" to="frontier_filtered" />
-      <rosparam>
-        filter_field_name: z
-        filter_limit_min: -0.4
-        filter_limit_max: 3.0
-        filter_limit_negative: False
-      </rosparam>
-    </node>
-
-    <!-- <node pkg="nodelet" type="nodelet" name="pcl_manager_boxEntrance" args="manager" output="screen" />
-    <node pkg="nodelet" type="nodelet" name="cropbox_frontier" args="load pcl/CropBox pcl_manager_boxEntrance">
-      <remap from="~input" to="frontier" />
-      <remap from="~output" to="frontier_filtered" />
-      <rosparam>
-        negative: true
-        min_x: -20.0
-        max_x: 0.0
-        min_y: -20.0
-        max_y: 20.0
-        min_z: -2.0
-        max_z: 2.0
-      </rosparam>
-    </node> -->
-
-    <node pkg="msfm3d" type="goal_pose_sampler" name="goal_pose_sampler" output="screen">
-      <param name="update_rate" value="0.5" />
-      <param name="voxel_size" value="$(arg resolution)"/>
-      <param name="sample_mode" type="string" value="fibonacci"/>
-      <param name="pose_sampling_limit" value="10"/>
-
-      <param name="sensor_rMin" value="0.5"/>
-      <param name="sensor_rMax" value="3.0"/>
-      <param name="sensor_vertical_FoV" value="40.0"/>
-      <param name="sensor_horizontal_FoV" value="80.0"/>
-      <param name="sensor_type" type="string" value="camera"/>
-      <param name="gain_type" type="string" value="frontier"/>
-
-      <remap from="octomap_binary" to="octomap_ignore"/>
       <remap from="edt" to="voxblox_node/esdf_pointcloud"/>
-      <remap from="frontier" to="frontier_filtered"/>
+      <remap from="octomap_full" to="octomap_ignore"/>
+      <!-- <remap from="octomap_binary" to="octomap_ignore"/> -->
     </node>
 
-    <node pkg="msfm3d" type="frontier_planner" name="frontier_planner">
-      <param name="update_rate" value="0.5"/>
+    <node pkg="nodelet" type="nodelet" name="pcl_manager_cropbox" args="manager"/>
+    <node pkg="nodelet" type="nodelet" name="cropbox_frontier" args="load pcl/CropBox pcl_manager_cropbox">
+      <remap from="~input" to="frontier" />
+      <remap from="~output" to="frontier_filtered" />
+      <rosparam>
+        negative: false
+        min_x: -300.0
+        max_x: 300.0
+        min_y: -300.0
+        max_y: 300.0
+        min_z: -10.0
+        max_z: 10.0
+      </rosparam>
+    </node>
+
+    <node pkg="msfm3d" type="frontier_planner" name="frontier_planner" output="screen">
+      <param name="update_rate" value="1.0"/>
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="num_agents" value="1"/>
       <param name="goal_separation_distance" value="3.0"/>
       <param name="speed_max" value="3.0"/>
-      <param name="speed_safe" value="0.6"/>
+      <param name="speed_safe" value="1.0"/>
       <param name="marching_timeout" value="3.0"/>
-      <!-- <param name="path_mode" value="Astar"/> -->
-      <!-- <param name="path_mode" value="gradient2D"/> -->
       <param name="path_mode" value="gradient"/>
+      <param name="turn_rate" value="30.0"/>
 
       <remap from="speed_map" to="voxblox_node/esdf_pointcloud"/>
-      <remap from="goal_points" to="poop"/>
       <remap from="path" to="planned_path"/>
       <remap from="odometry" to="odometry_stitch"/>
-      <remap from="frontier" to="goals"/>
+      <remap from="frontier" to="frontier_filtered"/>
     </node>
 
     <include file="$(find marble_guidance)/launch/guidance_air.launch"/>
