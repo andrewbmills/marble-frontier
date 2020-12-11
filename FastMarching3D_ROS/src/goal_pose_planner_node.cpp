@@ -356,6 +356,11 @@ int main(int argc, char **argv)
                                                 numGoals), turnRate, marchingTimeOut, goalSeparationDistance);
       pubReach.publish(ConvertReachMapToPointCloud2(&reachMap));
 
+      // Erase all goals with less than 2 point paths
+      for (int i=(goalsRanked.size()-1); i>=0; i--) {
+        if (goalsRanked[i].path.size() < 2) goalsRanked.erase(goalsRanked.begin() + i);
+      }
+
       // Get paths using A* or gradient following and publish them
       ROS_INFO("Tracing paths from goals back to robot...");
       msfm3d::GoalArray goalArrayMsg;

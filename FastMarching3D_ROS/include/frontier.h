@@ -182,18 +182,36 @@ void ConvertOctomapToSeenOccGrid(octomap::OcTree* map, MapGrid3D<std::pair<bool,
   // Initialize MapGrid3D object of the appropriate size
   double xMin, yMin, zMin, xMax, yMax, zMax;
   seenOccGrid->voxelSize = map->getResolution();
+  // float minBounds[3] = {xMin - 1.5*seenOccGrid->voxelSize, yMin - 1.5*seenOccGrid->voxelSize, zMin - 1.5*seenOccGrid->voxelSize};
+  // float maxBounds[3] = {xMax + 1.5*seenOccGrid->voxelSize, yMax + 1.5*seenOccGrid->voxelSize, zMax + 1.5*seenOccGrid->voxelSize};
+  // seenOccGrid->Reset(seenOccGrid->voxelSize, minBounds, maxBounds, std::make_pair(false, false));
+  map->expand();
   map->getMetricMin(xMin, yMin, zMin);
   map->getMetricMax(xMax, yMax, zMax);
-  float minBounds[3] = {xMin - 1.5*seenOccGrid->voxelSize, yMin - 1.5*seenOccGrid->voxelSize, zMin - 1.5*seenOccGrid->voxelSize};
-  float maxBounds[3] = {xMax + 1.5*seenOccGrid->voxelSize, yMax + 1.5*seenOccGrid->voxelSize, zMax + 1.5*seenOccGrid->voxelSize};
-  seenOccGrid->Reset(seenOccGrid->voxelSize, minBounds, maxBounds, std::make_pair(false, false));
-  map->expand();
+  ROS_INFO("Octomap has bounds (%0.2f, %0.2f %0.2f) to (%0.2f, %0.2f %0.2f)", xMin, yMin, zMin, xMax, yMax, zMax);
 
+  bool firstLeaf = true;
   clock_t tStart = clock();
   for(octomap::OcTree::leaf_iterator it = map->begin_leafs(),
   end=map->end_leafs(); it!=end; ++it) {
+    if (firstLeaf) {
+      float minBounds[3];
+      float maxBounds[3];
+      minBounds[0] = it.getX() - (std::round((it.getX() - xMin)/seenOccGrid->voxelSize) + 2)*seenOccGrid->voxelSize;
+      minBounds[1] = it.getY() - (std::round((it.getY() - yMin)/seenOccGrid->voxelSize) + 2)*seenOccGrid->voxelSize;
+      minBounds[2] = it.getZ() - (std::round((it.getZ() - zMin)/seenOccGrid->voxelSize) + 2)*seenOccGrid->voxelSize;
+      maxBounds[0] = it.getX() + (std::round((xMax - it.getX())/seenOccGrid->voxelSize) + 2)*seenOccGrid->voxelSize;
+      maxBounds[1] = it.getY() + (std::round((yMax - it.getY())/seenOccGrid->voxelSize) + 2)*seenOccGrid->voxelSize;
+      maxBounds[2] = it.getZ() + (std::round((zMax - it.getZ())/seenOccGrid->voxelSize) + 2)*seenOccGrid->voxelSize;
+      ROS_INFO("SeenOccGrid has bounds (%0.2f, %0.2f %0.2f) to (%0.2f, %0.2f %0.2f)", minBounds[0], minBounds[1], minBounds[2], maxBounds[0], maxBounds[1], maxBounds[2]);
+      seenOccGrid->Reset(seenOccGrid->voxelSize, minBounds, maxBounds, std::make_pair(false, false));
+      firstLeaf = false;
+    }
+    // ROS_INFO("Assigning voxel at (%0.1f, %0.1f %0.1f)", it.getX(), it.getY(), it.getZ());
     seenOccGrid->SetVoxel(it.getX(), it.getY(), it.getZ(), std::make_pair(true, (it->getValue()>0.0)));
   }
+  // ROS_INFO("Octomap has bounds (%0.2f, %0.2f %0.2f) to (%0.2f, %0.2f %0.2f)", xMin, yMin, zMin, xMax, yMax, zMax);
+  // ROS_INFO("Octomap has bounds (%0.2f, %0.2f %0.2f) to (%0.2f, %0.2f %0.2f)", xMin, yMin, zMin, xMax, yMax, zMax);
   ROS_INFO("Copying data from Octomap took: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
   return;
 }
@@ -339,6 +357,7 @@ bool CalculateFrontierRawPCLGroundPlane(MapGrid3D<std::pair<bool, bool>>* seenOc
 Frontier CalculateFrontier(octomap::OcTree* map, pcl::PointXYZ bboxMin, pcl::PointXYZ bboxMax, bool bboxOn=false, 
                            bool normalFilterOn=true, bool clusteringOn=true, float minNormalZ=0.4, int minClusterSize=50)
 {
+  ROS_INFO("Calculating frontier from octomap...");
   clock_t tStart = clock();
   MapGrid3D<std::pair<bool,bool>> seenOcc;
   ConvertOctomapToSeenOccGrid(map, &seenOcc);

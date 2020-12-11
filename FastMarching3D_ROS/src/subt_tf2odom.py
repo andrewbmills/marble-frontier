@@ -30,7 +30,7 @@ class LinkStateToOdometry:
 		return
 
 	def start(self):
-		rate = rospy.Rate(10.0) # 50Hz
+		rate = rospy.Rate(25.0) # 50Hz
 		while not rospy.is_shutdown():
 			rate.sleep()
 			self.getTransform()
@@ -38,7 +38,7 @@ class LinkStateToOdometry:
 			self.pub2.publish(self.Pose)
 		return
 
-	def __init__(self, topic_name="odometry", robot_name="X1", fixed_frame="world", child_frame="X1/base_link"):
+	def __init__(self, topic_name="odometry", robot_name="X4", fixed_frame="world", child_frame="X4/base_link"):
 		
 		node_name = topic_name + "_" + robot_name + "_publisher"
 		rospy.init_node(node_name)

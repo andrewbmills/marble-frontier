@@ -4,15 +4,15 @@
   <group ns="X4">
     <node pkg="msfm3d" type="frontier" name="frontier_node">
       <param name="update_rate" value="3.0" />
-      <param name="map_type" value="edt" />
+      <!-- <param name="map_type" value="edt"/> -->
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="cluster_size" value="100"/>
 
-      <param name="filter_by_bbox" value="true"/>
+      <param name="filter_by_bbox" value="false"/>
       <param name="bbox_min_z" value = "0.0"/>
       <param name="bbox_max_z" value = "2.5"/>
 
-      <remap from="edt" to="voxblox_node/esdf_pointcloud"/>
+      <!-- <remap from="edt" to="voxblox_node/esdf_pointcloud"/> -->
       <remap from="octomap_full" to="octomap_ignore"/>
       <!-- <remap from="octomap_binary" to="octomap_ignore"/> -->
     </node>
@@ -31,48 +31,54 @@
       </rosparam>
     </node> -->
 
-    <node pkg="nodelet" type="nodelet" name="pcl_manager_cropbox" args="manager"/>
-    <node pkg="nodelet" type="nodelet" name="cropbox_frontier" args="load pcl/CropBox pcl_manager_cropbox">
+    <node pkg="nodelet" type="nodelet" name="pcl_manager_cropbox_frontier" args="manager"/>
+    <node pkg="nodelet" type="nodelet" name="cropbox_frontier" args="load pcl/CropBox pcl_manager_cropbox_frontier">
       <remap from="~input" to="frontier" />
       <remap from="~output" to="frontier_filtered" />
       <rosparam>
         negative: false
-        min_x: -300.0
-        max_x: 300.0
-        min_y: -300.0
-        max_y: 300.0
-        min_z: -10.0
-        max_z: 10.0
+        min_x: 10.0
+        max_x: 3000.0
+        min_y: -3000.0
+        max_y: 3000.0
+        min_z: -100.0
+        max_z: 100.0
       </rosparam>
     </node>
 
-    <node pkg="msfm3d" type="goal_pose_sampler" name="goal_pose_sampler">
+    <node pkg="msfm3d" type="goal_pose_sampler" name="goal_pose_sampler" output="screen">
       <param name="update_rate" value="1.0" />
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="sample_mode" type="string" value="fibonacci"/>
       <param name="pose_sampling_limit" value="20"/>
 
-      <param name="sensor_rMin" value="0.5"/>
+      <!-- <param name="sensor_rMin" value="0.5"/>
       <param name="sensor_rMax" value="3.0"/>
       <param name="sensor_vertical_FoV" value="30.0"/>
-      <param name="sensor_horizontal_FoV" value="60.0"/>
-      <param name="sensor_type" type="string" value="camera"/>
-      <param name="gain_type" type="string" value="unseen"/>
+      <param name="sensor_horizontal_FoV" value="60.0"/> -->
+      <param name="sensor_rMin" value="0.5"/>
+      <param name="sensor_rMax" value="4.0"/>
+      <param name="sensor_vertical_FoV" value="30.0"/>
+      <param name="sensor_horizontal_FoV" value="180.0"/>
+      <param name="sensor_type" type="string" value="lidar"/>
+      <param name="gain_type" type="string" value="frontier"/>
       <param name="gain_debug_mode" type="string" value="normal"/>
       <param name="robot_proximity_filter_radius" value="1.0"/>
-      <param name="min_obstacle_proximity" value="1.2"/>
+      <!-- <param name="min_obstacle_proximity" value="1.2"/> -->
+      <param name="min_obstacle_proximity" value="2.0"/>
 
       <remap from="octomap_binary" to="octomap_ignore"/>
       <remap from="edt" to="voxblox_node/esdf_pointcloud"/>
       <remap from="frontier" to="frontier_filtered"/>
     </node>
 
-    <node pkg="msfm3d" type="goal_pose_planner" name="goal_pose_planner" output="screen">
+    <node pkg="msfm3d" type="goal_pose_planner" name="goal_pose_planner">
       <param name="update_rate" value="1.0"/>
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="num_agents" value="1"/>
       <param name="goal_separation_distance" value="3.0"/>
-      <param name="speed_max" value="3.0"/>
+      <!-- <param name="speed_max" value="3.0"/> -->
+      <param name="speed_max" value="5.0"/>
       <param name="speed_safe" value="1.0"/>
       <param name="marching_timeout" value="3.0"/>
       <param name="path_mode" value="gradient"/>
@@ -80,12 +86,12 @@
 
       <remap from="speed_map" to="voxblox_node/esdf_pointcloud"/>
       <remap from="path" to="planned_path"/>
-      <remap from="odometry" to="odometry"/>
+      <remap from="odometry" to="odometry_stitch"/>
     </node>
 
-    <!-- <include file="$(find marble_guidance)/launch/guidance_air.launch"/> -->
+    <include file="$(find marble_guidance)/launch/guidance_air.launch"/>
     <!-- <include file="$(find marble_guidance)/launch/guidance.launch"/> -->
-    <!-- <include file="$(find receding_horizon_stitcher)/launch/stitcher.launch"/> -->
+    <include file="$(find receding_horizon_stitcher)/launch/stitcher.launch"/>
 
   </group>
 </launch>

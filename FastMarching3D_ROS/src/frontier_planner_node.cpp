@@ -242,7 +242,7 @@ std::pair<nav_msgs::Path, geometry_msgs::PoseStamped> ConvertPointVectorToPathMs
   }
 
   geometry_msgs::PoseStamped goalPose;
-  assert(points.size()>1);
+  if (points.size() == 0) return std::make_pair(path, goalPose);
   Point goalVec = {points[points.size()-1].x - points[points.size()-2].x, 
                    points[points.size()-1].y - points[points.size()-2].y,
                    points[points.size()-1].z - points[points.size()-2].z};
@@ -341,6 +341,11 @@ int main(int argc, char **argv)
       ROS_INFO("Calculating cost to frontiers...");
       std::vector<GoalPath> goalsRanked = reach(robotPositionIds, robot, &speedMap, frontier.voxels, &reachMap, true, true, std::min((int)frontierCloud->size(), numGoals), turnRate, marchingTimeOut, goalSeparationDistance);
       pubReach.publish(ConvertReachMapToPointCloud2(&reachMap));
+
+      // Erase all goals with less than 2 point paths
+      for (int i=(goalsRanked.size()-1); i>=0; i--) {
+        if (goalsRanked[i].path.size() < 2) goalsRanked.erase(goalsRanked.begin() + i);
+      }
 
       // Get paths using A* and publish them
       ROS_INFO("Tracing paths from goals back to robot...");
