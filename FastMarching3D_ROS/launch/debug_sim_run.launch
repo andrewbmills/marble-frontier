@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+  <arg name="resolution" default="0.2"/>
+
+  <!-- <node pkg="rosbag" type="play" name="rosbag" args="-r 0.2 /home/andrew/tests/data/bags/test_set4_range_8m/ifve_unseen_efficiency_test0.bag"/> -->
+
+  <group ns="X4">
+    <node pkg="msfm3d" type="debug_paths_from_bag" name="debug_paths" output="screen">
+      <param name="update_rate" value="1.0"/>
+      <param name="voxel_size" value="$(arg resolution)"/>
+      <param name="num_agents" value="1"/>
+      <param name="speed_max" value="3.0"/>
+      <param name="speed_safe" value="1.0"/>
+      <param name="marching_timeout" value="5.0"/>
+      <param name="path_mode" value="gradient"/>
+      <param name="turn_rate" value="30.0"/>
+
+      <remap from="speed_map" to="voxblox_node/esdf_pointcloud_throttle"/>
+      <!-- <remap from="paths" to="paths"/> -->
+      <!-- <remap from="odometry" to="odometry"/> -->
+      <remap from="reach" to="reach_grid"/>
+      <remap from="frontier" to="frontier_filtered"/>
+    </node>
+
+    <node pkg="nodelet" type="nodelet" name="pcl_manager_cropbox" args="manager"/>
+    <node pkg="nodelet" type="nodelet" name="cropbox_frontier" args="load pcl/CropBox pcl_manager_cropbox">
+      <remap from="~input" to="reach_grid" />
+      <remap from="~output" to="reach_grid_crop" />
+      <rosparam>
+        negative: false
+        min_x: -100.0
+        max_x: 100.0
+        min_y: -30.0
+        max_y: 30.0
+        min_z: 1.0
+        max_z: 2.0
+      </rosparam>
+    </node>
+
+    <node pkg="nodelet" type="nodelet" name="pcl_manager_passthrough" args="manager"/>
+    <node pkg="nodelet" type="nodelet" name="passthrough_reach" args="load pcl/PassThrough pcl_manager_passthrough">
+      <remap from="~input" to="reach_grid_crop" />
+      <remap from="~output" to="reach_grid_filtered" />
+      <rosparam>
+        filter_field_name: intensity
+        filter_limit_min: 0.0
+        filter_limit_max: 2000
+        filter_limit_negative: False
+      </rosparam>
+    </node>
+
+  </group>
+</launch>
