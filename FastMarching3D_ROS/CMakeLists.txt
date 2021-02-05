@@ -101,3 +101,8 @@ add_executable(goal_pose_planner src/goal_pose_planner_node.cpp)
 target_link_libraries(goal_pose_planner
   ${catkin_LIBRARIES}
 )
+
+add_executable(debug_paths_from_bag src/debug_paths_from_bag.cpp)
+target_link_libraries(debug_paths_from_bag
+  ${catkin_LIBRARIES}
+)

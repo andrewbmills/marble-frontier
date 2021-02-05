@@ -1,3 +1,4 @@
+#include <iostream>
 #include <algorithm>
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -5,6 +6,8 @@
 #include <nav_msgs/Odometry.h>
 #include <std_msgs/Float32MultiArray.h>
 #include <geometry_msgs/PoseArray.h>
+#include <octomap_msgs/Octomap.h>
+#include <octomap_msgs/conversions.h>
 #include <pcl/point_types.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/kdtree/kdtree_flann.h>
@@ -14,6 +17,7 @@
 // local
 #include <reach.h>
 #include <gain.h>
+#include <kinematics.h>
 
 // Cost map global
 MapGrid3D<double> speedMap;
@@ -28,6 +32,7 @@ std_msgs::Header pathMsgHeader;
 pcl::PointCloud<pcl::PointXYZINormal>::Ptr goalsCloud (new pcl::PointCloud<pcl::PointXYZINormal>);
 bool firstGoalsReceived = false;
 bool goalsUpdated = false;
+bool goalPosesUpdated = false;
 sensor_msgs::PointCloud2 goalsMsg;
 // Robot pose
 geometry_msgs::Pose robot;
@@ -39,8 +44,25 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr frontierCloud(new pcl::PointCloud<pcl::Point
 bool firstFrontierReceived = false;
 bool frontierUpdated = false;
 sensor_msgs::PointCloud2 frontierMsg;
+// Octomap global
+octomap::OcTree* mapTree;
+bool firstOctomapReceived = false;
+bool octomapUpdated = false;
+octomap_msgs::Octomap octomapMsg;
+
 // Last Goal poses message
 geometry_msgs::PoseArray goalPosesMsg;
+
+struct PathStats
+{
+  double costReach;
+  double costLength;
+  double costLengthTurn;
+  double costKinematic;
+  double gainPath;
+  double utility;
+  double gainPose;
+};
 
 Point ProjectPointToSpeedCloudMap(Point p, pcl::PointCloud<pcl::PointXYZI>::Ptr cloud, float intensityMin=0.0)
 {
@@ -131,6 +153,63 @@ void GetPointCloudBounds(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud, float min[3
   return;
 }
 
+void ConvertCloudForGainCalculation(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_in,  pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_out, SensorFoV sensor)
+{
+  // Convert input cloud to padded MapGrid3D
+  float cloudMin[3], cloudMax[3], boundsMin[3], boundsMax[3];
+  int size[3];
+  GetPointCloudBounds(cloud_in, cloudMin, cloudMax);
+  float delta[3] = {sensor.rMax, sensor.rMax, std::sin(sensor.verticalFoV*M_PI/360)*sensor.rMax};
+  for (int i=0; i<3; i++)
+  {
+    boundsMin[i] = cloudMin[i] - ((float)1.1)*delta[i];
+    boundsMax[i] = cloudMax[i] + ((float)1.1)*delta[i];
+    size[i] = std::roundf((boundsMax[i] - boundsMin[i])/voxelSize) + 1;
+  }
+  MapGrid3D<float> mapConvert(voxelSize, size, boundsMin);
+  mapConvert.SetAll(-1.0);
+
+  for (int i=0; i<cloud_in->points.size(); i++) {
+    pcl::PointXYZI query = cloud_in->points[i];
+    if (query.intensity >= 0.0) mapConvert.SetVoxel(query.x, query.y, query.z, query.intensity);
+  }
+  // Convert back to pointcloud
+  CopyMapGrid3DToPointCloud(mapConvert, cloud_out);
+  return;
+}
+
+std::vector<Point> FollowPathWithKinematics(std::vector<Point> path, geometry_msgs::Pose x0, double &tf)
+{
+  // Prep inputs and outputs
+  path_integrate_kinematics.clear();
+  for (int i=0; i<path.size(); i++) {
+    std::vector<double> p{path[i].x, path[i].y, path[i].z};
+    path_integrate_kinematics.push_back(p);
+  }
+  Quaternion q;
+  q.x = x0.orientation.x; q.y = x0.orientation.y; q.z = x0.orientation.z; q.w = x0.orientation.w;
+  Eigen::Matrix3f R = Quaternion2RotationMatrix(q);
+  double yaw = std::atan2(R(1,0), R(0,0));
+  state_type_unicycle3D x = {x0.position.x, x0.position.y, x0.position.z, yaw};
+  // ROS_INFO("Initial state for kinematics is (%0.2f m, %0.2f m, %0.2f deg)", x[0], x[1], x[2]*(180.0/M_PI));
+
+  // Run and store the kinematics ODE solver result
+  states_integrate_kinematics.clear();
+  integrate(unicycle3D, x, 0.0, 60.0, 0.01, unicycleObserver3D);
+
+  // Copy result back to path_kinematics
+  std::vector<Point> pathKinematic;
+  for (int i=0; i<states_integrate_kinematics.size(); i++) {
+    Point p;
+    p.x = states_integrate_kinematics[i][1];
+    p.y = states_integrate_kinematics[i][2];
+    p.z = states_integrate_kinematics[i][3];
+    pathKinematic.push_back(p);
+  }
+  tf = states_integrate_kinematics[states_integrate_kinematics.size()-1][0];
+  return pathKinematic;
+}
+
 void CallbackSpeedMap(const sensor_msgs::PointCloud2::ConstPtr msg)
 {
   if (msg->data.size() == 0) return;
@@ -167,7 +246,7 @@ void CallbackSpeedMap(const sensor_msgs::PointCloud2::ConstPtr msg)
 
 void CallbackOdometry(const nav_msgs::Odometry msg)
 {
-  if ((!mapUpdated) || (!firstPoseReceived)) {
+  if ((!mapUpdated) || (!firstPoseReceived) || (!poseUpdated)) {
     robot.position = msg.pose.pose.position;
     robot.orientation = msg.pose.pose.orientation;
     poseUpdated = true;
@@ -180,7 +259,7 @@ void CallbackOdometry(const nav_msgs::Odometry msg)
 void CallbackGoals(const sensor_msgs::PointCloud2::ConstPtr msg)
 {
   if (msg->data.size() == 0) return;
-  if ((!mapUpdated) || (!firstGoalsReceived)) {
+  if ((!mapUpdated) || (!firstGoalsReceived) || (!goalsUpdated)) {
     pcl::fromROSMsg(*msg, *goalsCloud);
     firstGoalsReceived = true;
     goalsUpdated = true;
@@ -192,7 +271,7 @@ void CallbackGoals(const sensor_msgs::PointCloud2::ConstPtr msg)
 void CallbackFrontier(const sensor_msgs::PointCloud2::ConstPtr msg)
 {
   if (msg->data.size() == 0) return;
-  if (!(mapUpdated) || (!firstFrontierReceived)) {
+  if (!(mapUpdated) || (!firstFrontierReceived) || (!frontierUpdated)) {
     pcl::fromROSMsg(*msg, *frontierCloud);
     firstFrontierReceived = true;
     frontierUpdated = true;
@@ -204,8 +283,22 @@ void CallbackFrontier(const sensor_msgs::PointCloud2::ConstPtr msg)
 void CallbackPoses(const geometry_msgs::PoseArray::ConstPtr msg)
 {
   if (msg->poses.size() == 0) return;
-  if ((!mapUpdated)) {
+  if ((!mapUpdated) || (!goalPosesUpdated)) {
     goalPosesMsg = *msg;
+    goalPosesUpdated = true;
+  }
+  return;
+}
+
+void CallbackOctomap(const octomap_msgs::Octomap::ConstPtr msg)
+{
+  if (msg->data.size() == 0) return;
+  if ((!mapUpdated) || (!firstOctomapReceived) || (!octomapUpdated)) {
+    delete mapTree;
+    mapTree = (octomap::OcTree*)octomap_msgs::fullMsgToMap(*msg);
+    firstOctomapReceived = true;
+    octomapUpdated = true;
+    octomapMsg = *msg;
   }
   return;
 }
@@ -221,27 +314,55 @@ int main(int argc, char **argv)
   ros::Subscriber sub3 = n.subscribe("goals", 1, CallbackGoals);
   ros::Subscriber sub4 = n.subscribe("frontier", 1, CallbackFrontier);
   ros::Subscriber sub5 = n.subscribe("goal_poses", 1, CallbackPoses);
+  ros::Subscriber sub6 = n.subscribe("octomap_full", 1, CallbackOctomap);
 
   ros::Publisher pubPaths = n.advertise<nav_msgs::Path>("paths", 5);
+  ros::Publisher pubPathsKinematic = n.advertise<nav_msgs::Path>("paths_kinematic", 5);
   nav_msgs::Path pathsMsg;
+  nav_msgs::Path pathsMsgKinematic;
   ros::Publisher pubStats = n.advertise<std_msgs::Float32MultiArray>("paths_stats", 5);
   ros::Publisher pubReach = n.advertise<sensor_msgs::PointCloud2>("reach", 5);
   ros::Publisher pubGoals = n.advertise<sensor_msgs::PointCloud2>("goals_debug", 5);
   ros::Publisher pubGoalPoses = n.advertise<geometry_msgs::PoseArray>("goal_poses_debug", 5);
   ros::Publisher pubOdom = n.advertise<nav_msgs::Odometry>("odometry_debug", 5);
   ros::Publisher pubFrontier = n.advertise<sensor_msgs::PointCloud2>("frontier_debug", 5);
+  ros::Publisher pubOctomap = n.advertise<octomap_msgs::Octomap>("octomap_debug", 5);
+  ros::Publisher pubPathCloud = n.advertise<sensor_msgs::PointCloud2>("path_seen_cloud_debug", 5);
+  ros::Publisher pubPathCurrent = n.advertise<nav_msgs::Path>("path_current_debug", 5);
+  ros::Publisher pubPathCurrentKinematic = n.advertise<nav_msgs::Path>("path_current_kinematic_debug", 5);
 
   float goalSeparationDistance, turnRate;
-  n.param("goal_pose_planner/goal_separation_distance", goalSeparationDistance, (float)5.0); // meters
-  n.param("goal_pose_planner/turn_rate", turnRate, (float)90.0); // deg/s
-  n.param("goal_pose_planner/voxel_size", voxelSize, (float)0.2); // meters
-  n.param("goal_pose_planner/speed_max", speedMax, (double)10.0); // m/s
-  n.param("goal_pose_planner/speed_safe", speedSafe, (double)0.4); // m/s
+  n.param("debug_paths_from_bag/goal_separation_distance", goalSeparationDistance, (float)5.0); // meters
+  n.param("debug_paths_from_bag/turn_rate", turnRate, (float)90.0); // deg/s
+  n.param("debug_paths_from_bag/voxel_size", voxelSize, (float)0.2); // meters
+  n.param("debug_paths_from_bag/speed_max", speedMax, (double)10.0); // m/s
+  n.param("debug_paths_from_bag/speed_safe", speedSafe, (double)0.4); // m/s
   double marchingTimeOut;
-  n.param("goal_pose_planner/marching_timeout", marchingTimeOut, (double)5.0); // seconds
+  n.param("debug_paths_from_bag/marching_timeout", marchingTimeOut, (double)5.0); // seconds
   // Declare and read in the node update rate from the launch file parameters
   double rate;
+  SensorFoV sensorParams;
   n.param("debug_paths_from_bag/update_rate", rate, (double)0.2); // Every 5 seconds
+  n.param("debug_paths_from_bag/sensor_hFoV", sensorParams.horizontalFoV, (float)60.0);
+  n.param("debug_paths_from_bag/sensor_vFoV", sensorParams.verticalFoV, (float)40.0);
+  n.param("debug_paths_from_bag/sensor_rMax", sensorParams.rMax, (float)60.0);
+  n.param("debug_paths_from_bag/sensor_rMin", sensorParams.rMin, (float)60.0);
+  n.param<std::string>("debug_paths_from_bag/sensor_type", sensorParams.type, "camera");
+  std::string gainType;
+  std::string debugMode;
+  n.param<std::string>("debug_paths_from_bag/gain_type", gainType, "frontier");
+  n.param<std::string>("debug_paths_from_bag/debug_mode", debugMode, "normal");
+  std::string filename; std::string filenameCost; std::string filenameGainPath; std::string filenameGainPose; std::string filenameUtility;
+  n.param<std::string>("debug_paths_from_bag/filename", filename, "/home/andrew/tests/data/debug_paths.csv");
+  n.param<std::string>("debug_paths_from_bag/filename_costs", filenameCost, "/home/andrew/tests/data/debug_paths_costs.csv");
+  n.param<std::string>("debug_paths_from_bag/filename_gains_paths", filenameGainPath, "/home/andrew/tests/data/debug_paths_gains_path.csv");
+  n.param<std::string>("debug_paths_from_bag/filename_gains_poses", filenameGainPose, "/home/andrew/tests/data/debug_paths_gains_pose.csv");
+  n.param<std::string>("debug_paths_from_bag/filename_utilities", filenameUtility, "/home/andrew/tests/data/debug_paths_utilities.csv");
+  n.param("debug_paths_from_bag/kinematics_L1", L1params.L1, (double)1.0);
+  n.param("debug_paths_from_bag/kinematics_speed", L1params.speed, (double)1.0);
+  n.param("debug_paths_from_bag/kinematics_speed_max", L1params.speed_max, (double)1.0);
+  n.param("debug_paths_from_bag/kinematics_yaw_rate_max", L1params.yaw_rate_max, (double)0.4);
+  n.param("debug_paths_from_bag/kinematics_z_gain", L1params.z_gain, (double)0.5);
   ros::Rate r(rate);
 
   // Run the node until ROS quits
@@ -252,10 +373,10 @@ int main(int argc, char **argv)
     ros::spinOnce(); // All subscriber callbacks are called here.
 
     // Run reachRaw() on the updated ESDF map
-    if ((mapUpdated) && (firstMapReceived*firstPoseReceived*firstGoalsReceived)) {
+    if ((mapUpdated) && (firstMapReceived*firstPoseReceived*firstGoalsReceived*firstOctomapReceived)) {
       clock_t tStart = clock();
       ROS_INFO("Planning to best goal pose.");
-      mapUpdated = false; poseUpdated = false; goalsUpdated = false;
+      mapUpdated = false; poseUpdated = false; goalsUpdated = false; octomapUpdated = false; goalPosesUpdated = false; frontierUpdated = false;
 
       // Project Robot position to speedMap
       ROS_INFO("Projecting robot position onto map...");
@@ -275,12 +396,26 @@ int main(int argc, char **argv)
       pubReach.publish(ConvertReachMapToPointCloud2(&reachMap));
 
       // Get paths using gradient following and publish them as one message
+      ROS_INFO("Following gradients to paths...");
       pathsMsg.header = pathMsgHeader;
       pathsMsg.poses.clear();
+      pathsMsgKinematic.header = pathMsgHeader;
+      pathsMsgKinematic.poses.clear();
+      std::vector<std::vector<Point>> pathList;
+      std::vector<std::vector<Point>> pathListKinematic;
+      std::vector<double> costListKinematic;
       for (int i=0; i<goalsCloud->points.size(); i++) {
         Point goal;
         goal.x = goalsCloud->points[i].x; goal.y = goalsCloud->points[i].y; goal.z = goalsCloud->points[i].z;
         std::vector<Point> path = followGradientPath(robotPosition, goal, &reachMap);
+        pathList.push_back(path);
+        // ROS_INFO("Integrating kinematic model of quad following gradient path %d...", i);
+        std::vector<Point> pathKinematic;
+        double costKinematic = 0.0;
+        if (path.size() > 0) pathKinematic = FollowPathWithKinematics(path, robot, costKinematic);
+        else pathKinematic = path;
+        pathListKinematic.push_back(pathKinematic);
+        costListKinematic.push_back(costKinematic);
         if (path.size() > 0) {
           nav_msgs::Path newPathSegment = ConvertPointVectorToPathMsg(path);
           for (int j=0; j<newPathSegment.poses.size(); j++) {
@@ -292,12 +427,137 @@ int main(int argc, char **argv)
             pathsMsg.poses.push_back(newPathSegment.poses[j]);
           }
         }
+        if (pathKinematic.size() > 0) {
+          // ROS_INFO("Adding kinematic path to ROS msg...");
+          nav_msgs::Path newPathSegment = ConvertPointVectorToPathMsg(pathKinematic);
+          for (int j=0; j<newPathSegment.poses.size(); j++) {
+            pathsMsgKinematic.poses.push_back(newPathSegment.poses[j]);
+          }
+          pathKinematic = flipPath(pathKinematic);
+          newPathSegment = ConvertPointVectorToPathMsg(pathKinematic);
+          for (int j=0; j<newPathSegment.poses.size(); j++) {
+            pathsMsgKinematic.poses.push_back(newPathSegment.poses[j]);
+          }
+        }
+
       }
+      ROS_INFO("Paths calculated in %0.3f seconds.", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+
       pubPaths.publish(pathsMsg);
+      pubPathsKinematic.publish(pathsMsgKinematic);
       pubGoals.publish(goalsMsg);
       pubGoalPoses.publish(goalPosesMsg);
       pubOdom.publish(odomMsg);
       pubFrontier.publish(frontierMsg);
+      pubOctomap.publish(octomapMsg);
+
+      // Calculate the gain, cost, and utility of each path
+      ROS_INFO("Calculating true path stats...");
+      tStart = clock();
+      std::vector<PathStats> stats;
+      for (int i=0; i<pathList.size(); i++) {
+        std::vector<Point> currentPath = pathList[i];
+        pcl::PointCloud<pcl::PointXYZI>::Ptr cloudPath (new pcl::PointCloud<pcl::PointXYZI>);
+        PathStats stat;
+        stat.costLength  = CalculatePathCost(currentPath);
+        stat.costLengthTurn  = CalculatePathCost(currentPath) + CostToTurnPath(robot, currentPath, L1params.yaw_rate_max*(180.0/M_PI));
+        stat.costKinematic = costListKinematic[i];
+        stat.costReach = reachMap.Query(goalsCloud->points[i].x, goalsCloud->points[i].y, goalsCloud->points[i].z);
+        // ROS_INFO("Path %d has cost %0.1f", i, stat.cost);
+        clock_t tStartGain = clock();
+        pcl::PointCloud<pcl::PointXYZI>::Ptr cloudPaddedMap (new pcl::PointCloud<pcl::PointXYZI>);
+        ConvertCloudForGainCalculation(speedMapCloud, cloudPaddedMap, sensorParams);
+        stat.gainPath = GainPath(currentPath, sensorParams, cloudPaddedMap, cloudPath, pubPathCloud, pathMsgHeader, mapTree, voxelSize, "unseen", "normal");
+        // ROS_INFO("Gain calculated in %0.3f seconds.", i, (double)(clock() - tStartGain)/CLOCKS_PER_SEC);
+        // ROS_INFO("Path %d sees %d points and has gain %0.1f", i, cloudPath->points.size(), stat.gainPath);
+        stat.utility = Utility(stat.gainPath, stat.costLength, 0.0, "efficiency");
+        // ROS_INFO("Path %d has utility %0.1f", i, stat.utility);
+        stat.gainPose = goalsCloud->points[i].intensity;
+        // ROS_INFO("Pose %d has gain %0.1f", i, stat.gainPose);
+        stats.push_back(stat);
+        if (debugMode == "debug") {
+          sensor_msgs::PointCloud2 seenCloudMsg;
+          pcl::toROSMsg(*cloudPath, seenCloudMsg);
+          seenCloudMsg.header = pathMsgHeader;
+          pubPathCloud.publish(seenCloudMsg);
+          nav_msgs::Path newPathMsg;
+          newPathMsg = ConvertPointVectorToPathMsg(currentPath);
+          newPathMsg.header = pathMsgHeader;
+          pubPathCurrent.publish(newPathMsg);
+          clock_t tStartKinematic = clock();
+          ROS_INFO("Integrating kinematic unicycle model over path %d...", i);
+          double costKinematic;
+          std::vector<Point> kinematicPath = FollowPathWithKinematics(currentPath, robot, costKinematic);
+          newPathMsg = ConvertPointVectorToPathMsg(kinematicPath);
+          newPathMsg.header = pathMsgHeader;
+          pubPathCurrentKinematic.publish(newPathMsg);
+          ROS_INFO("First path unicycle kinematics model integrated in %0.4f seconds.", (double)(clock() - tStartGain)/CLOCKS_PER_SEC);
+          sleep(1.0);
+        }
+      }
+      ROS_INFO("True path data calculated in %0.3f seconds.", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+      ROS_INFO("Outputting data to file...");
+      // Write paths data to file
+      std::ofstream f;
+      f.open(filename, std::ios::out | std::ios::app);
+      double currentTime = ros::Time::now().toSec();
+      if (f.is_open()) {
+        f << currentTime;
+        f << ",";
+        for (int i=0; i<stats.size(); i++) {
+          f << stats[i].costReach;
+          if (i < (stats.size()-1)) f << ",";
+          else f << "\n";
+        }
+        f << currentTime;
+        f << ",";
+        for (int i=0; i<stats.size(); i++) {
+          f << stats[i].costLength;
+          if (i < (stats.size()-1)) f << ",";
+          else f << "\n";
+        }
+        f << currentTime;
+        f << ",";
+        for (int i=0; i<stats.size(); i++) {
+          f << stats[i].costLengthTurn;
+          if (i < (stats.size()-1)) f << ",";
+          else f << "\n";
+        }
+        f << currentTime;
+        f << ",";
+        for (int i=0; i<stats.size(); i++) {
+          f << stats[i].costKinematic;
+          if (i < (stats.size()-1)) f << ",";
+          else f << "\n";
+        }
+        f << currentTime;
+        f << ",";
+        for (int i=0; i<stats.size(); i++) {
+          f << stats[i].gainPose;
+          if (i < (stats.size()-1)) f << ",";
+          else f << "\n";
+        }
+        f << currentTime;
+        f << ",";
+        for (int i=0; i<stats.size(); i++) {
+          f << stats[i].gainPath;
+          if (i < (stats.size()-1)) f << ",";
+          else f << "\n";
+        }
+        f << currentTime;
+        f << ",";
+        for (int i=0; i<stats.size(); i++) {
+          f << stats[i].utility;
+          if (i < (stats.size()-1)) f << ",";
+          else f << "\n";
+        }
+      }
+      
+      f.close();
+
+      
+      ROS_INFO("Data outputted, loop complete");
+      ROS_INFO("");
     }
 
   }

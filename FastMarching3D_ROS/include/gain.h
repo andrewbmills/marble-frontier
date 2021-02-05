@@ -2,13 +2,18 @@
 #define GAIN_H
 
 #include <math.h>
+#include <unistd.h>
 #include <ros/ros.h>
 #include <string>
 #include <vector>
 #include <octomap/octomap.h>
 #include <octomap/ColorOcTree.h>
 #include <pcl/point_types.h>
+#include <pcl/common/io.h>
 #include <pcl/filters/frustum_culling.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/passthrough.h>
+#include <pcl_conversions/pcl_conversions.h>
 #include <Eigen/Dense>
 #include <sensor_msgs/PointCloud2.h>
 #include <mapGrid3D.h>
@@ -293,8 +298,12 @@ float Gain(Pose pose, SensorFoV sensor, octomap::OcTree* map, pcl::PointCloud<pc
 
   // Copy map in PointCloud
   pcl::PointCloud<pcl::PointXYZI>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZI>);
-  float bbx_min[3] = {pose.position.x - ((float)1.1)*sensor.rMax, pose.position.y - ((float)1.1)*sensor.rMax, pose.position.z - ((float)1.1)*sensor.rMax};
-  float bbx_max[3] = {pose.position.x + ((float)1.1)*sensor.rMax, pose.position.y + ((float)1.1)*sensor.rMax, pose.position.z + ((float)1.1)*sensor.rMax};
+  float delta_x_positive = sensor.rMax;
+  float delta_x_negative = std::max(0.0, std::sin((sensor.horizontalFoV-180.0)*M_PI/360)*sensor.rMax);
+  float delta_y = std::sin(sensor.horizontalFoV*M_PI/360)*sensor.rMax;
+  float delta_z = std::sin(sensor.verticalFoV*M_PI/360)*sensor.rMax;
+  float bbx_min[3] = {pose.position.x - ((float)1.1)*delta_x_negative, pose.position.y - ((float)1.1)*delta_y, pose.position.z - ((float)1.1)*delta_z};
+  float bbx_max[3] = {pose.position.x + ((float)1.1)*delta_x_positive, pose.position.y + ((float)1.1)*delta_y, pose.position.z + ((float)1.1)*delta_z};
   if (mode == "debug") ROS_INFO("Copying octomap bounding box voxels into pointcloud.");
   // CopyOctomapBbxToPointCloud(map, cloud, bbx_min, bbx_max);
   MapGrid3D<float> map_grid = CopyOctomapBBxToMapGrid3D(map, bbx_min, bbx_max);
@@ -324,5 +333,149 @@ float Gain(Pose pose, SensorFoV sensor, octomap::OcTree* map, pcl::PointCloud<pc
   if (mode == "debug") ROS_INFO("Calculated gain of %0.1f unseen voxels.", gain);
   return gain;
 }
+
+Eigen::Matrix3f Euler2RotationMatrixPCLCameraCoordinates(float roll, float pitch, float yaw) {
+  Eigen::Matrix3f R_roll, R_pitch, R_yaw;
+  R_roll.setZero();
+  R_roll(0,0) = 1.0;
+  R_roll(1,1) = std::cos((M_PI/180.0)*roll);
+  R_roll(1,2) = -std::sin((M_PI/180.0)*roll);
+  R_roll(2,1) = std::sin((M_PI/180.0)*roll);
+  R_roll(2,2) = std::cos((M_PI/180.0)*roll);
+  R_pitch.setZero();
+  R_pitch(0,0) = std::cos((M_PI/180.0)*pitch);
+  R_pitch(0,2) = std::sin((M_PI/180.0)*pitch);
+  R_pitch(2,0) = -std::sin((M_PI/180.0)*pitch);
+  R_pitch(2,2) = std::cos((M_PI/180.0)*pitch);
+  R_pitch(1,1) = 1.0;
+  R_yaw.setZero();
+  R_yaw(0,0) = std::cos((M_PI/180.0)*yaw);
+  R_yaw(0,1) = -std::sin((M_PI/180.0)*yaw);
+  R_yaw(1,0) = std::sin((M_PI/180.0)*yaw);
+  R_yaw(1,1) = std::cos((M_PI/180.0)*yaw);
+  R_yaw(2,2) = 1.0;
+  return R_roll*R_pitch*R_yaw;
+}
+
+float GainPath(std::vector<Point> path, SensorFoV sensor, pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_map, pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_seen,
+ros::Publisher pub_current_cloud, std_msgs::Header cloud_header, octomap::OcTree* map, float voxel_size=0.2, std::string type = "frontier", std::string mode = "normal")
+{
+  // Calculate the information gain of all of the poses along a path of points in the map.
+  // The function also returns all the voxels that the vehicle sees along the path.
+  // It is assumed that the points in the path are contained within the seen regions of the map
+
+  if (mode != "normal") {
+    sensor_msgs::PointCloud2 cloudFoVMsg;
+    pcl::toROSMsg(*cloud_map, cloudFoVMsg);
+    cloudFoVMsg.header = cloud_header;
+    pub_current_cloud.publish(cloudFoVMsg);
+    sleep(1.0);
+  }
+
+  int decrement = 10;
+  cloud_seen->points.clear();
+  int itt = 0;
+  if (mode != "normal") ROS_INFO("Iterating through path of size %d with decrement %d", path.size(), decrement);
+  for (int i=(path.size()-decrement-1); i>0; i=i-decrement)
+  {
+
+    // Convert vector between two points into a pose with zero roll
+    if (mode != "normal" && (itt < 3)) ROS_INFO("Converting two points on the path to a pose...");
+    Point dpath;
+    dpath.x = path[i+decrement].x - path[i].x; dpath.y = path[i+decrement].y - path[i].y; dpath.z = path[i+decrement].z - path[i].z;
+    float yaw = std::atan2(dpath.y, dpath.x);
+    float pitch = std::asin(dpath.z/std::sqrt(dpath.x*dpath.x + dpath.y*dpath.y + dpath.z*dpath.z));
+    Pose pose;
+    pose.position.x = path[i].x; pose.position.y = path[i].y; pose.position.z = path[i].z;
+    pose.q = euler2Quaternion(yaw, 0.0, 0.0);
+    pose.R = Quaternion2RotationMatrix(pose.q);
+    if (mode != "normal" && (itt < 3)) ROS_INFO("Pose created at (%0.1f, %0.1f, %0.1f) with yaw %0.1f deg and pitch %0.1f deg.", pose.position.x,
+      pose.position.y, pose.position.z, yaw*180.0/M_PI, 0.0);
+
+
+    // Get all the voxels in the sensor FoV
+    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_fov(new pcl::PointCloud<pcl::PointXYZI>);
+    if (sensor.type == "camera") {
+      pcl::FrustumCulling<pcl::PointXYZI> fc;
+      fc.setInputCloud(cloud_map);
+      fc.setVerticalFOV(sensor.verticalFoV);
+      fc.setHorizontalFOV(sensor.horizontalFoV);
+      fc.setNearPlaneDistance(sensor.rMin);
+      fc.setFarPlaneDistance(sensor.rMax);
+      Eigen::Matrix4f camera_pose;
+      Eigen::Matrix3f robot2camera;
+      Eigen::Matrix3f camera_R;
+      robot2camera = Euler2RotationMatrixPCLCameraCoordinates(90.0, 0.0, 0.0);
+      camera_R = pose.R*robot2camera;
+      // camera_R = camera_R.transpose();
+      // camera_R = pose.R;
+      camera_pose << camera_R(0,0), camera_R(0,1), camera_R(0,2), pose.position.x,
+                     camera_R(1,0), camera_R(1,1), camera_R(1,2), pose.position.y,
+                     camera_R(2,0), camera_R(2,1), camera_R(2,2), pose.position.z,
+                     0, 0, 0, 1;
+      fc.setCameraPose(camera_pose); // Assumes X forward, Y up, Z right
+      if (mode != "normal" && (itt < 3)) {ROS_INFO("Camera transform is (%0.2f, %0.2f, %0.2f, %0.2f; %0.2f, %0.2f, %0.2f, %0.2f; %0.2f, %0.2f, %0.2f, %0.2f; %0.2f, %0.2f, %0.2f, %0.2f)",
+      camera_pose(0,0), camera_pose(0,1), camera_pose(0,2), camera_pose(0,3), camera_pose(1,0), camera_pose(1,1), camera_pose(1,2), camera_pose(1,3),
+      camera_pose(2,0), camera_pose(2,1), camera_pose(2,2), camera_pose(2,3), camera_pose(3,0), camera_pose(3,1), camera_pose(3,2), camera_pose(3,3));}
+      fc.filter(*cloud_fov);
+    } else if (sensor.type == "lidar") {
+      GetPointsInFieldOfView(pose, sensor, cloud_map, cloud_fov);
+    } else {
+      ROS_WARN("Sensor type not supported");
+      return 0.0;
+    }
+
+    if (mode != "normal") {
+      sensor_msgs::PointCloud2 cloudFoVMsg;
+      pcl::toROSMsg(*cloud_fov, cloudFoVMsg);
+      cloudFoVMsg.header = cloud_header;
+      pub_current_cloud.publish(cloudFoVMsg);
+      sleep(1.0);
+    }
+
+    // Check LoS for points in field of view.  Only checking LoS to unseen points to save compute.
+    pcl::PassThrough<pcl::PointXYZI> pass;
+    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_fov_unseen (new pcl::PointCloud<pcl::PointXYZI>);
+    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_seen_local (new pcl::PointCloud<pcl::PointXYZI>);
+    pass.setInputCloud (cloud_fov);
+    pass.setFilterFieldName ("intensity");
+    pass.setFilterLimits (-1.5, -0.5);
+    pass.filter(*cloud_fov_unseen);
+    CheckLineOfSight(pose, map, cloud_fov_unseen, cloud_seen_local, (type == "unseen"));
+    if (mode != "normal") {
+      sensor_msgs::PointCloud2 cloudMsg;
+      pcl::toROSMsg(*cloud_fov_unseen, cloudMsg);
+      cloudMsg.header = cloud_header;
+      pub_current_cloud.publish(cloudMsg);
+      sleep(1.0);
+      pcl::toROSMsg(*cloud_seen_local, cloudMsg);
+      cloudMsg.header = cloud_header;
+      pub_current_cloud.publish(cloudMsg);
+      sleep(1.0);
+    }
+
+    // Add seen points to master list of seen points
+    cloud_seen->points.insert(cloud_seen->points.end(), cloud_seen_local->points.begin(), cloud_seen_local->points.end());
+    if (mode != "normal" && (itt < 3)) ROS_INFO("Added %d seen points to path cloud of length %d.", cloud_seen_local->points.size(), cloud_seen->points.size());
+
+    // Remove redundant points with pcl voxelGrid filter
+    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZI>);
+    pcl::VoxelGrid<pcl::PointXYZI> grid_filter;
+    grid_filter.setInputCloud(cloud_seen);
+    grid_filter.setLeafSize(0.5*voxel_size, 0.5*voxel_size, 0.5*voxel_size);
+    grid_filter.filter(*cloud_filtered);
+    // cloud_seen->points.clear();
+    pcl::copyPointCloud(*cloud_filtered, *cloud_seen);
+    if (mode != "normal" && (itt < 3)) ROS_INFO("Removed redundant points, path cloud now has %d points.", cloud_seen->points.size());
+    itt++;
+  }
+
+  float gain = 0;
+  for (int i=0; i<cloud_seen->points.size(); i++) {
+    if (cloud_seen->points[i].intensity < -0.5) gain = gain + 1.0;
+  }
+  return gain;
+}
+
 
 #endif

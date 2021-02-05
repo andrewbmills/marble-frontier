@@ -716,7 +716,7 @@ std::vector<Point> followGradientPath(const Point start, const Point goal, MapGr
   // Check if the path made it back to the vehicle
   if (dist3(path[path.size()-1], start) > 3.0*reach->voxelSize) {
     std::vector<Point> errorPath;
-    ROS_INFO("Path did not make it back to the robot.  Select a different goal point.");
+    // ROS_INFO("Path did not make it back to the robot.  Select a different goal point.");
     return errorPath;
   } else {
     path.push_back(start);
@@ -872,6 +872,287 @@ std::vector<Point> followGradientPath2D(const Point start, const Point goal, Map
     path.push_back(start);
   }
   return flipPath(path);
+}
+
+void reachRaw(int source[3], MapGrid3D<double> *speedMap, MapGrid3D<double> *reachOut, const bool usesecond, const bool usecross, const double timeOut = 1.0)
+{
+    // ROS_INFO("Fast marching from (%0.2f, %0.2f, %0.2f)", (source[0]*speedMap->voxelSize)+speedMap->minBounds.x, (source[1]*speedMap->voxelSize)+speedMap->minBounds.y, (source[2]*speedMap->voxelSize)+speedMap->minBounds.z);
+    // ROS_INFO("Speed map details - ");
+    // ROS_INFO("Size = %d x %d x %d", speedMap->size.x, speedMap->size.y, speedMap->size.z);
+    // ROS_INFO("Total voxels = %d", speedMap->voxels.size());
+    // ROS_INFO("Min bounds: (%0.2f, %0.2f, %0.2f)", speedMap->minBounds.x, speedMap->minBounds.y, speedMap->minBounds.z);
+    // ROS_INFO("Max bounds: (%0.2f, %0.2f, %0.2f)", speedMap->maxBounds.x, speedMap->maxBounds.y, speedMap->maxBounds.z);
+    // ROS_INFO("goals details - ");
+    // ROS_INFO("Total voxels = %d", goals.size());
+    // ROS_INFO("Reach map details - ");
+    // ROS_INFO("Size = %d x %d x %d", reachOut->size.x, reachOut->size.y, reachOut->size.z);
+    // ROS_INFO("Total voxels = %d", reachOut->voxels.size());
+    // ROS_INFO("Min bounds: (%0.2f, %0.2f, %0.2f)", reachOut->minBounds.x, reachOut->minBounds.y, reachOut->minBounds.z);
+    // ROS_INFO("Max bounds: (%0.2f, %0.2f, %0.2f)", reachOut->maxBounds.x, reachOut->maxBounds.y, reachOut->maxBounds.z);
+    // ROS_INFO("Max number of goals =  %d", nGoalStop);
+
+    /* The input variables */
+    double *F;
+    int SourcePoints[3];
+
+    /* The output distance image */
+    double *T;
+
+    /* Euclidian distance image */
+    double *Y;
+
+    /* Current distance values */
+    double Tt, Ty;
+
+    /* Matrix containing the Frozen Pixels" */
+    bool *Frozen;
+
+    /* Augmented Fast Marching (For skeletonize) */
+    bool Ed;
+
+    /* Size of input image */
+    int dims[3];
+
+    /* Size of  SourcePoints array */
+    int dims_sp[3];
+
+    /* Number of pixels in image */
+    int npixels = speedMap->voxels.size();
+
+    /* Neighbour list */
+    int neg_free;
+    int neg_pos;
+    double *neg_listv;
+    double *neg_listx;
+    double *neg_listy;
+    double *neg_listz;
+    double *neg_listo;
+
+    int *listprop;
+    double **listval;
+
+    /* Neighbours 6x3 */
+    int ne[18]={-1,  0,  0, 1, 0, 0, 0, -1,  0, 0, 1, 0, 0,  0, -1, 0, 0, 1};
+
+    /* Loop variables */
+    int s, w, itt, q;
+
+    /* Current location */
+    int x, y, z, i, j, k;
+
+    /* Index */
+    int IJK_index, XYZ_index, index;
+    clock_t tStart = clock();
+
+    // Parse input arguments to relevent function variables
+    for (int i=0; i<3; i++){
+        SourcePoints[i] = source[i];
+    }
+    dims[0] = speedMap->size.x;
+    dims[1] = speedMap->size.y;
+    dims[2] = speedMap->size.z;
+    F = &speedMap->voxels[0]; // Source esdf
+    dims_sp[0] = 3;
+    dims_sp[1] = 1;
+    dims_sp[2] = 1;
+    Ed = 0;
+    T = &reachOut->voxels[0];
+
+    // Initialize termination cost to very large number
+    float terminationCost = 1e10;
+
+    /* Pixels which are processed and have a final distance are frozen */
+    Frozen = new bool [npixels];
+    for(q=0;q<npixels;q++){Frozen[q]=0; T[q]=-1;}
+    if(Ed) {
+        for(q=0;q<npixels;q++){Y[q]=-1;}
+    }
+
+    /*Free memory to store neighbours of the (segmented) region */
+    neg_free = 100000;
+    neg_pos=0;
+
+    neg_listx = (double *)malloc( neg_free*sizeof(double) );
+    neg_listy = (double *)malloc( neg_free*sizeof(double) );
+    neg_listz = (double *)malloc( neg_free*sizeof(double) );
+    if(Ed) {
+        neg_listo = (double *)malloc( neg_free*sizeof(double) );
+        for(q=0;q<neg_free;q++) { neg_listo[q]=0; }
+    }
+
+    /* List parameters array */
+    listprop=(int*)malloc(3* sizeof(int));
+    /* Make jagged list to store a maximum of 2^64 values */
+    listval= (double **)malloc( 64* sizeof(double *) );
+
+    /* Initialize parameter list */
+    initialize_list(listval, listprop);
+    neg_listv=listval[listprop[1]-1];
+
+    /*(There are 3 pixel classes: */
+    /*  - frozen (processed) */
+    /*  - narrow band (boundary) (in list to check for the next pixel with smallest distance) */
+    /*  - far (not yet used) */
+    /* set all starting points to distance zero and frozen */
+    /* and add all neighbours of the starting points to narrow list */
+    for (s=0; s<dims_sp[1]; s++) {
+        /*starting point */
+        x= SourcePoints[0+s*3];
+        y= SourcePoints[1+s*3];
+        z= SourcePoints[2+s*3];
+        XYZ_index=mindex3(x, y, z, dims[0], dims[1]);
+
+        Frozen[XYZ_index]=1;
+        T[XYZ_index]=0;
+        if(Ed) { Y[XYZ_index]=0; }
+    }
+
+    for (s=0; s<dims_sp[1]; s++) {
+        /*starting point */
+        x= SourcePoints[0+s*3];
+        y= SourcePoints[1+s*3];
+        z= SourcePoints[2+s*3];
+
+        XYZ_index=mindex3(x, y, z, dims[0], dims[1]);
+        for (w=0; w<6; w++) {
+            /*Location of neighbour */
+            i=x+ne[w];
+            j=y+ne[w+6];
+            k=z+ne[w+12];
+
+            IJK_index=mindex3(i, j, k, dims[0], dims[1]);
+
+            /*Check if current neighbour is not yet frozen and inside the */
+
+            /*picture */
+            if(isntfrozen3d(i, j, k, dims, Frozen)) {
+                Tt=(1/(std::max(F[IJK_index],eps)));
+                /*Update distance in neigbour list or add to neigbour list */
+                if(T[IJK_index]>0) {
+                    if(neg_listv[(int)T[IJK_index]]>Tt) {
+                        listupdate(listval, listprop, (int)T[IJK_index], Tt);
+                    }
+                }
+                else {
+                    /*If running out of memory at a new block */
+                    if(neg_pos>=neg_free) {
+                        neg_free+=100000;
+                        neg_listx = (double *)realloc(neg_listx, neg_free*sizeof(double) );
+                        neg_listy = (double *)realloc(neg_listy, neg_free*sizeof(double) );
+                        neg_listz = (double *)realloc(neg_listz, neg_free*sizeof(double) );
+                        if(Ed) {
+                            neg_listo = (double *)realloc(neg_listo, neg_free*sizeof(double) );
+                        }
+                    }
+                    list_add(listval, listprop, Tt);
+                    neg_listv=listval[listprop[1]-1];
+                    neg_listx[neg_pos]=i;
+                    neg_listy[neg_pos]=j;
+                    neg_listz[neg_pos]=k;
+                    T[IJK_index]=neg_pos;
+                    neg_pos++;
+                }
+            }
+        }
+    }
+
+    /*Loop through all pixels of the image */
+    for (itt=0; itt<(npixels); itt++) /* */ {
+        /*Get the pixel from narrow list (boundary list) with smallest */
+        /*distance value and set it to current pixel location */
+        index=list_minimum(listval, listprop);
+        neg_listv=listval[listprop[1]-1];
+        /* Stop if pixel distance is infinite (all pixels are processed) */
+        if(IsInf(neg_listv[index])) {
+          break;
+        }
+
+        /*index=minarray(neg_listv, neg_pos); */
+        x=(int)neg_listx[index]; y=(int)neg_listy[index]; z=(int)neg_listz[index];
+        XYZ_index=mindex3(x, y, z, dims[0], dims[1]);
+        Frozen[XYZ_index]=1;
+        T[XYZ_index]=neg_listv[index];
+        if(Ed) {
+          Y[XYZ_index]=neg_listo[index];
+        }
+
+        /*Remove min value by replacing it with the last value in the array */
+        list_remove_replace(listval, listprop, index) ;
+        neg_listv=listval[listprop[1]-1];
+        if(index<(neg_pos-1)) {
+            neg_listx[index]=neg_listx[neg_pos-1];
+            neg_listy[index]=neg_listy[neg_pos-1];
+            neg_listz[index]=neg_listz[neg_pos-1];
+            if(Ed) {
+                neg_listo[index]=neg_listo[neg_pos-1];
+            }
+            T[(int)mindex3((int)neg_listx[index], (int)neg_listy[index], (int)neg_listz[index], dims[0], dims[1])]=index;
+        }
+        neg_pos =neg_pos-1;
+
+        /*Loop through all 6 neighbours of current pixel */
+        for (w=0;w<6;w++) {
+            /*Location of neighbour */
+            i=x+ne[w]; j=y+ne[w+6]; k=z+ne[w+12];
+            IJK_index=mindex3(i, j, k, dims[0], dims[1]);
+
+            /*Check if current neighbour is not yet frozen and inside the */
+            /*picture */
+            if(isntfrozen3d(i, j, k, dims, Frozen)) {
+
+                Tt=CalculateDistance(T, F[IJK_index], dims, i, j, k, usesecond, usecross, Frozen);
+                if(Ed) {
+                    Ty=CalculateDistance(Y, 1, dims, i, j, k, usesecond, usecross, Frozen);
+                }
+
+                /*Update distance in neigbour list or add to neigbour list */
+                IJK_index=mindex3(i, j, k, dims[0], dims[1]);
+                if((T[IJK_index]>-1)&&T[IJK_index]<=listprop[0]) {
+                    if(neg_listv[(int)T[IJK_index]]>Tt) {
+                        listupdate(listval, listprop, (int)T[IJK_index], Tt);
+                    }
+                }
+                else {
+                    /*If running out of memory at a new block */
+                    if(neg_pos>=neg_free) {
+                        neg_free+=100000;
+                        neg_listx = (double *)realloc(neg_listx, neg_free*sizeof(double) );
+                        neg_listy = (double *)realloc(neg_listy, neg_free*sizeof(double) );
+                        neg_listz = (double *)realloc(neg_listz, neg_free*sizeof(double) );
+                        if(Ed) {
+                            neg_listo = (double *)realloc(neg_listo, neg_free*sizeof(double) );
+                        }
+                    }
+                    list_add(listval, listprop, Tt);
+                    neg_listv=listval[listprop[1]-1];
+                    neg_listx[neg_pos]=i; neg_listy[neg_pos]=j; neg_listz[neg_pos]=k;
+                    if(Ed) {
+                        neg_listo[neg_pos]=Ty;
+                    }
+
+                    T[IJK_index]=neg_pos;
+                    neg_pos++;
+                }
+            }
+        }
+        // Check if the reach grid is done calculating
+        if (terminationCost < T[XYZ_index]) {
+          ROS_INFO("Reachability calculation finished after %0.3f seconds.", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+          break;
+        }
+        if (((double)(clock() - tStart)/CLOCKS_PER_SEC) >= timeOut) {
+          ROS_INFO("Reachability calculation timed out after %0.3f seconds.", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+          break;
+        }
+    }
+    /* Free memory */
+    /* Destroy parameter list */
+    destroy_list(listval, listprop);
+    free(neg_listx);
+    free(neg_listy);
+    free(neg_listz);
+    delete[] Frozen;
+    return;
 }
 
 #endif

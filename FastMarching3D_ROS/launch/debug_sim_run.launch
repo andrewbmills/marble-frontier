@@ -5,7 +5,7 @@
   <!-- <node pkg="rosbag" type="play" name="rosbag" args="-r 0.2 /home/andrew/tests/data/bags/test_set4_range_8m/ifve_unseen_efficiency_test0.bag"/> -->
 
   <group ns="X4">
-    <node pkg="msfm3d" type="debug_paths_from_bag" name="debug_paths" output="screen">
+    <node pkg="msfm3d" type="debug_paths_from_bag" name="debug_paths_from_bag" output="screen">
       <param name="update_rate" value="1.0"/>
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="num_agents" value="1"/>
@@ -14,6 +14,22 @@
       <param name="marching_timeout" value="5.0"/>
       <param name="path_mode" value="gradient"/>
       <param name="turn_rate" value="30.0"/>
+      
+      <param name="sensor_rMin" value="0.0"/>
+      <param name="sensor_rMax" value="4.0"/>
+      <param name="sensor_vFoV" value="30.0"/>
+      <param name="sensor_hFoV" value="60.0"/>
+      <param name="sensor_type" type="string" value="camera"/>
+      <param name="gain_type" type="string" value="unseen"/>
+      <param name="debug_mode" type="string" value="debug"/>
+      
+      <param name="filename" type="string" value="/home/andrew/Desktop/debug_paths.csv"/>
+
+      <param name="kinematics_L1" value="1.1"/>
+      <param name="kinematics_speed" value="1.0"/>
+      <param name="kinematics_speed_max" value="3.0"/>
+      <param name="kinematics_yaw_rate_max" value="0.8"/>
+      <param name="kinematics_z_gain" value="1.5"/>
 
       <remap from="speed_map" to="voxblox_node/esdf_pointcloud_throttle"/>
       <!-- <remap from="paths" to="paths"/> -->

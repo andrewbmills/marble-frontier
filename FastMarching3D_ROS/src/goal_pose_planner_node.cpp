@@ -251,7 +251,7 @@ geometry_msgs::PoseStamped PoseStampedFromPath(std::vector<Point> points)
 
 nav_msgs::Path ConvertPointVectorToPathMsg(std::vector<Point> points)
 {
-  ROS_INFO("Converting path vector of length %d to path message", points.size());
+  // ROS_INFO("Converting path vector of length %d to path message", points.size());
   nav_msgs::Path path;
   for (int i=0; i<points.size(); i++) {
     geometry_msgs::PoseStamped pose;
