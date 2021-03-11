@@ -191,13 +191,13 @@ const bool usesecond, const bool usecross, const int nGoalStop, const float turn
 
     // Initialize termination cost to very large number
     float terminationCost = 1e10;
-    Point startPosition = {start.position.x, start.position.y, start.position.z};
+    Point startPosition = {(float)start.position.x, (float)start.position.y, (float)start.position.z};
     std::vector<float> gainsUnreached;
     for (i=0; i < goals.size(); i++){
       if (goals[i] > 0.01) gainsUnreached.push_back(goals[i]);
     }
     std::sort(gainsUnreached.begin(), gainsUnreached.end()); // Sorts lowest to highest for binary search
-    ROS_INFO("Planning to %d goals.", gainsUnreached.size());
+    ROS_INFO("Planning to %d goals.", (int)gainsUnreached.size());
     // ROS_INFO("Goals have gains:");
     // for (int i=0; i < gainsUnreached.size(); i++) {
     //   if (i == (gainsUnreached.size()-1)) std::cout << gainsUnreached[i] << std::endl;
@@ -418,7 +418,7 @@ const bool usesecond, const bool usecross, const int nGoalStop, const float turn
             std::vector<int> eraseIds;
             for (int i=0; i < goalsReachedSorted.size(); i++) {
               GoalPath listGoal = goalsReachedSorted[i];
-              Point listGoalPosition = {listGoal.goal.position.x, listGoal.goal.position.y, listGoal.goal.position.z};
+              Point listGoalPosition = {(float)listGoal.goal.position.x, (float)listGoal.goal.position.y, (float)listGoal.goal.position.z};
               separated[i] = (dist3(listGoalPosition, newGoalPosition) <= minGoalSeparationDistance);
               smallerUtility[i] = (utility > goalsReachedSorted[i].utility);
             }
@@ -594,7 +594,7 @@ std::vector<Point> AStar(const Point start, const Point goal, MapGrid3D<double> 
     if (dist3(current.position, start) <= 1.1*speedMap->voxelSize) {
       // Stop planning, the robot's current position (the goal) has been reached.
       std::vector<Point> path = reconstructPath(visited, current);
-      ROS_INFO("Path of length %d generated in %d iterations.", path.size(), itt);
+      ROS_INFO("Path of length %d generated in %d iterations.", (int)path.size(), itt);
       return path;
     }
     openSet.pop_back();
@@ -721,7 +721,7 @@ std::vector<Point> followGradientPath(const Point start, const Point goal, MapGr
   } else {
     path.push_back(start);
   }
-  // ROS_INFO("Path found of length %d", path.size());
+  // ROS_INFO("Path found of length %d", (int)path.size());
   return flipPath(path);
 }
 

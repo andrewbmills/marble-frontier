@@ -102,7 +102,7 @@ void CallbackSpeedMap(const sensor_msgs::PointCloud2::ConstPtr msg)
   for (int i=0; i<3; i++) {
     boundsMin[i] = boundsMin[i] - 2.0*voxelSize;
     boundsMax[i] = boundsMax[i] + 2.0*voxelSize;
-    size[i] = std::roundf((boundsMax[i] - boundsMin[i])/voxelSize) + 1;
+    size[i] = (int)std::roundf((boundsMax[i] - boundsMin[i])/voxelSize) + 1;
   }
 
   MapGrid3D<double> speedMapNew(voxelSize, size, boundsMin);
@@ -339,13 +339,13 @@ int main(int argc, char **argv)
 
       // Project Robot position to speedMap
       ROS_INFO("Projecting robot position onto map...");
-      Point robotPosition = {robot.position.x, robot.position.y, robot.position.z};
+      Point robotPosition = {(float)robot.position.x, (float)robot.position.y, (float)robot.position.z};
       // robotPosition = ProjectPointToSpeedMapZ(robotPosition, speedMap);
       robotPosition = ProjectPointToSpeedCloudMap(robotPosition, speedMapCloud, speedSafe + speedMap.voxelSize);
       robot.position.x = robotPosition.x; robot.position.y = robotPosition.y; robot.position.z = robotPosition.z;
-      int robotPositionIds[3] = {std::roundf((robot.position.x - speedMap.minBounds.x)/speedMap.voxelSize),
-          std::roundf((robot.position.y - speedMap.minBounds.y)/speedMap.voxelSize),
-          std::roundf((robot.position.z - speedMap.minBounds.z)/speedMap.voxelSize)};
+      int robotPositionIds[3] = {(int)std::roundf(((float)robot.position.x - speedMap.minBounds.x)/speedMap.voxelSize),
+          (int)std::roundf(((float)robot.position.y - speedMap.minBounds.y)/speedMap.voxelSize),
+          (int)std::roundf(((float)robot.position.z - speedMap.minBounds.z)/speedMap.voxelSize)};
 
       // Fast Marching
       goals = ConvertPointCloudToMap(goalsCloud);

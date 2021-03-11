@@ -21,7 +21,7 @@
       <param name="sensor_hFoV" value="60.0"/>
       <param name="sensor_type" type="string" value="camera"/>
       <param name="gain_type" type="string" value="unseen"/>
-      <param name="debug_mode" type="string" value="debug"/>
+      <param name="debug_mode" type="string" value="normal"/>
       
       <param name="filename" type="string" value="/home/andrew/Desktop/debug_paths.csv"/>
 

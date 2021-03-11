@@ -12,16 +12,14 @@
     </node>
 
     <node pkg="msfm3d" type="depthImageToPointCloud2" name="depthImageToPointCloud2">
-      <!-- Params -->
       <param name="rMin" value="0.05" />
       <param name="rMax" value="6.5" />
       <param name="updateRate" value="10.0" />
     </node>
 
-    <node pkg="ground_finder" type="octomap_to_edt" name="octomap_to_edt">
-      <!-- Params -->
+    <!-- <node pkg="ground_finder" type="octomap_to_edt" name="octomap_to_edt">
       <param name="update_rate" value="3.0"/>
       <param name="fixed_frame_id" value="world"/>
-    </node>
+    </node> -->
   </group>
 </launch>

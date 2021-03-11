@@ -6,6 +6,7 @@
 
 octomap_msgs::Octomap::ConstPtr octomapMsg;
 bool mapUpdated = false;
+bool edtUpdated = false;
 bool frontierUpdated = false;
 bool firstPose = false;
 std_msgs::Header goalsMsgHeader;
@@ -39,7 +40,7 @@ void CallbackEDTPointCloud(const sensor_msgs::PointCloud2::ConstPtr msg)
   if (msg->data.size() == 0) return;
   ROS_INFO("Reading in EDT PointCloud...");
   pcl::fromROSMsg(*msg, *edtCloud);
-  mapUpdated = true;
+  edtUpdated = true;
   return;
 }
 
@@ -172,6 +173,9 @@ int main(int argc, char **argv)
   ros::Publisher pubGoalPoses = n.advertise<sensor_msgs::PointCloud2>("goals", 5);
   ros::Publisher pubGoalPoseArray = n.advertise<geometry_msgs::PoseArray>("goal_poses", 5);
   ros::Publisher pubFrontierDiff = n.advertise<sensor_msgs::PointCloud2>("frontier_diff", 5);
+  ros::Publisher pubFrontierDiffClusters = n.advertise<sensor_msgs::PointCloud2>("frontier_diff_clusters", 5);
+  ros::Publisher pubGoalCloudCurrentDebug = n.advertise<sensor_msgs::PointCloud2>("debug_goal_cloud", 5);
+  ros::Publisher pubMapCloudDebug = n.advertise<sensor_msgs::PointCloud2>("debug_map_cloud", 5);
   sensor_msgs::PointCloud2 goalsMsg;
   geometry_msgs::PoseArray goalsPoseArrayMsg;
 
@@ -194,6 +198,8 @@ int main(int argc, char **argv)
   n.param<std::string>("goal_pose_sampler/sample_mode", sampleMode, "gaussian");
   n.param<std::string>("goal_pose_sampler/gain_type", gainType, "frontier");
   n.param<std::string>("goal_pose_sampler/gain_debug_mode", gainDebugMode, "normal");
+  bool checkLoS;
+  n.param("goal_pose_sampler/check_LoS", checkLoS, true);
 
   float update_rate;
   n.param("goal_pose_sampler/update_rate", update_rate, (float)1.0);
@@ -208,23 +214,27 @@ int main(int argc, char **argv)
   {
     r.sleep();
     ros::spinOnce();
-    if (frontierUpdated && mapUpdated) {
+    if (frontierUpdated && mapUpdated && edtUpdated) {
       frontierUpdated = false;
       mapUpdated = false;
+      edtUpdated = false;
       clock_t tStart = clock();
       ROS_INFO("Converting octomap msg to octomap...");
       octomap::OcTree* map = (octomap::OcTree*)octomap_msgs::fullMsgToMap(*octomapMsg);
-      map->expand();
+      // map->expand();
       MapGrid3D<float> edtGrid;
       edtGrid.voxelSize = voxelSize;
-      ROS_INFO("Converting edt pointcloud to gridmap...");
+      ROS_INFO("Converting edt pointcloud of size %d to gridmap...", (int)edtCloud->points.size());
       ConvertPointCloudToEDTGrid(edtCloud, &edtGrid);
-      ROS_INFO("Success!");
+      ROS_INFO("Success! EDT map created with bounds (%0.1f, %0.1f, %0.1f) to (%0.1f, %0.1f, %0.1f) ...", edtGrid.minBounds.x, 
+        edtGrid.minBounds.y, edtGrid.minBounds.z, edtGrid.maxBounds.x, edtGrid.maxBounds.y, edtGrid.maxBounds.z);
       // Get new frontier pointcloud
-      pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierDiff (new pcl::PointCloud<pcl::PointXYZLNormal>);
-      goals = FilterGoalsNewFrontier(goals, voxelSize, frontierOld, frontierCloud, frontierDiff, clusterIndices);
-      ROS_INFO("%d goals remaining after frontier difference checking.", goals.size());
-      if (frontierDiff->points.size() < 5) {
+      pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierDiff (new pcl::PointCloud<pcl::PointXYZLNormal>); // current frontiers that weren't previously
+      std::vector<pcl::PointIndices> clusterIndicesDiff;
+      goals = FilterGoalsNewFrontier(goals, voxelSize, frontierCloud);
+      GetFrontierDiff(frontierOld, frontierCloud, voxelSize, frontierDiff, clusterIndicesDiff);
+      ROS_INFO("%d goals remaining after frontier difference checking.", (int)goals.size());
+      if (frontierDiff->points.size() < 100) {
         ROS_INFO("Frontier cloud is unchanged.");
         goalsMsg = ConvertGoalsToPointCloud2(goals);
         goalsMsg.header = goalsMsgHeader;
@@ -232,22 +242,44 @@ int main(int argc, char **argv)
         goalsPoseArrayMsg = ConvertGoalsToPoseArray(goals);
         goalsPoseArrayMsg.header = goalsMsgHeader;
         pubGoalPoseArray.publish(goalsPoseArrayMsg);
+        ROS_INFO("***_____________________________________***");
         delete map;
         continue;
       }
-      // Group frontiers within clusters
+
+      // Group frontiers within clusters that have had one of their frontiers change.
+      // Resample goal poses on these clusters.
       ROS_INFO("Grouping frontiers based on proximity...");
       std::vector<Group> groups;
-      greedyGrouping(groupRadius, frontierDiff, clusterIndices, groups);
+      greedyGrouping(groupRadius, frontierDiff, clusterIndicesDiff, groups);
       ROS_INFO("Success!");
       // // Sample goal poses
       ROS_INFO("Converting edt pointcloud to gridmap...");
-      std::vector<View> goalsNew = SampleGoals(groups, robotSensor, edtGrid, sampleLimit, minObstacleProximity, sampleMode);
+      std::vector<View> goalsNew = SampleGoals(groups, robotSensor, edtGrid, map, sampleLimit, minObstacleProximity, sampleMode);
+
+      // Find the goals whose gains need to be updated and add them to the goalsNew vector
+      pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierDiffOld (new pcl::PointCloud<pcl::PointXYZLNormal>); // voxels that used to be frontiers
+      std::vector<pcl::PointIndices> clusterIndicesDiffOld;
+      GetFrontierDiff(frontierCloud, frontierOld, voxelSize, frontierDiffOld, clusterIndicesDiffOld);
+      std::vector<View> goalsUpdateGain = FindGoalsCloseToCloud(goals, frontierDiffOld, robotSensor.rMax);
+      goalsNew.insert(goalsNew.end(), goalsUpdateGain.begin(), goalsUpdateGain.end());
+
       ROS_INFO("Frontier diff created, groups made, and goal poses sampled in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+
       tStart = clock();
+      // Get a pointcloud of the map within a sensor range box of all the newly sampled goal poses
+      pcl::PointCloud<pcl::PointXYZI>::Ptr mapCloud (new pcl::PointCloud<pcl::PointXYZI>);
+      FilterCloudNearGoals(edtCloud, mapCloud, goalsNew, robotSensor, voxelSize, frontierCloud, gainType);
+      sensor_msgs::PointCloud2 mapCloudMsg;
+      pcl::toROSMsg(*mapCloud, mapCloudMsg);
+      mapCloudMsg.header = goalsMsgHeader;
+      pubMapCloudDebug.publish(mapCloudMsg);
+
+      // Calculate gains for each goal pose
       for (int i=0; i<goalsNew.size(); i++) {
         pcl::PointCloud<pcl::PointXYZI>::Ptr seenCloud (new pcl::PointCloud<pcl::PointXYZI>);
-        goalsNew[i].gain = Gain(goalsNew[i].pose, robotSensor, map, seenCloud, gainType, gainDebugMode);
+        geometry_msgs::Pose goalPose = ConvertPoseToGeometryMsgPose(goalsNew[i].pose);
+        goalsNew[i].gain = GainDebug(goalPose, robotSensor, mapCloud, seenCloud, pubGoalCloudCurrentDebug, goalsMsgHeader, map, voxelSize, gainType, gainDebugMode, checkLoS);
         for (int j=0; j<seenCloud->points.size(); j++) {
           goalsNew[i].cloud.points.push_back(seenCloud->points[j]);
           pcl::toROSMsg(*seenCloud, goalsNew[i].cloud_msg);
@@ -256,18 +288,6 @@ int main(int argc, char **argv)
 
       // Append goals vector with the newly sampled goals
       goals.insert(goals.end(), goalsNew.begin(), goalsNew.end());
-
-      // Filter out goal poses within r of the current position since they probably don't add new info
-      // if (firstPose) {
-      //   for (int i=(goals.size()-1); i>=0; i--) {
-      //     float d2_robot = (goals[i].pose.position.x - robot.position.x)*(goals[i].pose.position.x - robot.position.x) +
-      //                      (goals[i].pose.position.y - robot.position.y)*(goals[i].pose.position.y - robot.position.y) +
-      //                      (goals[i].pose.position.z - robot.position.z)*(goals[i].pose.position.z - robot.position.z);
-      //     if (d2_robot < (robotProximityFilterRadius*robotProximityFilterRadius)) {
-      //       goals.erase(goals.begin() + i);
-      //     }
-      //   }
-      // }
 
       ROS_INFO("Gains calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
       goalsMsg = ConvertGoalsToPointCloud2(goals);

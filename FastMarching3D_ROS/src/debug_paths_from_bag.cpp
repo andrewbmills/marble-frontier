@@ -62,6 +62,7 @@ struct PathStats
   double gainPath;
   double utility;
   double gainPose;
+  double gainPoseCorrect;
 };
 
 Point ProjectPointToSpeedCloudMap(Point p, pcl::PointCloud<pcl::PointXYZI>::Ptr cloud, float intensityMin=0.0)
@@ -150,31 +151,6 @@ void GetPointCloudBounds(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud, float min[3
     if (query.z > max[2]) max[2] = (double)query.z;
   }
 
-  return;
-}
-
-void ConvertCloudForGainCalculation(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_in,  pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_out, SensorFoV sensor)
-{
-  // Convert input cloud to padded MapGrid3D
-  float cloudMin[3], cloudMax[3], boundsMin[3], boundsMax[3];
-  int size[3];
-  GetPointCloudBounds(cloud_in, cloudMin, cloudMax);
-  float delta[3] = {sensor.rMax, sensor.rMax, std::sin(sensor.verticalFoV*M_PI/360)*sensor.rMax};
-  for (int i=0; i<3; i++)
-  {
-    boundsMin[i] = cloudMin[i] - ((float)1.1)*delta[i];
-    boundsMax[i] = cloudMax[i] + ((float)1.1)*delta[i];
-    size[i] = std::roundf((boundsMax[i] - boundsMin[i])/voxelSize) + 1;
-  }
-  MapGrid3D<float> mapConvert(voxelSize, size, boundsMin);
-  mapConvert.SetAll(-1.0);
-
-  for (int i=0; i<cloud_in->points.size(); i++) {
-    pcl::PointXYZI query = cloud_in->points[i];
-    if (query.intensity >= 0.0) mapConvert.SetVoxel(query.x, query.y, query.z, query.intensity);
-  }
-  // Convert back to pointcloud
-  CopyMapGrid3DToPointCloud(mapConvert, cloud_out);
   return;
 }
 
@@ -328,6 +304,7 @@ int main(int argc, char **argv)
   ros::Publisher pubFrontier = n.advertise<sensor_msgs::PointCloud2>("frontier_debug", 5);
   ros::Publisher pubOctomap = n.advertise<octomap_msgs::Octomap>("octomap_debug", 5);
   ros::Publisher pubPathCloud = n.advertise<sensor_msgs::PointCloud2>("path_seen_cloud_debug", 5);
+  ros::Publisher pubPoseCloud = n.advertise<sensor_msgs::PointCloud2>("pose_seen_cloud_debug", 5);
   ros::Publisher pubPathCurrent = n.advertise<nav_msgs::Path>("path_current_debug", 5);
   ros::Publisher pubPathCurrentKinematic = n.advertise<nav_msgs::Path>("path_current_kinematic_debug", 5);
 
@@ -380,13 +357,13 @@ int main(int argc, char **argv)
 
       // Project Robot position to speedMap
       ROS_INFO("Projecting robot position onto map...");
-      Point robotPosition = {robot.position.x, robot.position.y, robot.position.z};
+      Point robotPosition = {(float)robot.position.x, (float)robot.position.y, (float)robot.position.z};
       // robotPosition = ProjectPointToSpeedMapZ(robotPosition, speedMap);
       robotPosition = ProjectPointToSpeedCloudMap(robotPosition, speedMapCloud, speedSafe + speedMap.voxelSize);
       robot.position.x = robotPosition.x; robot.position.y = robotPosition.y; robot.position.z = robotPosition.z;
-      int robotPositionIds[3] = {std::roundf((robot.position.x - speedMap.minBounds.x)/speedMap.voxelSize),
-          std::roundf((robot.position.y - speedMap.minBounds.y)/speedMap.voxelSize),
-          std::roundf((robot.position.z - speedMap.minBounds.z)/speedMap.voxelSize)};
+      int robotPositionIds[3] = {(int)std::roundf(((float)robot.position.x - speedMap.minBounds.x)/speedMap.voxelSize),
+          (int)std::roundf(((float)robot.position.y - speedMap.minBounds.y)/speedMap.voxelSize),
+          (int)std::roundf(((float)robot.position.z - speedMap.minBounds.z)/speedMap.voxelSize)};
 
       // Fast Marching
       ROS_INFO("Calculating cost to goals...");
@@ -458,6 +435,7 @@ int main(int argc, char **argv)
       for (int i=0; i<pathList.size(); i++) {
         std::vector<Point> currentPath = pathList[i];
         pcl::PointCloud<pcl::PointXYZI>::Ptr cloudPath (new pcl::PointCloud<pcl::PointXYZI>);
+        pcl::PointCloud<pcl::PointXYZI>::Ptr cloudPose (new pcl::PointCloud<pcl::PointXYZI>);
         PathStats stat;
         stat.costLength  = CalculatePathCost(currentPath);
         stat.costLengthTurn  = CalculatePathCost(currentPath) + CostToTurnPath(robot, currentPath, L1params.yaw_rate_max*(180.0/M_PI));
@@ -466,13 +444,15 @@ int main(int argc, char **argv)
         // ROS_INFO("Path %d has cost %0.1f", i, stat.cost);
         clock_t tStartGain = clock();
         pcl::PointCloud<pcl::PointXYZI>::Ptr cloudPaddedMap (new pcl::PointCloud<pcl::PointXYZI>);
-        ConvertCloudForGainCalculation(speedMapCloud, cloudPaddedMap, sensorParams);
+        ConvertCloudForGainCalculation(speedMapCloud, cloudPaddedMap, sensorParams, voxelSize);
         stat.gainPath = GainPath(currentPath, sensorParams, cloudPaddedMap, cloudPath, pubPathCloud, pathMsgHeader, mapTree, voxelSize, "unseen", "normal");
         // ROS_INFO("Gain calculated in %0.3f seconds.", i, (double)(clock() - tStartGain)/CLOCKS_PER_SEC);
         // ROS_INFO("Path %d sees %d points and has gain %0.1f", i, cloudPath->points.size(), stat.gainPath);
         stat.utility = Utility(stat.gainPath, stat.costLength, 0.0, "efficiency");
         // ROS_INFO("Path %d has utility %0.1f", i, stat.utility);
         stat.gainPose = goalsCloud->points[i].intensity;
+        geometry_msgs::Pose p = goalPosesMsg.poses[i];
+        stat.gainPoseCorrect = GainDebug(p, sensorParams, cloudPaddedMap, cloudPose, pubPathCloud, pathMsgHeader, mapTree, voxelSize, "unseen", "normal");
         // ROS_INFO("Pose %d has gain %0.1f", i, stat.gainPose);
         stats.push_back(stat);
         if (debugMode == "debug") {
@@ -480,6 +460,9 @@ int main(int argc, char **argv)
           pcl::toROSMsg(*cloudPath, seenCloudMsg);
           seenCloudMsg.header = pathMsgHeader;
           pubPathCloud.publish(seenCloudMsg);
+          pcl::toROSMsg(*cloudPose, seenCloudMsg);
+          seenCloudMsg.header = pathMsgHeader;
+          pubPoseCloud.publish(seenCloudMsg);
           nav_msgs::Path newPathMsg;
           newPathMsg = ConvertPointVectorToPathMsg(currentPath);
           newPathMsg.header = pathMsgHeader;
@@ -534,6 +517,13 @@ int main(int argc, char **argv)
         f << ",";
         for (int i=0; i<stats.size(); i++) {
           f << stats[i].gainPose;
+          if (i < (stats.size()-1)) f << ",";
+          else f << "\n";
+        }
+        f << currentTime;
+        f << ",";
+        for (int i=0; i<stats.size(); i++) {
+          f << stats[i].gainPoseCorrect;
           if (i < (stats.size()-1)) f << ",";
           else f << "\n";
         }

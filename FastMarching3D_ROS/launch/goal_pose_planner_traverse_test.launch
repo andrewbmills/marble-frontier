@@ -1,42 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch>
   <arg name="resolution" default="0.2"/>
-  <group ns="X4">
-    <node pkg="msfm3d" type="frontier" name="frontier_node">
+  <group ns="H01">
+    <node pkg="msfm3d" type="frontier" name="frontier_node" output="screen">
       <param name="update_rate" value="3.0" />
       <!-- <param name="map_type" value="edt"/> -->
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="cluster_size" value="100"/>
 
-      <param name="filter_by_bbox" value="true"/>
-      <param name="bbox_min_z" value = "-10.0"/>
-      <param name="bbox_max_z" value = "3.0"/>
-      <param name="bbox_min_y" value = "-21.0"/>
-      <param name="bbox_max_y" value = "21.0"/>
-      <param name="bbox_min_x" value = "-11.0"/>
-      <param name="bbox_max_x" value = "11.0"/>
+      <param name="filter_by_bbox" value="false"/>
+      <param name="bbox_min_z" value = "0.0"/>
+      <param name="bbox_max_z" value = "2.5"/>
 
-      <!-- <remap from="edt" to="voxblox_node/esdf_pointcloud"/> -->
-      <remap from="octomap_full" to="octomap_ignore"/>
-      <!-- <remap from="octomap_full" to="rough_octomap_full"/> -->
+      <remap from="edt" to="voxblox_node/esdf_pointcloud"/>
+      <!-- <remap from="octomap_full" to="octomap_ignore"/> -->
+      <remap from="octomap_full" to="octomap_full"/>
       <!-- <remap from="octomap_binary" to="octomap_ignore"/> -->
     </node>
 
-    <node pkg="nodelet" type="nodelet" name="pcl_manager_passthrough" args="manager"/> -->
+    <!-- <node pkg="nodelet" type="nodelet" name="pcl_manager_passthrough" args="manager" output="screen" /> -->
 
     <!-- Run a passthrough filter to clean NaNs -->
-    <node pkg="nodelet" type="nodelet" name="passthrough" args="load pcl/PassThrough pcl_manager_passthrough" output="screen">
+    <!-- <node pkg="nodelet" type="nodelet" name="passthrough" args="load pcl/PassThrough pcl_manager_passthrough" output="screen">
       <remap from="~input" to="frontier" />
       <remap from="~output" to="frontier_filtered" />
       <rosparam>
         filter_field_name: z
-        filter_limit_min: -10.0
+        filter_limit_min: 0.0
         filter_limit_max: 3.0
         filter_limit_negative: False
       </rosparam>
-    </node>
+    </node> -->
 
-    <!-- <node pkg="nodelet" type="nodelet" name="pcl_manager_cropbox_frontier" args="manager"/>
+    <node pkg="nodelet" type="nodelet" name="pcl_manager_cropbox_frontier" args="manager"/>
     <node pkg="nodelet" type="nodelet" name="cropbox_frontier" args="load pcl/CropBox pcl_manager_cropbox_frontier">
       <remap from="~input" to="frontier" />
       <remap from="~output" to="frontier_filtered" />
@@ -49,52 +45,55 @@
         min_z: -100.0
         max_z: 100.0
       </rosparam>
-    </node> -->
+    </node>
 
     <node pkg="msfm3d" type="goal_pose_sampler" name="goal_pose_sampler">
-      <param name="update_rate" value="3.0" />
+      <param name="update_rate" value="1.0" />
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="sample_mode" type="string" value="fibonacci"/>
-      <param name="pose_sampling_limit" value="6"/>
+      <param name="pose_sampling_limit" value="20"/>
+
+      <!-- <param name="sensor_rMin" value="0.5"/>
+      <param name="sensor_rMax" value="3.0"/>
+      <param name="sensor_vertical_FoV" value="30.0"/>
+      <param name="sensor_horizontal_FoV" value="60.0"/> -->
       <param name="sensor_rMin" value="0.5"/>
       <param name="sensor_rMax" value="4.0"/>
       <param name="sensor_vertical_FoV" value="30.0"/>
-      <param name="sensor_horizontal_FoV" value="60.0"/>
-      <!-- <param name="sensor_rMin" value="0.5"/> -->
-      <!-- <param name="sensor_rMax" value="8.0"/> -->
-      <!-- <param name="sensor_vertical_FoV" value="45.0"/> -->
-      <!-- <param name="sensor_horizontal_FoV" value="180.0"/> -->
-      <param name="sensor_type" type="string" value="camera"/>
+      <param name="sensor_horizontal_FoV" value="180.0"/>
+      <param name="sensor_type" type="string" value="lidar"/>
       <param name="gain_type" type="string" value="frontier"/>
       <param name="gain_debug_mode" type="string" value="normal"/>
       <param name="robot_proximity_filter_radius" value="1.0"/>
       <!-- <param name="min_obstacle_proximity" value="1.2"/> -->
-      <param name="min_obstacle_proximity" value="1.0"/>
-      <param name="check_LoS" value = "true"/>
+      <param name="min_obstacle_proximity" value="2.0"/>
 
-      <!-- <remap from="octomap_binary" to="octomap_ignore"/> -->
-      <remap from="edt" to="voxblox_node/esdf_pointcloud"/>
+      <remap from="octomap_binary" to="octomap_ignore"/>
+      <remap from="octomap_full" to="rough_octomap_full"/>
+      <!-- <remap from="edt" to="voxblox_node/esdf_pointcloud"/> -->
       <remap from="frontier" to="frontier_filtered"/>
     </node>
 
-    <node pkg="msfm3d" type="goal_pose_planner" name="goal_pose_planner" output="screen">
-      <param name="update_rate" value="0.5"/>
+    <node pkg="msfm3d" type="goal_pose_planner" name="goal_pose_planner">
+      <param name="update_rate" value="1.0"/>
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="num_agents" value="1"/>
       <param name="goal_separation_distance" value="3.0"/>
+      <!-- <param name="speed_max" value="3.0"/> -->
       <param name="speed_max" value="5.0"/>
-      <param name="speed_safe" value="0.0"/>
-      <param name="marching_timeout" value="15.0"/>
+      <param name="speed_safe" value="0.4"/>
+      <param name="marching_timeout" value="3.0"/>
       <param name="path_mode" value="gradient"/>
       <param name="turn_rate" value="30.0"/>
 
-      <remap from="speed_map" to="voxblox_node/esdf_pointcloud"/>
+      <!-- <remap from="speed_map" to="voxblox_node/esdf_pointcloud"/> -->
+      <remap from="speed_map" to="edt"/>
       <remap from="path" to="planned_path"/>
       <remap from="odometry" to="odometry_stitch"/>
     </node>
 
-    <include file="$(find marble_guidance)/launch/guidance_air.launch"/>
-    <!-- <include file="$(find marble_guidance)/launch/guidance.launch"/> -->
+    <!-- <include file="$(find marble_guidance)/launch/guidance_air.launch"/> -->
+    <include file="$(find marble_guidance)/launch/guidance.launch"/>
     <include file="$(find receding_horizon_stitcher)/launch/stitcher.launch"/>
 
   </group>
