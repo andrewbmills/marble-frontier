@@ -91,7 +91,10 @@ class guidance_controller:
 		if (self.path.shape[1] < 2):
 			p_L2 = goal
 			v_L2 = (goal - p_robot)/np.linalg.norm(goal - p_robot)
-			L2_vec = p_L2[0:2] - p_robot[0:2]
+			if (self.vehicle_type == 'ground'):
+				L2_vec = p_L2[0:2] - p_robot[0:2]
+			else:
+				L2_vec = p_L2 - p_robot
 			print("Path is only one point long, heading to goal point.")
 		else:
 			if (self.vehicle_type == 'ground'):
@@ -176,7 +179,7 @@ class guidance_controller:
 			error = (np.pi/180.0)*guidance.angle_Diff((180.0/np.pi)*self.goal_yaw, (180.0/np.pi)*self.yaw)
 			self.command.angular.z = self.gain_yaw*error
 			# print("Yaw error of %0.2f deg." % ((180.0/np.pi)*error))
-			self.command.linear.x = 0.0;
+			self.command.linear.x = 0.0
 
 		# Set Lookahead point
 		self.lookahead_point.header.stamp = rospy.Time.now()
@@ -200,6 +203,7 @@ class guidance_controller:
 		self.speed = rospy.get_param('guidance_controller/speed', 1.0) # m/s
 		self.Tstar = rospy.get_param('guidance_controller/Tstar', 1.0) # s
 		self.reverse = rospy.get_param('guidance_controller/reverse', 0)
+		self.yaw_rate_max = rospy.get_param('guidance_controller/yaw_rate_max', 0.5); # rad/s
 		print("Reverse = %d" % self.reverse)
 
 		# Subscribers
@@ -242,7 +246,7 @@ class guidance_controller:
 		self.L2_marker.type = 4
 		self.L2_marker.header.frame_id = self.fixed_frame
 		self.L2_marker.header.stamp = rospy.Time()
-		self.L2_marker.id = 101;
+		self.L2_marker.id = 101
 		self.L2_marker.scale.x = 0.05
 		self.L2_marker.color.b = 1.0
 		self.L2_marker.color.a = 1.0
@@ -252,15 +256,12 @@ class guidance_controller:
 		self.L2_marker.points.append(self.L2)
 
 		# Proportional Controller
-		self.gain_x = 0.3
-		self.gain_y = 0.3
-		self.gain_yaw = 0.2
+		self.gain_x = 0.3*3.0
+		self.gain_y = 0.3*3.0
+		self.gain_yaw = 0.4*3.0
 
 		# Altitude controller
 		self.gain_z = 0.5
-
-		# Saturation for yaw rate
-		self.yaw_rate_max = 0.3
 
 	def start(self):
 		rate = rospy.Rate(10.0) # 10Hz

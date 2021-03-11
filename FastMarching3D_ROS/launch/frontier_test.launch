@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+  <group ns="X4">   
+    <node pkg="msfm3d" type="goal_pose_sampler" name="goal_pose_sampler" output="screen">
+      <!-- Params -->
+      <param name="update_rate" value="1.0" />
+      <param name="map_type" value="edt" />
+      <param name="voxel_size" value="0.2"/>
+
+      <!-- Topic remaps -->
+      <remap from="costmap" to="edt"/>
+    </node>
+  </group>
+</launch>

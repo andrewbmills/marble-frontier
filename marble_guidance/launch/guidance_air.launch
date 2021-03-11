@@ -6,14 +6,16 @@
 
   <node pkg="marble_guidance" type="guidance_node.py" name="guidance_controller">
     <param name="vehicle_type" type="string" value="air" />
-    <param name="fixed_frame" type="string" value="map" />
+    <param name="fixed_frame" type="string" value="world" />
     <param name="speed" value="1.0" />
-    <param name="Tstar" value="1.0" />
+    <param name="Tstar" value="1.1" />
+    <param name="yaw_rate_max" value="1.0" />
 
     <!-- data source to integrate (PointCloud2) -->
     <remap from="odometry" to="odometry" />
-    <remap from="path" to="planned_path"/>
-    <remap from="goal_pose" to="frontier_goal_pose"/>
-    <remap from="cmd_vel" to="cmd_vel_guidance"/>
+    <!-- <remap from="path" to="planned_path"/> -->
+    <remap from="path" to="path_stitched"/>
+    <!-- <remap from="goal_pose" to="frontier_goal_pose"/> -->
+    <!-- <remap from="cmd_vel" to="cmd_vel_guidance"/> -->
   </node>
 </launch>

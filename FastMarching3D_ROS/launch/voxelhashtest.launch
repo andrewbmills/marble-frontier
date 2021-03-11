@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+<group ns="X1">
+  <node pkg="msfm3d" type="VoxelHashingTest" name="VoxelHashingTest" output="screen">
+    <remap from="octomap_binary" to="octomap_binary"/>
+    <remap from="edt" to="edt"/>
+
+  	<!-- Params -->
+  	<param name="update_rate" value="0.25"/>
+    <param name="voxel_size" value="0.15"/>
+  </node>
+</group>
+</launch>

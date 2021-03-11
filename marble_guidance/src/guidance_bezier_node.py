@@ -219,7 +219,7 @@ class guidance_controller:
 		self.CT_marker.type = 4
 		self.CT_marker.header.frame_id = self.fixed_frame
 		self.CT_marker.header.stamp = rospy.Time()
-		self.CT_marker.id = 101;
+		self.CT_marker.id = 101
 		self.CT_marker.scale.x = 0.05
 		self.CT_marker.color.b = 1.0
 		self.CT_marker.color.a = 1.0

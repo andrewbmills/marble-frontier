@@ -19,19 +19,19 @@ class LinkStateToOdometry:
 
 		self.broadcaster.sendTransform((self.Odometry.pose.pose.position.x, self.Odometry.pose.pose.position.y, self.Odometry.pose.pose.position.z),
 										(self.Odometry.pose.pose.orientation.x, self.Odometry.pose.pose.orientation.y, self.Odometry.pose.pose.orientation.z, self.Odometry.pose.pose.orientation.w),
-										rospy.Time.now(), "X1/base_link", "world")
+										rospy.Time.now(), "X4/base_link", "world")
 
 		return
 
 	def start(self):
-		rate = rospy.Rate(20.0) # 50Hz
+		rate = rospy.Rate(50.0) # 50Hz
 		while not rospy.is_shutdown():
 			rate.sleep()
 			self.getLinkState()
 			self.pub1.publish(self.Odometry)
 		return
 
-	def __init__(self, link_name="base_link", topic_name="odometry", robot_name="X1", frame="world", child_frame="X1/base_link"):
+	def __init__(self, link_name="base_link", topic_name="odometry", robot_name="X4", frame="world", child_frame="X4/base_link"):
 		
 		node_name = topic_name+ "_" + robot_name
 		rospy.init_node(node_name)

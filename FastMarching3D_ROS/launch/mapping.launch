@@ -11,5 +11,4 @@
 		<remap from="cloud_in" to="points" />
     </node>
   </group>
-	<include file="$(find ground_finder)/launch/traversability_mapping.launch"/>
 </launch>

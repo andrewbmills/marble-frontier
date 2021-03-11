@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 11)
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake_modules/")
 
 find_package(Eigen3 REQUIRED)
+find_package(OpenMP)
 find_package(catkin REQUIRED
   COMPONENTS
     roscpp
@@ -13,6 +14,7 @@ find_package(catkin REQUIRED
     nav_msgs
     geometry_msgs
     visualization_msgs
+    cv_bridge
     pcl_ros
     pcl_conversions
     sensor_msgs
@@ -64,5 +66,43 @@ target_link_libraries(costmap_generator
 
 add_executable(VoxelHashingTest src/VoxelHashingTest.cpp)
 target_link_libraries(VoxelHashingTest
+  ${catkin_LIBRARIES}
+)
+
+add_executable(gain_test_node src/gain_test.cpp)
+target_link_libraries(gain_test_node
+  ${catkin_LIBRARIES}
+)
+
+add_executable(depthImageToPointCloud2 src/depthImg2PCL2.cpp)
+target_link_libraries(depthImageToPointCloud2
+  ${catkin_LIBRARIES}
+)
+
+add_executable(frontier src/frontier_node.cpp)
+target_link_libraries(frontier
+  ${catkin_LIBRARIES}
+)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(frontier PUBLIC OpenMP::OpenMP_CXX)
+endif()
+
+add_executable(frontier_planner src/frontier_planner_node.cpp)
+target_link_libraries(frontier_planner
+  ${catkin_LIBRARIES}
+)
+
+add_executable(goal_pose_sampler src/goal_pose_sampler_node.cpp)
+target_link_libraries(goal_pose_sampler
+  ${catkin_LIBRARIES}
+)
+
+add_executable(goal_pose_planner src/goal_pose_planner_node.cpp)
+target_link_libraries(goal_pose_planner
+  ${catkin_LIBRARIES}
+)
+
+add_executable(debug_paths_from_bag src/debug_paths_from_bag.cpp)
+target_link_libraries(debug_paths_from_bag
   ${catkin_LIBRARIES}
 )

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+  <group ns="X4">   
+    <node pkg="octomap_server" type="octomap_server_node" name="octomap_server">
+      <param name="resolution" value="0.2" />
+      <!-- fixed map frame (set to 'map' if SLAM or localization running!) -->
+      <param name="frame_id" type="string" value="world" />
+      <!-- maximum range to integrate (speedup!) -->
+      <param name="sensor_model/max_range" value="5.0" />
+      <!-- data source to integrate (PointCloud2) -->
+      <remap from="cloud_in" to="depth_cam_fixed" />
+    </node>
+
+    <node pkg="msfm3d" type="depthImageToPointCloud2" name="depthImageToPointCloud2">
+      <param name="rMin" value="0.05" />
+      <param name="rMax" value="6.5" />
+      <param name="updateRate" value="10.0" />
+    </node>
+
+    <!-- <node pkg="ground_finder" type="octomap_to_edt" name="octomap_to_edt">
+      <param name="update_rate" value="3.0"/>
+      <param name="fixed_frame_id" value="world"/>
+    </node> -->
+  </group>
+</launch>
