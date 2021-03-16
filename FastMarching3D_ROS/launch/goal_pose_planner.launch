@@ -8,13 +8,21 @@
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="cluster_size" value="100"/>
 
-      <param name="filter_by_bbox" value="true"/>
-      <param name="bbox_min_z" value = "-10.0"/>
+      <param name="filter_by_bbox" value="false"/>
+      <!-- <param name="bbox_min_z" value = "-10.0"/>
       <param name="bbox_max_z" value = "3.0"/>
       <param name="bbox_min_y" value = "-21.0"/>
       <param name="bbox_max_y" value = "21.0"/>
       <param name="bbox_min_x" value = "-11.0"/>
-      <param name="bbox_max_x" value = "11.0"/>
+      <param name="bbox_max_x" value = "11.0"/> -->
+
+      <param name="bbox_min_z" value = "-100.0"/>
+      <param name="bbox_max_z" value = "100.0"/>
+      <param name="bbox_min_y" value = "-1000.0"/>
+      <param name="bbox_max_y" value = "1000.0"/>
+      <!-- <param name="bbox_min_x" value = "15.0"/> -->
+      <param name="bbox_min_x" value = "-1000.0"/>
+      <param name="bbox_max_x" value = "1000.0"/>
 
       <!-- <remap from="edt" to="voxblox_node/esdf_pointcloud"/> -->
       <remap from="octomap_full" to="octomap_ignore"/>
@@ -25,7 +33,7 @@
     <node pkg="nodelet" type="nodelet" name="pcl_manager_passthrough" args="manager"/> -->
 
     <!-- Run a passthrough filter to clean NaNs -->
-    <node pkg="nodelet" type="nodelet" name="passthrough" args="load pcl/PassThrough pcl_manager_passthrough" output="screen">
+    <!-- <node pkg="nodelet" type="nodelet" name="passthrough" args="load pcl/PassThrough pcl_manager_passthrough" output="screen">
       <remap from="~input" to="frontier" />
       <remap from="~output" to="frontier_filtered" />
       <rosparam>
@@ -34,24 +42,24 @@
         filter_limit_max: 3.0
         filter_limit_negative: False
       </rosparam>
-    </node>
+    </node> -->
 
-    <!-- <node pkg="nodelet" type="nodelet" name="pcl_manager_cropbox_frontier" args="manager"/>
+    <node pkg="nodelet" type="nodelet" name="pcl_manager_cropbox_frontier" args="manager"/>
     <node pkg="nodelet" type="nodelet" name="cropbox_frontier" args="load pcl/CropBox pcl_manager_cropbox_frontier">
       <remap from="~input" to="frontier" />
       <remap from="~output" to="frontier_filtered" />
       <rosparam>
-        negative: false
-        min_x: 10.0
-        max_x: 3000.0
-        min_y: -3000.0
-        max_y: 3000.0
-        min_z: -100.0
-        max_z: 100.0
+        negative: true
+        min_x: -16.0
+        max_x: 16.0
+        min_y: 5.0
+        max_y: 35.0
+        min_z: 7.0
+        max_z: 17.0
       </rosparam>
-    </node> -->
+    </node>
 
-    <node pkg="msfm3d" type="goal_pose_sampler" name="goal_pose_sampler">
+    <node pkg="msfm3d" type="goal_pose_sampler" name="goal_pose_sampler" output="screen">
       <param name="update_rate" value="3.0" />
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="sample_mode" type="string" value="fibonacci"/>
@@ -77,13 +85,13 @@
       <remap from="frontier" to="frontier_filtered"/>
     </node>
 
-    <node pkg="msfm3d" type="goal_pose_planner" name="goal_pose_planner" output="screen">
+    <node pkg="msfm3d" type="goal_pose_planner" name="goal_pose_planner">
       <param name="update_rate" value="0.5"/>
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="num_agents" value="1"/>
       <param name="goal_separation_distance" value="3.0"/>
       <param name="speed_max" value="5.0"/>
-      <param name="speed_safe" value="0.0"/>
+      <param name="speed_safe" value="0.6"/>
       <param name="marching_timeout" value="15.0"/>
       <param name="path_mode" value="gradient"/>
       <param name="turn_rate" value="30.0"/>

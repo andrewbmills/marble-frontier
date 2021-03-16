@@ -219,15 +219,15 @@ int main(int argc, char **argv)
       mapUpdated = false;
       edtUpdated = false;
       clock_t tStart = clock();
-      ROS_INFO("Converting octomap msg to octomap...");
+      // ROS_INFO("Converting octomap msg to octomap...");
       octomap::OcTree* map = (octomap::OcTree*)octomap_msgs::fullMsgToMap(*octomapMsg);
       // map->expand();
       MapGrid3D<float> edtGrid;
       edtGrid.voxelSize = voxelSize;
-      ROS_INFO("Converting edt pointcloud of size %d to gridmap...", (int)edtCloud->points.size());
+      // ROS_INFO("Converting edt pointcloud of size %d to gridmap...", (int)edtCloud->points.size());
       ConvertPointCloudToEDTGrid(edtCloud, &edtGrid);
-      ROS_INFO("Success! EDT map created with bounds (%0.1f, %0.1f, %0.1f) to (%0.1f, %0.1f, %0.1f) ...", edtGrid.minBounds.x, 
-        edtGrid.minBounds.y, edtGrid.minBounds.z, edtGrid.maxBounds.x, edtGrid.maxBounds.y, edtGrid.maxBounds.z);
+      // ROS_INFO("Success! EDT map created with bounds (%0.1f, %0.1f, %0.1f) to (%0.1f, %0.1f, %0.1f) ...", edtGrid.minBounds.x, 
+        // edtGrid.minBounds.y, edtGrid.minBounds.z, edtGrid.maxBounds.x, edtGrid.maxBounds.y, edtGrid.maxBounds.z);
       // Get new frontier pointcloud
       pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierDiff (new pcl::PointCloud<pcl::PointXYZLNormal>); // current frontiers that weren't previously
       std::vector<pcl::PointIndices> clusterIndicesDiff;
@@ -249,12 +249,12 @@ int main(int argc, char **argv)
 
       // Group frontiers within clusters that have had one of their frontiers change.
       // Resample goal poses on these clusters.
-      ROS_INFO("Grouping frontiers based on proximity...");
+      // ROS_INFO("Grouping frontiers based on proximity...");
       std::vector<Group> groups;
       greedyGrouping(groupRadius, frontierDiff, clusterIndicesDiff, groups);
-      ROS_INFO("Success!");
+      // ROS_INFO("Success!");
       // // Sample goal poses
-      ROS_INFO("Converting edt pointcloud to gridmap...");
+      // ROS_INFO("Converting edt pointcloud to gridmap...");
       std::vector<View> goalsNew = SampleGoals(groups, robotSensor, edtGrid, map, sampleLimit, minObstacleProximity, sampleMode);
 
       // Find the goals whose gains need to be updated and add them to the goalsNew vector
@@ -276,6 +276,7 @@ int main(int argc, char **argv)
       pubMapCloudDebug.publish(mapCloudMsg);
 
       // Calculate gains for each goal pose
+      ROS_INFO("Calculating gains for %d goal poses...", (int)goalsNew.size());
       for (int i=0; i<goalsNew.size(); i++) {
         pcl::PointCloud<pcl::PointXYZI>::Ptr seenCloud (new pcl::PointCloud<pcl::PointXYZI>);
         geometry_msgs::Pose goalPose = ConvertPoseToGeometryMsgPose(goalsNew[i].pose);

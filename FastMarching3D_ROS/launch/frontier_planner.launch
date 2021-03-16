@@ -2,7 +2,7 @@
 <launch>
   <arg name="resolution" default="0.2"/>
   <group ns="X4">
-    <node pkg="msfm3d" type="frontier" name="frontier_node" output="screen">
+    <node pkg="msfm3d" type="frontier" name="frontier_node">
       <param name="update_rate" value="3.0" />
       <param name="map_type" value="octomap" />
       <param name="voxel_size" value="$(arg resolution)"/>
@@ -22,13 +22,13 @@
       <remap from="~input" to="frontier" />
       <remap from="~output" to="frontier_filtered" />
       <rosparam>
-        negative: false
-        min_x: 10.0
-        max_x: 5000.0
-        min_y: -5000.0
-        max_y: 5000.0
-        min_z: -5000.0
-        max_z: 5000.0
+        negative: true
+        min_x: -16.0
+        max_x: 16.0
+        min_y: 5.0
+        max_y: 35.0
+        min_z: 7.0
+        max_z: 17.0
       </rosparam>
     </node>
 
@@ -37,11 +37,11 @@
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="num_agents" value="1"/>
       <param name="goal_separation_distance" value="3.0"/>
-      <!-- <param name="speed_max" value="3.0"/>
-      <param name="speed_safe" value="1.0"/> -->
+      <!-- <param name="speed_max" value="3.0"/> -->
+      <param name="speed_safe" value="1.0"/>
       <param name="speed_max" value="5.0"/>
-      <param name="speed_safe" value="0.6"/>
-      <param name="marching_timeout" value="5.0"/>
+      <!-- <param name="speed_safe" value="0.6"/> -->
+      <param name="marching_timeout" value="15.0"/>
       <param name="path_mode" value="gradient"/>
       <param name="turn_rate" value="30.0"/>
 
