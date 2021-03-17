@@ -11,10 +11,10 @@
       <param name="filter_by_bbox" value="true"/>
       <param name="bbox_min_z" value = "0.0"/>
       <param name="bbox_max_z" value = "3.0"/>
-      <param name="bbox_min_y" value = "-21.0"/>
-      <param name="bbox_max_y" value = "21.0"/>
-      <param name="bbox_min_x" value = "-11.0"/>
-      <param name="bbox_max_x" value = "11.0"/>
+      <param name="bbox_min_y" value = "-40.0"/>
+      <param name="bbox_max_y" value = "40.0"/>
+      <param name="bbox_min_x" value = "-14.0"/>
+      <param name="bbox_max_x" value = "14.0"/>
 
       <!-- <remap from="edt" to="voxblox_node/esdf_pointcloud"/> -->
       <remap from="octomap_full" to="octomap_ignore"/>
