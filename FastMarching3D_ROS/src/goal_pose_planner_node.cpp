@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <math.h>
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PoseArray.h>
@@ -113,7 +114,10 @@ void CallbackSpeedMap(const sensor_msgs::PointCloud2::ConstPtr msg)
     pcl::PointXYZI query = speedMapCloud->points[i];
     // Consider the hyperbolic tan function from the btraj paper
     // esdf = v_max*(tanh(d - e) + 1)/2
-    if (query.intensity >= speedSafe) speedMap.SetVoxel(query.x, query.y, query.z, std::min((double)query.intensity, speedMax));
+    float speed = (1.0/voxelSize)*0.5*(std::tanh(2.0*query.intensity - std::exp(1.0)) + 1);
+    if (query.intensity >= speedSafe) speedMap.SetVoxel(query.x, query.y, query.z, speed);
+    // if (query.intensity >= speedSafe) speedMap.SetVoxel(query.x, query.y, query.z, std::min((double)query.intensity, speedMax));
+
   }
   
   mapUpdated = true;
@@ -210,7 +214,7 @@ MapGrid3D<float> ConvertPointCloudToMap(pcl::PointCloud<pcl::PointXYZINormal>::P
   for (int i=0; i<cloud->points.size(); i++) {
     Point query = {cloud->points[i].x, cloud->points[i].y, cloud->points[i].z};
     if (speedMap._CheckVoxelPositionInBounds(query)) {
-      if (speedMap.Query(query.x, query.y, query.z) >= voxelSize) {
+      if (speedMap.Query(query.x, query.y, query.z) > 0.0) {
         goalsMapNew.SetVoxel(query.x, query.y, query.z, cloud->points[i].intensity);
       }
     }
@@ -307,6 +311,7 @@ int main(int argc, char **argv)
   ros::Publisher pubGoalArray = n.advertise<msfm3d::GoalArray>("goalArray", 5);
   ros::Publisher pubReach = n.advertise<sensor_msgs::PointCloud2>("reach_grid", 5);
   ros::Publisher pubGoalPose = n.advertise<geometry_msgs::PoseStamped>("goal_pose", 5);
+  ros::Publisher pubSpeedMap = n.advertise<sensor_msgs::PointCloud2>("speed_map_debug", 5);
 
   // Params
   int numGoals;
@@ -323,7 +328,7 @@ int main(int argc, char **argv)
   float update_rate;
   n.param("goal_pose_planner/update_rate", update_rate, (float)1.0); // hz
   std::string pathMode;
-  n.param<std::string>("goal_pose_planner/path_mode", pathMode, "Astar");
+  n.param<std::string>("goal_pose_planner/path_mode", pathMode, "gradient");
   
   ros::Rate r(update_rate); // 5 Hz
   ROS_INFO("Finished reading params.");
@@ -333,9 +338,12 @@ int main(int argc, char **argv)
     r.sleep();
     ros::spinOnce();
     if ((goalsUpdated) && (firstMapReceived*firstPoseReceived*firstGoalsReceived)) {
+      ROS_INFO("***_____________________________________***");
       clock_t tStart = clock();
       ROS_INFO("Planning to best goal pose.");
       mapUpdated = false; poseUpdated = false; goalsUpdated = false;
+
+      pubSpeedMap.publish(ConvertReachMapToPointCloud2(&speedMap));
 
       // Project Robot position to speedMap
       ROS_INFO("Projecting robot position onto map...");
@@ -351,7 +359,7 @@ int main(int argc, char **argv)
       goals = ConvertPointCloudToMap(goalsCloud);
       MapGrid3D<double> reachMap(voxelSize, speedMap.size, speedMap.minBounds);
       reachMap.SetAll(0.0);
-      ROS_INFO("Calculating cost to goals...");
+      ROS_INFO("Calculating cost to %d goals...", (int)goalsCloud->points.size());
       std::vector<GoalPath> goalsRanked = reach(robotPositionIds, robot, &speedMap, goals.voxels, &reachMap, true, true, std::min((int)goalsCloud->points.size(),
                                                 numGoals), turnRate, marchingTimeOut, goalSeparationDistance);
       pubReach.publish(ConvertReachMapToPointCloud2(&reachMap));
@@ -361,13 +369,14 @@ int main(int argc, char **argv)
         if (goalsRanked[i].path.size() < 2) goalsRanked.erase(goalsRanked.begin() + i);
       }
 
-      // Get paths using A* or gradient following and publish them
-      ROS_INFO("Tracing paths from goals back to robot...");
+      // Get paths using gradient following and publish them
+      ROS_INFO("Getting pose messages for each goal...");
       msfm3d::GoalArray goalArrayMsg;
       for (int i=0; i<goalsRanked.size(); i++) {
         goalsRanked[i].goal = PoseStampedFromPath(goalsRanked[i].path).pose;
       }
-      goalsRanked = SortWithTrueCosts(goalsRanked, turnRate);
+      // ROS_INFO("Sorting by corrected utilities...");
+      // goalsRanked = SortWithTrueCosts(goalsRanked, turnRate);
 
       // Convert path and pose info into messages
       for (int i=0; i<goalsRanked.size(); i++) {
@@ -389,6 +398,7 @@ int main(int argc, char **argv)
 
       pubGoalArray.publish(goalArrayMsg);
       ROS_INFO("Plan generated in: %.3fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+      ROS_INFO("***_____________________________________***");
     }
   }
 

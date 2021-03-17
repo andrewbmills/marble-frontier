@@ -8,11 +8,20 @@
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="cluster_size" value="100"/>
 
+      <!-- Subway top floor -->
       <param name="filter_by_bbox" value="true"/>
-      <param name="bbox_min_z" value = "0.0"/>
+      <!-- <param name="bbox_min_z" value = "0.0"/>
       <param name="bbox_max_z" value = "3.0"/>
-      <param name="bbox_min_y" value = "-21.0"/>
-      <param name="bbox_max_y" value = "21.0"/>
+      <param name="bbox_min_y" value = "-40.0"/>
+      <param name="bbox_max_y" value = "40.0"/>
+      <param name="bbox_min_x" value = "-14.0"/>
+      <param name="bbox_max_x" value = "14.0"/> -->
+
+      <!-- Subway middle floor -->
+      <param name="bbox_min_z" value = "-7.0"/>
+      <param name="bbox_max_z" value = "-3.0"/>
+      <param name="bbox_min_y" value = "-25.0"/>
+      <param name="bbox_max_y" value = "25.0"/>
       <param name="bbox_min_x" value = "-11.0"/>
       <param name="bbox_max_x" value = "11.0"/>
 
@@ -30,13 +39,15 @@
       <remap from="~output" to="frontier_filtered" />
       <rosparam>
         filter_field_name: z
-        filter_limit_min: 0.0
-        filter_limit_max: 3.0
+        <!-- filter_limit_min: 0.0
+        filter_limit_max: 3.0 -->
+        filter_limit_min: -7.0
+        filter_limit_max: -3.0
         filter_limit_negative: False
       </rosparam>
     </node>
 
-    <node pkg="msfm3d" type="goal_pose_sampler" name="goal_pose_sampler">
+    <node pkg="msfm3d" type="goal_pose_sampler" name="goal_pose_sampler" output="screen">
       <param name="update_rate" value="3.0" />
       <param name="voxel_size" value="$(arg resolution)"/>
       <param name="sample_mode" type="string" value="fibonacci"/>
@@ -62,26 +73,5 @@
       <remap from="edt" to="voxblox_node/esdf_pointcloud"/>
       <remap from="frontier" to="frontier_filtered"/>
     </node>
-
-    <node pkg="msfm3d" type="goal_pose_planner" name="goal_pose_planner" output="screen">
-      <param name="update_rate" value="2.0"/>
-      <param name="voxel_size" value="$(arg resolution)"/>
-      <param name="num_agents" value="1"/>
-      <param name="goal_separation_distance" value="3.0"/>
-      <param name="speed_max" value="5.0"/>
-      <param name="speed_safe" value="1.0"/>
-      <param name="marching_timeout" value="15.0"/>
-      <param name="path_mode" value="gradient"/>
-      <param name="turn_rate" value="30.0"/>
-
-      <remap from="speed_map" to="voxblox_node/esdf_pointcloud"/>
-      <remap from="path" to="planned_path"/>
-      <remap from="odometry" to="odometry_stitch"/>
-    </node>
-
-    <include file="$(find marble_guidance)/launch/guidance_air.launch"/>
-    <!-- <include file="$(find marble_guidance)/launch/guidance.launch"/> -->
-    <include file="$(find receding_horizon_stitcher)/launch/stitcher.launch"/>
-
   </group>
 </launch>
