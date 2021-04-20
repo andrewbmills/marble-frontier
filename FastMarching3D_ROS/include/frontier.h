@@ -217,35 +217,17 @@ void ConvertOctomapToSeenOccGrid(octomap::OcTree* map, MapGrid3D<std::pair<bool,
 }
 
 template<typename T>
-void GetPointCloudBounds(T cloud, float min[3], float max[3])
+void GetPointCloudBounds(T cloud, float mins[3], float maxes[3])
 {
-  // Cloud must be a pcl::PointCloud<pcl::PointT>::Ptr object
-
-  Point boundsMin{0.0, 0.0, 0.0};
-  Point boundsMax{0.0, 0.0, 0.0};
-
   // Get the xyz extents of the PCL by running one loop through the data
-  bool firstPoint = true;
   for (int i=0; i<cloud->points.size(); i++) {
-    float x = cloud->points[i].x;
-    float y = cloud->points[i].y;
-    float z = cloud->points[i].z;
-    if (firstPoint) {
-      boundsMin.x = x; boundsMin.y = y; boundsMin.z = z;
-      boundsMax.x = x; boundsMax.y = y; boundsMax.z = z;
-      firstPoint = false;
-      continue;
-    }
-    if (x < boundsMin.x) boundsMin.x = x;
-    if (y < boundsMin.y) boundsMin.y = y;
-    if (z < boundsMin.z) boundsMin.z = z;
-    if (x > boundsMax.x) boundsMax.x = x;
-    if (y > boundsMax.y) boundsMax.y = y;
-    if (z > boundsMax.z) boundsMax.z = z;
+    mins[0] = std::min(mins[0], cloud->points[i].x);
+    mins[1] = std::min(mins[1], cloud->points[i].y);
+    mins[2] = std::min(mins[2], cloud->points[i].z);
+    maxes[0] = std::max(maxes[0], cloud->points[i].x);
+    maxes[1] = std::max(maxes[1], cloud->points[i].y);
+    maxes[2] = std::max(maxes[2], cloud->points[i].z);
   }
-
-  min[0] = boundsMin.x; min[1] = boundsMin.y; min[2] = boundsMin.z;
-  max[0] = boundsMax.x; max[1] = boundsMax.y; max[2] = boundsMax.z;
   return;
 }
 
@@ -279,14 +261,6 @@ void ConvertPointCloudToEDTGrid(pcl::PointCloud<pcl::PointXYZI>::Ptr edt, MapGri
   return;
 }
 
-bool CheckFrontier(int voxelID, std::vector<int> neighbors, MapGrid3D<std::pair<bool, bool>>* seenOccGrid) {
-  // The voxel is free and seen, check the neighbors. If any are unseen, return true.
-  for (int neighbor=0; neighbor<neighbors.size(); neighbor++) {
-    if (!seenOccGrid->voxels[voxelID+neighbors[neighbor]].first) return true;
-  }
-  return false;
-}
-
 bool CheckFrontierGroundPlane(int voxelID, std::vector<int> neighbors, MapGrid3D<std::pair<bool, bool>>* seenOccGrid) {
   // This is a function check for frontiers of ground plane maps with a voxel thickness of 2 or more.
   // Most voxels aren't going to be frontier, so lets eliminate those first
@@ -302,21 +276,37 @@ bool CheckFrontierGroundPlane(int voxelID, std::vector<int> neighbors, MapGrid3D
   else return false;
 }
 
-bool CalculateFrontierRawPCL(MapGrid3D<std::pair<bool, bool>>* seenOccGrid, pcl::PointCloud<pcl::PointXYZ>::Ptr frontier)
-{
-  frontier->points.clear();
+std::vector<int> GetNeighborIndexDeltas(MapGrid3D<std::pair<bool, bool>>* map) {
   std::vector<int> neighbor_deltas;
   neighbor_deltas.push_back(1);
   neighbor_deltas.push_back(-1);
-  neighbor_deltas.push_back(seenOccGrid->size.x);
-  neighbor_deltas.push_back(-seenOccGrid->size.x);
-  neighbor_deltas.push_back(seenOccGrid->size.x*seenOccGrid->size.y);
-  neighbor_deltas.push_back(-seenOccGrid->size.x*seenOccGrid->size.y);
+  neighbor_deltas.push_back(map->size.x);
+  neighbor_deltas.push_back(-map->size.x);
+  neighbor_deltas.push_back(map->size.x*map->size.y);
+  neighbor_deltas.push_back(-map->size.x*map->size.y);
+  return neighbor_deltas;
+}
+
+bool CheckFrontier(int voxelID, std::vector<int> neighbors, MapGrid3D<std::pair<bool, bool>>* seenOccGrid) {
+  // The voxel is free and seen, check the neighbors. If any are unseen, return true.
+  for (int neighbor=0; neighbor<neighbors.size(); neighbor++) {
+    bool seen = seenOccGrid->voxels[voxelID+neighbors[neighbor]].first;
+    if (!seen) return true;
+  }
+  return false;
+}
+
+bool CalculateFrontierRawPCL(MapGrid3D<std::pair<bool, bool>>* seenOccGrid, pcl::PointCloud<pcl::PointXYZ>::Ptr frontier)
+{
+  frontier->points.clear();
+  std::vector<int> neighbor_deltas = GetNeighborIndexDeltas(seenOccGrid);
   int total_map_size = seenOccGrid->voxels.size();
   // Check all the map cells for frontier voxels
   for (int i=0; i<seenOccGrid->voxels.size(); i++){
     // Check if the voxel is seen and free (not occupied)
-    if (seenOccGrid->voxels[i].first && !seenOccGrid->voxels[i].second) {
+    bool seen = seenOccGrid->voxels[i].first;
+    bool occupied = seenOccGrid->voxels[i].second;
+    if (seen && !occupied) {
       // This section will segfault if any seen and free cells are on the border of the map.
       // Be sure to pad the seenOccGrid with at least one unseen voxel to prevent this.
       if (CheckFrontier(i, neighbor_deltas, seenOccGrid)) {
@@ -415,7 +405,7 @@ Frontier CalculateFrontier(pcl::PointCloud<pcl::PointXYZI>::Ptr map, float voxel
 
   // Filter frontier by height if necessary
   pcl::PointCloud<pcl::PointXYZ>::Ptr frontierCloudRawBox(new pcl::PointCloud<pcl::PointXYZ>);
-  if (bboxOn)FilterCloudByBoundingBox(frontierCloudRaw, frontierCloudRawBox, bboxMin, bboxMax);
+  if (bboxOn) FilterCloudByBoundingBox(frontierCloudRaw, frontierCloudRawBox, bboxMin, bboxMax);
   else pcl::copyPointCloud(*frontierCloudRaw, *frontierCloudRawBox);
 
   // Calculate frontier normal vectors and filter according to the z-component

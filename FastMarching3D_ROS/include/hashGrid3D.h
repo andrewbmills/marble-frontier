@@ -2,7 +2,15 @@
 #define HASH_GRID_H
 #include <vector>
 #include "math.h"
-#include <MapGrid3D.h>
+#include <mapGrid3D.h>
+
+template <typename T>
+struct SubMap {
+  std::vector<T> voxels;
+  std::vector<float> min[3];
+  std::vector<float> max[3];
+  float voxelSize;
+};
 
 template <typename T>
 class HashGrid3D {
@@ -20,13 +28,13 @@ class HashGrid3D {
     void _AddMap(float x, float y, float z);
     bool _CheckKeyInBounds(float x, float y, float z);
   public:
-    HashGrid3D(float _min[3], float _max[3], int _subMapSize[3], float voxelSize);
+    HashGrid3D(float _min[3], float _max[3], int _subMapSize[3], T _initialValue, float voxelSize);
     void Set(float x, float y, float z, T value);
     T Get(float x, float y, float z);
-}
+};
 
 template <typename T>
-void HashGrid3D<T>::HashGrid3D(float _min[3], float _max[3], int _subMapSize[3], T _initialValue, float voxelSize = 1.0)
+HashGrid3D<T>::HashGrid3D(float _min[3], float _max[3], int _subMapSize[3], T _initialValue, float voxelSize = 1.0)
 {
   voxelSize = _voxelSize;
   initialValue = _initialValue;

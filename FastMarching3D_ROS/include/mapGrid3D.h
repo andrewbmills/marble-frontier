@@ -6,11 +6,11 @@
 #include <bresenham3d.cpp>
 
 struct Point {
-    float x, y, z;
+  float x, y, z;
 };
 
 struct Dimensions {
-    int x, y, z;
+  int x, y, z;
 };
 
 template <typename T>
@@ -100,18 +100,10 @@ MapGrid3D<T>::MapGrid3D(float resolution, int sizeList[3], float minBoundList[3]
   return;
 }
 
-int xyz_index3(const double point[3], double min[3], int size[3], double voxel_size)
-{
-  int ind[3];
-  for (int i=0; i<3; i++) ind[i] = round((point[i]-min[i])/voxel_size);
-  return (ind[0] + ind[1]*size[0] + ind[2]*size[0]*size[1]);
-}
-
 template <typename T>
 int MapGrid3D<T>::_ConvertPositionToIndex(Point position)
 {
-  int id;
-  id = std::round((position.z - minBounds.z)/voxelSize)*size.x*size.y;
+  int id = std::round((position.z - minBounds.z)/voxelSize)*size.x*size.y;
   id += std::round((position.y - minBounds.y)/voxelSize)*size.x;
   id += std::round((position.x - minBounds.x)/voxelSize);
   return id;
@@ -148,6 +140,15 @@ void MapGrid3D<T>::_SetMaxBounds()
   return;
 }
 
+Dimensions CalculateSizeFromBounds(Point min, Point max, float voxelSize)
+{
+  Dimensions size;
+  size.x = roundf((max.x - min.x)/voxelSize) + 1;
+  size.y = roundf((max.y - min.y)/voxelSize) + 1;
+  size.z = roundf((max.z - min.z)/voxelSize) + 1;
+  return size;
+}
+
 template <typename T>
 void MapGrid3D<T>::Reset(float resolution, float minBoundList[3], float maxBoundList[3], T defaultValue)
 {
@@ -155,9 +156,7 @@ void MapGrid3D<T>::Reset(float resolution, float minBoundList[3], float maxBound
   voxelSize = resolution;
   minBounds.x = minBoundList[0]; minBounds.y = minBoundList[1]; minBounds.z = minBoundList[2];
   maxBounds.x = maxBoundList[0]; maxBounds.y = maxBoundList[1]; maxBounds.z = maxBoundList[2];
-  size.x = roundf((maxBounds.x - minBounds.x)/voxelSize) + 1;
-  size.y = roundf((maxBounds.y - minBounds.y)/voxelSize) + 1;
-  size.z = roundf((maxBounds.z - minBounds.z)/voxelSize) + 1;
+  size = CalculateSizeFromBounds(minBounds, maxBounds, voxelSize);
   voxels.resize(size.x*size.y*size.z);
   SetAll(defaultValue);
   return;
@@ -247,28 +246,28 @@ void MapGrid3D<T>::GetNeighbors6(float x, float y, float z, std::vector<Point> &
 
 template <typename T>
 std::vector<int> MapGrid3D<T>::Raycast(Point a, Point b) {
-  // Takes two points in 3D and returns the voxel ids and locations
+  // Takes two points in 3D and returns the voxel ids
   int idx1, idx2, idy1, idy2, idz1, idz2;
-  idx1 = std::round(a.x - minBounds.x);
-  idx2 = std::round(b.x - minBounds.x);
-  idy1 = std::round(a.y - minBounds.y);
-  idy2 = std::round(b.y - minBounds.y);
-  idz1 = std::round(a.z - minBounds.z);
-  idz2 = std::round(b.z - minBounds.z);
+  idx1 = std::round((a.x - minBounds.x)/voxelSize);
+  idx2 = std::round((b.x - minBounds.x)/voxelSize);
+  idy1 = std::round((a.y - minBounds.y)/voxelSize);
+  idy2 = std::round((b.y - minBounds.y)/voxelSize);
+  idz1 = std::round((a.z - minBounds.z)/voxelSize);
+  idz2 = std::round((b.z - minBounds.z)/voxelSize);
   std::vector<int> ids = Bresenham3D(idx1, idy1, idz1, idx2, idy2, idz2);
   return ids;
 }
 
 template <typename T>
 std::vector<int> MapGrid3D<T>::Raycast(float x1, float y1, float z1, float x2, float y2, float z2) {
-  // Takes two points in 3D and returns the voxel ids and locations
+  // Takes two points in 3D and returns the voxel ids
   int idx1, idx2, idy1, idy2, idz1, idz2;
-  idx1 = std::round(x1 - minBounds.x);
-  idx2 = std::round(x2 - minBounds.x);
-  idy1 = std::round(y1 - minBounds.y);
-  idy2 = std::round(y2 - minBounds.y);
-  idz1 = std::round(z1 - minBounds.z);
-  idz2 = std::round(z2 - minBounds.z);
+  idx1 = std::round((x1 - minBounds.x)/voxelSize);
+  idx2 = std::round((x2 - minBounds.x)/voxelSize);
+  idy1 = std::round((y1 - minBounds.y)/voxelSize);
+  idy2 = std::round((y2 - minBounds.y)/voxelSize);
+  idz1 = std::round((z1 - minBounds.z)/voxelSize);
+  idz2 = std::round((z2 - minBounds.z)/voxelSize);
   std::vector<int> ids = Bresenham3D(idx1, idy1, idz1, idx2, idy2, idz2);
   return ids;
 }
