@@ -475,7 +475,7 @@ std::vector<View> FilterGoalsFrontiersBBX(std::vector<View> goals, pcl::PointClo
 
 MapGrid3D<int> ConvertFrontierPointCloudToMapGrid3D(pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontier, float voxelSize)
 {
-  float min[3], max[3];
+  double min[3], max[3];
   GetPointCloudBounds(frontier, min, max);
   // ROS_INFO("Frontier cloud has bounds (%0.1f, %0.1f, %0.1f) to (%0.1f, %0.1f, %0.1f).", min[0], min[1], min[2], max[0], max[1], max[2]);
   for (int i=0; i<3; i++) {
@@ -614,7 +614,7 @@ std::vector<View> FindGoalsCloseToCloud(std::vector<View> &goals, pcl::PointClou
 }
 
 void FilterCloudNearGoals(pcl::PointCloud<pcl::PointXYZI>::Ptr cloudIn,  pcl::PointCloud<pcl::PointXYZI>::Ptr cloudOut, std::vector<View> goals,
-  SensorFoV sensor, float voxelSize, pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontier, std::string gainType)
+  SensorFoV sensor, double voxelSize, pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontier, std::string gainType)
 {
   // ROS_INFO("Generating a smaller EDT cloud for gain calculations...");
   if (goals.size() == 0) return;
@@ -631,8 +631,8 @@ void FilterCloudNearGoals(pcl::PointCloud<pcl::PointXYZI>::Ptr cloudIn,  pcl::Po
     goalsMax[1] = std::max(p.y, goalsMax[1]);
     goalsMax[2] = std::max(p.z, goalsMax[2]);
   }
-  float boundsMin[3], boundsMax[3];
-  float delta[3] = {sensor.rMax, sensor.rMax, std::sin(sensor.verticalFoV*M_PI/360.0)*sensor.rMax};
+  double boundsMin[3], boundsMax[3];
+  double delta[3] = {sensor.rMax, sensor.rMax, std::sin(sensor.verticalFoV*M_PI/360.0)*sensor.rMax};
   int size[3];
   for (int i=0; i<3; i++)
   {

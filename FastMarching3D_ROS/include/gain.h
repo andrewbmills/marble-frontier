@@ -574,10 +574,10 @@ bool checkLoS = true)
   return gain;
 }
 
-void ConvertCloudForGainCalculation(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_in,  pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_out, SensorFoV sensor, float voxelSize)
+void ConvertCloudForGainCalculation(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_in,  pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_out, SensorFoV sensor, double voxelSize)
 {
   // Convert input cloud to padded MapGrid3D
-  float cloudMin[3], cloudMax[3], boundsMin[3], boundsMax[3];
+  double cloudMin[3], cloudMax[3], boundsMin[3], boundsMax[3];
   int size[3];
   GetPointCloudBounds(cloud_in, cloudMin, cloudMax);
   float delta[3] = {sensor.rMax, sensor.rMax, (float)std::sin(sensor.verticalFoV*M_PI/360)*sensor.rMax};
