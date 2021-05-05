@@ -20,7 +20,7 @@
 // Cost map global
 MapGrid3D<double> speedMap;
 pcl::PointCloud<pcl::PointXYZI>::Ptr speedMapCloud(new pcl::PointCloud<pcl::PointXYZI>);
-float voxelSize = 0.2;
+double voxelSize = 0.2;
 bool mapUpdated = false;
 bool firstMapReceived = false;
 double speedMax = 10.0;
@@ -95,7 +95,7 @@ void CallbackSpeedMap(const sensor_msgs::PointCloud2::ConstPtr msg)
 
   pcl::fromROSMsg(*msg, *speedMapCloud);
   // Get bounds
-  float boundsMin[3], boundsMax[3];
+  double boundsMin[3], boundsMax[3];
   GetPointCloudBounds(speedMapCloud, boundsMin, boundsMax);
 
   // Copy cloud to speedMap data structure
@@ -319,7 +319,7 @@ int main(int argc, char **argv)
   float goalSeparationDistance, turnRate;
   n.param("goal_pose_planner/goal_separation_distance", goalSeparationDistance, (float)5.0); // meters
   n.param("goal_pose_planner/turn_rate", turnRate, (float)90.0); // deg/s
-  n.param("goal_pose_planner/voxel_size", voxelSize, (float)0.2); // meters
+  n.param("goal_pose_planner/voxel_size", voxelSize, (double)0.2); // meters
   n.param("goal_pose_planner/speed_max", speedMax, (double)10.0); // m/s
   n.param("goal_pose_planner/speed_safe", speedSafe, (double)0.4); // m/s
   double marchingTimeOut;
