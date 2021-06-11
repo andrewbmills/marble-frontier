@@ -70,6 +70,7 @@ class guidance_controller:
 
 	def updateCommand(self): # Updates the twist command for publishing
 		# Check if the subscribers have updated the robot position and path
+		self.resetCommand()
 		if (self.path.shape[1] < 1):
 			print("No guidance command, path is empty.")
 			return
@@ -185,6 +186,15 @@ class guidance_controller:
 		self.lookahead_point.header.stamp = rospy.Time.now()
 		self.lookahead_point.point = self.L2
 
+		return
+
+	def resetCommand(self):
+		self.command.linear.x = 0.0
+		self.command.linear.y = 0.0
+		self.command.linear.z = 0.0
+		self.command.angular.x = 0.0
+		self.command.angular.y = 0.0
+		self.command.angular.z = 0.0
 		return
 
 	def __init__(self):
