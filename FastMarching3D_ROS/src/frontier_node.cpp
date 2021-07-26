@@ -36,7 +36,7 @@ void CallbackEDTPointCloud(const sensor_msgs::PointCloud2::ConstPtr msg)
   frontierMsgHeader = msg->header;
   return;
 }
-// Could put this function inside of mapGrid3D header file
+
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "frontier_node");
@@ -48,19 +48,16 @@ int main(int argc, char **argv)
   ros::Publisher pubFrontier = n.advertise<sensor_msgs::PointCloud2>("frontier", 5);
   sensor_msgs::PointCloud2 frontierMsg;
 
-  // Params
   std::string mapType;
   n.param<std::string>("frontier_node/map_type", mapType, "octomap");
-  // n.param<std::string>("frontier_node/map_type", mapType, "edt");
-  // n.param<std::string>("frontier_node/map_type", mapType, "edt_ground");
   int clusterSize;
   n.param("frontier_node/cluster_size", clusterSize, 30);
   float voxelSize, normalZ;
   n.param("frontier_node/voxel_size", voxelSize, (float)0.2);
   n.param("frontier_node/normal_z_filter", normalZ, (float)0.4);
   bool filterByNormal, filterByCluster;
-  n.param("frontier_node/filterByNormal", filterByNormal, true);
-  n.param("frontier_node/filterByCluster", filterByCluster, true);
+  n.param("frontier_node/filter_by_normal", filterByNormal, true);
+  n.param("frontier_node/filter_by_cluster", filterByCluster, true);
   bool filterByBbox;
   pcl::PointXYZ bboxMin, bboxMax;
   n.param("frontier_node/filter_by_bbox", filterByBbox, false);
@@ -70,8 +67,10 @@ int main(int argc, char **argv)
   n.param("frontier_node/bbox_max_y", bboxMax.y, (float)1000.0);
   n.param("frontier_node/bbox_min_z", bboxMin.z, (float)-1000.0);
   n.param("frontier_node/bbox_max_z", bboxMax.z, (float)1000.0);
-  if (filterByBbox) ROS_INFO("Frontier bbox limits set to {%0.2f, %0.2f, %0.2f} and {%0.2f, %0.2f, %0.2f}", bboxMin.x, bboxMin.y, bboxMin.z, bboxMax.x, bboxMax.y, bboxMax.z);
 
+  if (filterByBbox) ROS_INFO("Frontier bbox limits set to {%0.2f, %0.2f, %0.2f} and {%0.2f, %0.2f, %0.2f}", bboxMin.x, bboxMin.y, bboxMin.z, bboxMax.x, bboxMax.y, bboxMax.z);
+  if (filterByNormal) ROS_INFO("Frontiers with a local normal vector z component larger than %0.2f will be removed.", normalZ);
+  if (filterByCluster) ROS_INFO("Frontier clusters smaller than %d voxels will be removed.", clusterSize);
   float update_rate;
   n.param("frontier_node/update_rate", update_rate, (float)1.0);
   
@@ -87,8 +86,8 @@ int main(int argc, char **argv)
       clock_t tStart = clock();
       Frontier frontier;
       if (mapType == "octomap") frontier = CalculateFrontier(map, bboxMin, bboxMax, filterByBbox, filterByNormal, filterByCluster, normalZ, clusterSize);
-      else if (mapType == "edt") frontier = CalculateFrontier(edtCloud, voxelSize, bboxMin, bboxMax, filterByBbox, filterByNormal, filterByCluster, normalZ, clusterSize);
-      else if (mapType == "edt_ground") frontier = CalculateFrontier(edtCloud, voxelSize, bboxMin, bboxMax, filterByBbox, filterByNormal, filterByCluster, normalZ, clusterSize, true);
+      else if (mapType == "edt") frontier = CalculateFrontier(edtCloud, voxelSize, bboxMin, bboxMax, filterByBbox, filterByNormal,
+                                                              filterByCluster, normalZ, clusterSize);
       ROS_INFO("Frontier calculated in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
       tStart = clock();
       frontierMsg = ConvertFrontierToROSMsg(frontier);

@@ -19,6 +19,7 @@ double Utility(double gain, double cost, double param = 0.0, std::string type = 
   if (type == "linear") return UtilityLinear(gain, cost, param);
   else if (type == "exponential") return UtilityExponential(gain, cost, param);
   else if (type == "efficiency") return UtilityEfficiency(gain, cost);
+  else return 0.0;
 }
 
 double UtilityLinear(double gain, double cost, double alpha)

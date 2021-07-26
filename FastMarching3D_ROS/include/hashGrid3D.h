@@ -18,6 +18,7 @@ class HashGrid3D {
     std::vector<std::vector<double>> idToPositionLookup;
     std::vector<bool> subMapEdgeTable;
     double voxelSize;
+    double smallDelta;
     T initialValue;
     bool checkBounds = false;
     int _SetKey(double x, double y, double z, int index);
@@ -52,12 +53,13 @@ template <typename T>
 HashGrid3D<T>::HashGrid3D(double _mins[3], double _maxes[3], int _subMapSizes[3], T _initialValue, double _voxelSize)
 {
   voxelSize = _voxelSize;
+  smallDelta = 0.1*voxelSize;
   initialValue = _initialValue;
   for (int i=0; i<3; i++) {
     mins[i] = _mins[i];
     maxes[i] = _maxes[i];
     subMapSizes[i] = _subMapSizes[i];
-    sizes[i] = ceil( (ceil( (maxes[i] - mins[i])/voxelSize) + 1 )/subMapSizes[i] );
+    sizes[i] = ceil( (ceil( (maxes[i] - mins[i])/voxelSize )+1)/subMapSizes[i] );
   }
   _InitializeIdToPositionLookup();
   _InitializeBlankSubMap();
@@ -179,9 +181,9 @@ T HashGrid3D<T>::Get(double x, double y, double z)
 template <typename T>
 int HashGrid3D<T>::_GetKeyId(double x, double y, double z)
 {
-  int dx = std::floor(x/(subMapSizes[0]*voxelSize));
-  int dy = std::floor(y/(subMapSizes[1]*voxelSize));
-  int dz = std::floor(z/(subMapSizes[2]*voxelSize));
+  int dx = std::floor((x+smallDelta)/(subMapSizes[0]*voxelSize));
+  int dy = std::floor((y+smallDelta)/(subMapSizes[1]*voxelSize));
+  int dz = std::floor((z+smallDelta)/(subMapSizes[2]*voxelSize));
   return dx + dy*sizes[0] + dz*sizes[1]*sizes[0];
 }
 
@@ -189,9 +191,9 @@ template <typename T>
 std::vector<double> HashGrid3D<T>::_CalculateSubMapMins(double x, double y, double z)
 {
   std::vector<double> mins_submap;
-  mins_submap.push_back(mins[0] + voxelSize*subMapSizes[0]*std::floor(x/(subMapSizes[0]*voxelSize)));
-  mins_submap.push_back(mins[1] + voxelSize*subMapSizes[1]*std::floor(y/(subMapSizes[1]*voxelSize)));
-  mins_submap.push_back(mins[2] + voxelSize*subMapSizes[2]*std::floor(z/(subMapSizes[2]*voxelSize)));
+  mins_submap.push_back(mins[0] + voxelSize*subMapSizes[0]*std::floor((x+smallDelta)/(subMapSizes[0]*voxelSize)));
+  mins_submap.push_back(mins[1] + voxelSize*subMapSizes[1]*std::floor((y+smallDelta)/(subMapSizes[1]*voxelSize)));
+  mins_submap.push_back(mins[2] + voxelSize*subMapSizes[2]*std::floor((z+smallDelta)/(subMapSizes[2]*voxelSize)));
   return mins_submap;
 }
 

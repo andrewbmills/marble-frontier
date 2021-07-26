@@ -196,7 +196,7 @@ void project_truncated_depths::callback_image(const sensor_msgs::ImageConstPtr& 
 int main(int argc, char **argv)
 {
   // Initialize ROS node with name and object instantiation
-  ros::init(argc, argv, "project_truncated_depths");
+  ros::init(argc, argv, "depthImageToPointCloud2");
   ros::NodeHandle n;
 
   project_truncated_depths trunc_depths;
@@ -209,14 +209,14 @@ int main(int argc, char **argv)
 
   // Get depth camera min and max range values
   double rMin, rMax;
-  n.param("project_truncated_depths/rMin", rMin, (double)0.05);
-  n.param("project_truncated_depths/rMax", rMax, (double)6.5);
+  n.param("depthImageToPointCloud2/rMin", rMin, (double)0.05);
+  n.param("depthImageToPointCloud2/rMax", rMax, (double)11.0);
   trunc_depths.camera.rMin = rMin;
   trunc_depths.camera.rMax = rMax;
 
   // Declare and read in the node update rate from the launch file parameters
   double updateRate;
-  n.param("project_truncated_depths/updateRate", updateRate, (double)10.0); // Hz
+  n.param("depthImageToPointCloud2/updateRate", updateRate, (double)10.0); // Hz
   ros::Rate r(updateRate);
 
   // Run the node until ROS quits

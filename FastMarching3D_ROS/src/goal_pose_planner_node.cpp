@@ -36,58 +36,6 @@ bool poseUpdated = false;
 std_msgs::Header pathMsgHeader;
 bool firstPoseReceived = false;
 
-void GetPointCloudBounds(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud, float min[3], float max[3])
-{
-  Point boundsMin{0.0, 0.0, 0.0};
-  Point boundsMax{0.0, 0.0, 0.0};
-
-  // Get the xyz extents of the PCL by running one loop through the data
-  for (int i=0; i<cloud->points.size(); i++) {
-    pcl::PointXYZI query = cloud->points[i];
-    if (i == 0) {
-      boundsMin.x = (double)query.x; boundsMin.y = (double)query.y; boundsMin.z = (double)query.z;
-      boundsMax.x = (double)query.x; boundsMax.y = (double)query.y; boundsMax.z = (double)query.z;
-      continue;
-    }
-    if (query.x < boundsMin.x) boundsMin.x = (double)query.x;
-    if (query.y < boundsMin.y) boundsMin.y = (double)query.y;
-    if (query.z < boundsMin.z) boundsMin.z = (double)query.z;
-    if (query.x > boundsMax.x) boundsMax.x = (double)query.x;
-    if (query.y > boundsMax.y) boundsMax.y = (double)query.y;
-    if (query.z > boundsMax.z) boundsMax.z = (double)query.z;
-  }
-
-  min[0] = boundsMin.x; min[1] = boundsMin.y; min[2] = boundsMin.z;
-  max[0] = boundsMax.x; max[1] = boundsMax.y; max[2] = boundsMax.z;
-  return;
-}
-
-void GetPointCloudBounds(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, float min[3], float max[3])
-{
-  Point boundsMin{0.0, 0.0, 0.0};
-  Point boundsMax{0.0, 0.0, 0.0};
-
-  // Get the xyz extents of the PCL by running one loop through the data
-  for (int i=0; i<cloud->points.size(); i++) {
-    pcl::PointXYZ query = cloud->points[i];
-    if (i == 0) {
-      boundsMin.x = (double)query.x; boundsMin.y = (double)query.y; boundsMin.z = (double)query.z;
-      boundsMax.x = (double)query.x; boundsMax.y = (double)query.y; boundsMax.z = (double)query.z;
-      continue;
-    }
-    if (query.x < boundsMin.x) boundsMin.x = (double)query.x;
-    if (query.y < boundsMin.y) boundsMin.y = (double)query.y;
-    if (query.z < boundsMin.z) boundsMin.z = (double)query.z;
-    if (query.x > boundsMax.x) boundsMax.x = (double)query.x;
-    if (query.y > boundsMax.y) boundsMax.y = (double)query.y;
-    if (query.z > boundsMax.z) boundsMax.z = (double)query.z;
-  }
-
-  min[0] = boundsMin.x; min[1] = boundsMin.y; min[2] = boundsMin.z;
-  max[0] = boundsMax.x; max[1] = boundsMax.y; max[2] = boundsMax.z;
-  return;
-}
-
 void CallbackSpeedMap(const sensor_msgs::PointCloud2::ConstPtr msg)
 {
   if (msg->data.size() == 0) return;
@@ -114,9 +62,9 @@ void CallbackSpeedMap(const sensor_msgs::PointCloud2::ConstPtr msg)
     pcl::PointXYZI query = speedMapCloud->points[i];
     // Consider the hyperbolic tan function from the btraj paper
     // esdf = v_max*(tanh(d - e) + 1)/2
-    float speed = (1.0/voxelSize)*0.5*(std::tanh(2.0*query.intensity - std::exp(1.0)) + 1);
-    if (query.intensity >= speedSafe) speedMap.SetVoxel(query.x, query.y, query.z, speed);
-    // if (query.intensity >= speedSafe) speedMap.SetVoxel(query.x, query.y, query.z, std::min((double)query.intensity, speedMax));
+    // float speed = (1.0/voxelSize)*0.5*(std::tanh(2.0*query.intensity - std::exp(1.0)) + 1);
+    // if (query.intensity >= speedSafe) speedMap.SetVoxel(query.x, query.y, query.z, speed);
+    if (query.intensity >= speedSafe) speedMap.SetVoxel(query.x, query.y, query.z, std::min((double)query.intensity, speedMax));
 
   }
   
@@ -329,6 +277,10 @@ int main(int argc, char **argv)
   n.param("goal_pose_planner/update_rate", update_rate, (float)1.0); // hz
   std::string pathMode;
   n.param<std::string>("goal_pose_planner/path_mode", pathMode, "gradient");
+  double utility_param;
+  n.param("goal_pose_planner/utility_param", utility_param, (double)1.0);
+  std::string utility_function;
+  n.param<std::string>("goal_pose_planner/utility_function", utility_function, "efficiency");
   
   ros::Rate r(update_rate); // 5 Hz
   ROS_INFO("Finished reading params.");
@@ -349,7 +301,7 @@ int main(int argc, char **argv)
       ROS_INFO("Projecting robot position onto map...");
       Point robotPosition = {(float)robot.position.x, (float)robot.position.y, (float)robot.position.z};
       // robotPosition = ProjectPointToSpeedMapZ(robotPosition, speedMap);
-      robotPosition = ProjectPointToSpeedCloudMap(robotPosition, speedMapCloud, speedSafe + speedMap.voxelSize);
+      robotPosition = ProjectPointToSpeedCloudMap(robotPosition, speedMapCloud, speedSafe + 2.5*speedMap.voxelSize);
       robot.position.x = robotPosition.x; robot.position.y = robotPosition.y; robot.position.z = robotPosition.z;
       int robotPositionIds[3] = {(int)std::roundf(((float)robot.position.x - speedMap.minBounds.x)/speedMap.voxelSize),
           (int)std::roundf(((float)robot.position.y - speedMap.minBounds.y)/speedMap.voxelSize),
@@ -361,7 +313,7 @@ int main(int argc, char **argv)
       reachMap.SetAll(0.0);
       ROS_INFO("Calculating cost to %d goals...", (int)goalsCloud->points.size());
       std::vector<GoalPath> goalsRanked = reach(robotPositionIds, robot, &speedMap, goals.voxels, &reachMap, true, true, std::min((int)goalsCloud->points.size(),
-                                                numGoals), turnRate, marchingTimeOut, goalSeparationDistance);
+                                                numGoals), turnRate, marchingTimeOut, goalSeparationDistance, utility_param, utility_function);
       pubReach.publish(ConvertReachMapToPointCloud2(&reachMap));
 
       // Erase all goals with less than 2 point paths

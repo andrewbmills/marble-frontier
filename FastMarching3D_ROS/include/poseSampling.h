@@ -105,10 +105,9 @@ pcl::PointCloud<pcl::PointXYZLNormal>::Ptr cloudInliers)
     return 0;
 }
 
-void greedyGrouping(const float radius, const pcl::PointCloud<pcl::PointXYZLNormal>::Ptr cloud, std::vector<pcl::PointIndices> clusterIndices,
-std::vector<Group> &groups)
+void greedyGrouping(const float radius, const pcl::PointCloud<pcl::PointXYZLNormal>::Ptr cloud, std::vector<Group> &groups)
 {
-  // greedGrouping generates a vector of (pcl::PointIndices) where each entry in the vector is a greedily sampled group of points within radius of a randomly sampled frontier member.
+  // greedGrouping generates a vector of groups where each entry in the vector is a greedily sampled group of points within radius of a randomly sampled frontier member.
   // Algorithm:
   //    0) clusterCount = 0; groupCount = 0;
   //    1) Add all indices in the current cluster (frontierClusterIndices[clusterCount]) to ungrouped
@@ -132,65 +131,51 @@ std::vector<Group> &groups)
   // std::mt19937 mt(19937);
   std::mt19937 mt(rd()); // Really random (much better than using rand())
 
-  // Initialize counts of the current group and cluster in the algorithm
   int groupCount = 0;
-  int clusterCount = 0;
-
-  // Clear the greedy cluster arrays in the msfm3d object
   groups.clear();
 
-  ROS_INFO("Beginning greedy grouping of %d clusters with sizes:", (int)clusterIndices.size());
-  for (int i = 0; i < clusterIndices.size(); i++) {
-  	std::cout << clusterIndices[i].indices.size() << " ";
+  ROS_INFO("Beginning greedy grouping of %d cloud points:", (int)cloud->points.size());
+  // Initialize a PointIndices pointer of all the ungrouped points in the current cluster
+  pcl::PointIndices::Ptr ungrouped(new pcl::PointIndices);
+  for (int i=0; i<cloud->points.size(); i++) {
+    ungrouped->indices.push_back(i);
   }
-  std::cout << std::endl;
 
-  // Loop through all of the frontier clusters
-  for (std::vector<pcl::PointIndices>::const_iterator it = clusterIndices.begin(); it != clusterIndices.end(); ++it) {
+  // Go until every member of ungrouped is in a greedy group
+  while (ungrouped->indices.size() > 0) {
+    // Reset/Update ungrouped PointCloud
+    pcl::PointCloud<pcl::PointXYZLNormal>::Ptr ungroupedCloud(new pcl::PointCloud<pcl::PointXYZLNormal>);
+    pcl::ExtractIndices<pcl::PointXYZLNormal> extract;
+    extract.setInputCloud(cloud);
+    extract.setIndices(ungrouped);
+    extract.filter(*ungroupedCloud);
+    // ROS_INFO("Initializing ungrouped_cloud for group %d containing %d points.", groupCount, (int)ungroupedCloud->points.size());
 
-    // Initialize a PointIndices pointer of all the ungrouped points in the current cluster
-    pcl::PointIndices::Ptr ungrouped(new pcl::PointIndices);
-    for (std::vector<int>::const_iterator pit = it->indices.begin(); pit != it->indices.end(); ++pit) {
-    	ungrouped->indices.push_back(*pit);
+    // Sample a random index from ungrouped
+    std::uniform_int_distribution<int> dist(0, (int)ungrouped->indices.size()-1);
+    int sampleId = ungrouped->indices[dist(mt)];
+    pcl::PointXYZLNormal samplePoint = cloud->points[sampleId];
+    // ROS_INFO("Sampled index %d which is located at (%f, %f, %f).", sampleId, samplePoint.x, samplePoint.y, samplePoint.z);
+
+    // Find all the voxels in ungrouped_cloud that are within r of sample_point
+    pcl::PointIndices::Ptr group(new pcl::PointIndices);
+    pcl::PointCloud<pcl::PointXYZLNormal>::Ptr groupCloud(new pcl::PointCloud<pcl::PointXYZLNormal>);
+    filterCloudRadius(radius, samplePoint, ungroupedCloud, group, groupCloud);
+
+    // Add grouped indices to greedyGroups
+    Group newGroup;
+    newGroup.centroid = samplePoint;
+    for (std::vector<int>::const_iterator git = group->indices.begin(); git != group->indices.end(); ++git) {
+      newGroup.indices.indices.push_back(ungrouped->indices[*git]); // Add indices to group
+      ungrouped->indices[*git] = -1;
     }
-
-    // Go until every member of ungrouped is in a greedy group
-    while (ungrouped->indices.size() > 0) {
-      // Reset/Update ungrouped PointCloud
-      pcl::PointCloud<pcl::PointXYZLNormal>::Ptr ungroupedCloud(new pcl::PointCloud<pcl::PointXYZLNormal>);
-      pcl::ExtractIndices<pcl::PointXYZLNormal> extract;
-      extract.setInputCloud(cloud);
-      extract.setIndices(ungrouped);
-      extract.filter(*ungroupedCloud);
-      // ROS_INFO("Initializing ungrouped_cloud for group %d containing %d points.", groupCount, (int)ungroupedCloud->points.size());
-
-      // Sample a random index from ungrouped
-      std::uniform_int_distribution<int> dist(0, (int)ungrouped->indices.size()-1);
-      int sampleId = ungrouped->indices[dist(mt)];
-      pcl::PointXYZLNormal samplePoint = cloud->points[sampleId];
-      // ROS_INFO("Sampled index %d which is located at (%f, %f, %f).", sampleId, samplePoint.x, samplePoint.y, samplePoint.z);
-
-      // Find all the voxels in ungrouped_cloud that are within r of sample_point
-      pcl::PointIndices::Ptr group(new pcl::PointIndices);
-      pcl::PointCloud<pcl::PointXYZLNormal>::Ptr groupCloud(new pcl::PointCloud<pcl::PointXYZLNormal>);
-      filterCloudRadius(radius, samplePoint, ungroupedCloud, group, groupCloud);
-
-      // Add grouped indices to greedyGroups
-      Group newGroup;
-      newGroup.centroid = samplePoint;
-      for (std::vector<int>::const_iterator git = group->indices.begin(); git != group->indices.end(); ++git) {
-        newGroup.indices.indices.push_back(ungrouped->indices[*git]); // Add indices to group
-        ungrouped->indices[*git] = -1;
-      }
-      groups.push_back(newGroup);
-      groupCount++;
-      // ROS_INFO("Added new group of size %d to groups list.", (int)newGroup.indices.indices.size());
-      // Removed grouped indices from ungrouped  (This command removes all members of ungrouped->indices that have a value of -1)
-      ungrouped->indices.erase(std::remove(ungrouped->indices.begin(), ungrouped->indices.end(), -1), ungrouped->indices.end());
-    }
-    clusterCount++;
+    groups.push_back(newGroup);
+    groupCount++;
+    // ROS_INFO("Added new group of size %d to groups list.", (int)newGroup.indices.indices.size());
+    // Removed grouped indices from ungrouped  (This command removes all members of ungrouped->indices that have a value of -1)
+    ungrouped->indices.erase(std::remove(ungrouped->indices.begin(), ungrouped->indices.end(), -1), ungrouped->indices.end());
   }
-  ROS_INFO("%d groups generated from the frontier clusters.", groupCount);
+  ROS_INFO("%d groups generated from the input cloud.", groupCount);
   return;
 }
 
@@ -368,10 +353,12 @@ View SampleGoalFibonacciList(pcl::PointXYZLNormal source, int sample, float radi
   return v;
 }
 
-std::vector<View> SampleGoals(std::vector<Group> groups, SensorFoV sensor, MapGrid3D<float> map, octomap::OcTree* octomap, int sampleLimit, float minObstacleProximity, std::string mode="uniform")
+std::vector<View> SampleGoals(std::vector<Group> groups, SensorFoV sensor, MapGrid3D<float> map, octomap::OcTree* octomap, int sampleLimit,
+float minObstacleProximity, std::string mode="uniform", float radiusRatio=0.5)
 {
   std::vector<View> goals;
-  float radius = (sensor.rMax - sensor.rMin)*0.5 + sensor.rMin;
+  float radius = (sensor.rMax - sensor.rMin)*radiusRatio + sensor.rMin;
+  sensor.rMax = radius;
   ROS_INFO("Sampling goal views for %d groups.", (int)groups.size());
   for (int i=0; i<groups.size(); i++) {
     View v;
@@ -473,23 +460,40 @@ std::vector<View> FilterGoalsFrontiersBBX(std::vector<View> goals, pcl::PointClo
   return goals;
 }
 
-MapGrid3D<int> ConvertFrontierPointCloudToMapGrid3D(pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontier, float voxelSize)
+MapGrid3D<int> ConvertFrontierPairToMapGrid3D(pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierA, pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierB, 
+float voxelSize)
 {
-  double min[3], max[3];
-  GetPointCloudBounds(frontier, min, max);
-  // ROS_INFO("Frontier cloud has bounds (%0.1f, %0.1f, %0.1f) to (%0.1f, %0.1f, %0.1f).", min[0], min[1], min[2], max[0], max[1], max[2]);
-  for (int i=0; i<3; i++) {
-    min[i] = min[i] - 1.0*voxelSize;
-    max[i] = max[i] + 1.0*voxelSize;
+  double minA[3], maxA[3], minB[3], maxB[3], minBounds[3], maxBounds[3];
+  for (int i=0; i<2; i++) {
+    minA[i] = 0.0; maxA[i] = 0.0; minB[i] = 0.0; maxB[i] = 0.0;
   }
+  GetPointCloudBounds(frontierA, minA, maxA);
+  GetPointCloudBounds(frontierB, minB, maxB);
+  for (int i=0; i<3; i++) {
+    minBounds[i] = std::min(minA[i], minB[i]) - 2.0*voxelSize;
+    maxBounds[i] = std::max(maxA[i], maxB[i]) + 2.0*voxelSize;
+  }
+
+  ROS_INFO("Frontier pair MapGrid3D has bounds (%0.1f, %0.1f, %0.1f) to (%0.1f, %0.1f, %0.1f).", minBounds[0], minBounds[1], minBounds[2],
+  maxBounds[0], maxBounds[1], maxBounds[2]);
+
   MapGrid3D<int> frontierMap;
-  frontierMap.Reset(voxelSize, min, max, -1);
-  // ROS_INFO("Copying over new frontier data into gridMap3D");
-  for (int i=0; i<frontier->points.size(); i++) {
-    Point p = {frontier->points[i].x, frontier->points[i].y, frontier->points[i].z};
+  frontierMap.Reset(voxelSize, minBounds, maxBounds, -1);
+  ROS_INFO("Copying over new frontier data into MapGrid3D");
+  for (int i=0; i<frontierA->points.size(); i++) {
+    Point p = {frontierA->points[i].x, frontierA->points[i].y, frontierA->points[i].z};
     if (frontierMap._CheckVoxelPositionInBounds(p))
-    frontierMap.SetVoxel(frontier->points[i].x, frontier->points[i].y, frontier->points[i].z, i);
+      frontierMap.SetVoxel(p.x, p.y, p.z, 1); // 1 = voxel is in frontierA only
     else {
+      ROS_INFO("Frontier voxel out of bounds");
+    }
+  }
+  for (int i=0; i<frontierB->points.size(); i++) {
+    Point p = {frontierB->points[i].x, frontierB->points[i].y, frontierB->points[i].z};
+    if (frontierMap._CheckVoxelPositionInBounds(p)) {
+      int label = frontierMap.Query(p.x, p.y, p.z) + 3;
+      frontierMap.SetVoxel(p.x, p.y, p.z, label); // 2 = voxel is in frontierB only, 4 = voxel is in both frontiers
+    } else {
       ROS_INFO("Frontier voxel out of bounds");
     }
   }
@@ -497,67 +501,69 @@ MapGrid3D<int> ConvertFrontierPointCloudToMapGrid3D(pcl::PointCloud<pcl::PointXY
 }
 
 void GetFrontierDiff(pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierOld, pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierNew,
-  float voxelSize, pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierDiff, std::vector<pcl::PointIndices> &clustersDiff)
+  float voxelSize, pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierAdded, pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierRemoved)
 {
-  // ROS_INFO("Getting the difference between frontiers...");
+  ROS_INFO("Getting the difference between frontiers...");
   // Clear out frontierDiff points to store the function output
-  frontierDiff->points.clear();
-  clustersDiff.clear();
+  frontierAdded->points.clear();
+  frontierRemoved->points.clear();
 
-  // Convert frontierOld to a flat matrix of array indices
-  MapGrid3D<int> frontierOldMap = ConvertFrontierPointCloudToMapGrid3D(frontierOld, voxelSize);
+  // Convert frontierOld and frontierNew to a flat matrix.
+  MapGrid3D<int> frontierMap = ConvertFrontierPairToMapGrid3D(frontierOld, frontierNew, voxelSize);
   // ROS_INFO("Converted old frontier pointcloud to a MapGrid3D object.");
 
-  // Check if the frontier voxels have changed between new and old
-  int diffVoxelCount = 0;
+  for (int i=0; i<frontierOld->points.size(); i++) {
+    if (frontierMap.Query(frontierOld->points[i].x, frontierOld->points[i].y, frontierOld->points[i].z) == 1) {
+      // Frontier voxel is only in frontierOld and not in frontierNew so it was just removed
+      frontierRemoved->points.push_back(frontierOld->points[i]);
+    }
+  }
   for (int i=0; i<frontierNew->points.size(); i++) {
-    pcl::PointXYZLNormal frontierVoxel = frontierNew->points[i];
-    Point p;
-    bool addVoxel = false;
-    p.x = frontierVoxel.x; p.y = frontierVoxel.y; p.z = frontierVoxel.z;
-    if (frontierOldMap._CheckVoxelPositionInBounds(p)) {
-      if (frontierOldMap.Query(p.x, p.y, p.z) == -1) {
-        addVoxel = true;
-      }
-    } else {
-      addVoxel = true;
-    }
-    if (addVoxel) {
-      // Add indices to clustersDiff until it's the same size
-      while (frontierVoxel.label >= clustersDiff.size()) {
-        // ROS_INFO("Adding cluster to cluster indices vector of length %d for frontier voxel with label %d...", (int)clustersDiff.size(), frontierVoxel.label);
-        pcl::PointIndices indices;
-        clustersDiff.push_back(indices);
-      }
-      frontierDiff->points.push_back(frontierVoxel);
-      clustersDiff[frontierVoxel.label].indices.push_back(diffVoxelCount);
-      addVoxel = false;
-      diffVoxelCount++;
+    if (frontierMap.Query(frontierNew->points[i].x, frontierNew->points[i].y, frontierNew->points[i].z) == 2) {
+      // Frontier voxel is only in frontierNew and not in frontierOld so it was just added
+      frontierAdded->points.push_back(frontierNew->points[i]);
     }
   }
+  ROS_INFO("Calculated difference cloud between two frontiers.");
+}
 
-  // ROS_INFO("%d clusters worth of indices initially copied with sizes:", (int)clustersDiff.size());
-  for (int i=0; i<clustersDiff.size(); i++) std::cout << clustersDiff[i].indices.size() << ", ";
-  std::cout << std::endl;
-
-  // Erase clusterIndices entries with 0 members
-  for (int i=(clustersDiff.size()-1); i>=0; i--) {
-    if (clustersDiff[i].indices.size() == 0) {
-      clustersDiff.erase(clustersDiff.begin() + i);
-    }
+MapGrid3D<int> ConvertFrontierPointCloudToMapGrid3D(pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontier, float voxelSize)
+{
+  double minBounds[3], maxBounds[3];
+  for (int i=0; i<3; i++) {
+    minBounds[i] = 0.0; maxBounds[i] = 0.0;
+  }
+  GetPointCloudBounds(frontier, minBounds, maxBounds);
+  for (int i=0; i<3; i++) {
+    minBounds[i] = minBounds[i] - 2.0*voxelSize;
+    maxBounds[i] = maxBounds[i] + 2.0*voxelSize;
   }
 
-  // ROS_INFO("Calculated difference cloud between two frontiers.");
+  ROS_INFO("Frontier MapGrid3D has bounds (%0.1f, %0.1f, %0.1f) to (%0.1f, %0.1f, %0.1f).", minBounds[0], minBounds[1], minBounds[2],
+  maxBounds[0], maxBounds[1], maxBounds[2]);
+
+  MapGrid3D<int> frontierMap;
+  frontierMap.Reset(voxelSize, minBounds, maxBounds, -1);
+  ROS_INFO("Copying over new frontier data into MapGrid3D");
+  for (int i=0; i<frontier->points.size(); i++) {
+    Point p = {frontier->points[i].x, frontier->points[i].y, frontier->points[i].z};
+    if (frontierMap._CheckVoxelPositionInBounds(p))
+      frontierMap.SetVoxel(p.x, p.y, p.z, i); // 1 = voxel is in frontierA only
+    else {
+      ROS_INFO("Frontier voxel out of bounds");
+    }
+  }
+  return frontierMap;
 }
 
 std::vector<View> FilterGoalsNewFrontier(std::vector<View> goals, float voxelSize, pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierNew)
 {
   // Remove all goals whose frontier source voxel is no longer a frontier
-  // ROS_INFO("%d goals from last sampler run.  Erasing goal poses sourced by voxels that are no longer frontier...", (int)goals.size());
+  ROS_INFO("%d goals from last sampler run.  Erasing goal poses sourced by voxels that are no longer frontier...", (int)goals.size());
   int goalsErased = 0;
   MapGrid3D<int> frontierNewMap = ConvertFrontierPointCloudToMapGrid3D(frontierNew, voxelSize);
-  // ROS_INFO("New frontier grid map created with bounds (%0.1f, %0.1f, %0.1f) to (%0.1f, %0.1f, %0.1f) ...", frontierNewMap.minBounds.x, 
-  //       frontierNewMap.minBounds.y, frontierNewMap.minBounds.z, frontierNewMap.maxBounds.x, frontierNewMap.maxBounds.y, frontierNewMap.maxBounds.z);
+  ROS_INFO("New frontier grid map created with bounds (%0.1f, %0.1f, %0.1f) to (%0.1f, %0.1f, %0.1f) ...", frontierNewMap.minBounds.x, 
+        frontierNewMap.minBounds.y, frontierNewMap.minBounds.z, frontierNewMap.maxBounds.x, frontierNewMap.maxBounds.y, frontierNewMap.maxBounds.z);
   if (goals.size() > 0) {
     for (int i=(goals.size()-1); i>=0; i--) {
       View goal = goals[i];
@@ -574,7 +580,7 @@ std::vector<View> FilterGoalsNewFrontier(std::vector<View> goals, float voxelSiz
       }
     }
   }
-  // ROS_INFO("%d goal poses removed because their source voxels are from a changed frontier cluster", goalsErased);
+  ROS_INFO("%d goal poses removed because their source voxels are from a changed frontier cluster", goalsErased);
   return goals;
 }
 

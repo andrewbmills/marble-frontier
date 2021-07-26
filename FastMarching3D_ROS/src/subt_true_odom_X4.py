@@ -10,9 +10,9 @@ from gazebo_msgs.srv import GetLinkState
 
 class LinkStateToOdometry:
 	def getLinkState(self): # Position subscriber callback function		
-		X1_state = self.gazebo_link_state(self.link_name, 'world')
-		self.Odometry.pose.pose = X1_state.link_state.pose
-		self.Odometry.twist.twist = X1_state.link_state.twist
+		state = self.gazebo_link_state(self.link_name, 'world')
+		self.Odometry.pose.pose = state.link_state.pose
+		self.Odometry.twist.twist = state.link_state.twist
 
 		# Add time stamp
 		self.Odometry.header.stamp = rospy.Time.now()

@@ -104,7 +104,8 @@ float CalculatePathCost(std::vector<Point> path)
 }
 
 std::vector<GoalPath> reach(int source[3], geometry_msgs::Pose start, MapGrid3D<double> *speedMap, std::vector<float> goals, MapGrid3D<double> *reachOut,
-const bool usesecond, const bool usecross, const int nGoalStop, const float turnRate = 1.0, const double timeOut = 1.0, const float minGoalSeparationDistance = 5.0)
+const bool usesecond, const bool usecross, const int nGoalStop, const float turnRate = 1.0, const double timeOut = 1.0,
+const float minGoalSeparationDistance = 5.0, const double utility_param = 1.0, const std::string utility_function = "efficiency")
 {
     // ROS_INFO("Fast marching from (%0.2f, %0.2f, %0.2f)", (source[0]*speedMap->voxelSize)+speedMap->minBounds.x, (source[1]*speedMap->voxelSize)+speedMap->minBounds.y, (source[2]*speedMap->voxelSize)+speedMap->minBounds.z);
     // ROS_INFO("Speed map details - ");
@@ -394,7 +395,7 @@ const bool usesecond, const bool usecross, const int nGoalStop, const float turn
           // else cost = CalculatePathCost(newPath) + CostToTurnPath(start, newPath, turnRate);
           else cost = T[XYZ_index] + CostToTurnPath(start, newPath, turnRate);
           ROS_INFO("Fast Marching cost: %0.1f, true cost: %0.1f (path = %0.1f, turn = %0.1f)", T[XYZ_index], cost, CalculatePathCost(newPath), CostToTurnPath(start, newPath, turnRate));
-          float utility = Utility(gain, cost);
+          float utility = Utility(gain, cost, utility_param, utility_function);
 
           // Add point to goalsReached
           if (goalsReachedSorted.size() == 0) {
@@ -456,7 +457,7 @@ const bool usesecond, const bool usecross, const int nGoalStop, const float turn
           if (gainsUnreached.size() > 0) {
             if (goalsReachedSorted.size() >= nGoalStop) {
               // Cost associated with nth best utility and best remaining gain guarantees the best n goals have been found.
-              terminationCost = CostFromUtilityGain(gainsUnreached.back(), goalsReachedSorted[nGoalStop-1].utility);
+              terminationCost = CostFromUtilityGain(gainsUnreached.back(), goalsReachedSorted[nGoalStop-1].utility, utility_param, utility_function);
             }
             else {
               terminationCost = 1e10;

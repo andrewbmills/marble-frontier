@@ -1,25 +1,69 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch>
-  <group ns="X4">   
-    <node pkg="octomap_server" type="octomap_server_node" name="octomap_server">
-      <param name="resolution" value="0.2" />
-      <!-- fixed map frame (set to 'map' if SLAM or localization running!) -->
-      <param name="frame_id" type="string" value="world" />
-      <!-- maximum range to integrate (speedup!) -->
-      <param name="sensor_model/max_range" value="5.0" />
-      <!-- data source to integrate (PointCloud2) -->
-      <remap from="cloud_in" to="depth_cam_fixed" />
-    </node>
 
+  <!-- Voxblox arguments -->
+  <arg name="voxel_size" default="0.20"/>
+  <arg name="voxels_per_side" default="4"/>
+  <arg name="ray_length" default="8.0"/>
+  <arg name="method" default="fast"/>
+  <arg name="verbose_voxblox" default="false"/>
+  <arg name="clear_radius" default="1.4"/>
+
+  <node pkg="msfm3d" type="subt_true_odom_X4.py" name="subt_true_odom"/>
+
+  <group ns="X4">   
     <node pkg="msfm3d" type="depthImageToPointCloud2" name="depthImageToPointCloud2">
       <param name="rMin" value="0.05" />
-      <param name="rMax" value="6.5" />
+      <param name="rMax" value="7.0" />
       <param name="updateRate" value="10.0" />
+      <remap from="depth_cam_fixed" to="points" />
     </node>
 
-    <!-- <node pkg="ground_finder" type="octomap_to_edt" name="octomap_to_edt">
-      <param name="update_rate" value="3.0"/>
-      <param name="fixed_frame_id" value="world"/>
-    </node> -->
+    <node pkg="nodelet" type="nodelet" name="pcl_manager_voxelgrid" args="manager"/>
+    <node pkg="nodelet" type="nodelet" name="voxel_grid" args="load pcl/VoxelGrid pcl_manager_voxelgrid">
+        <remap from="~input" to="points"/>
+        <remap from="~output" to="points_filtered"/>
+        <rosparam>
+        filter_field_name: z
+        filter_limit_min: -100.0
+        filter_limit_max: 100.0
+        filter_limit_negative: False
+        leaf_size: 0.07
+        </rosparam>
+    </node>
+
+    <node pkg="octomap_server" type="octomap_server_node" name="octomap_server">
+      <param name="resolution" value="$(arg voxel_size)" />
+      <param name="frame_id" type="string" value="world" />
+      <param name="sensor_model/max_range" value="5.0" />
+      <remap from="cloud_in" to="points_filtered" />
+    </node>
+
+    <!-- Voxblox -->
+    <node name="voxblox_node" pkg="voxblox_ros" type="esdf_server" output="screen" args="-alsologtostderr">
+      <remap from="pointcloud" to="points_filtered"/>
+      <remap from="voxblox_node/esdf_pointcloud" to="edt"/>
+      <param name="use_tf_transforms" value="true"/>
+      <param name="publish_tsdf_map" value="false" />
+      <param name="publish_esdf_map" value="false" />
+      <param name="publish_pointclouds" value="true" />
+      <param name="tsdf_voxel_size" value="$(arg voxel_size)" />
+      <param name="tsdf_voxels_per_side" value="$(arg voxels_per_side)" />
+      <param name="color_mode" value="color" />
+      <param name="update_mesh_every_n_sec" value="0.2" />
+      <param name="min_time_between_msgs_sec" value="0.2" />
+      <param name="voxel_carving_enabled" value="true" />
+      <param name="method" value="$(arg method)" />
+      <param name="max_ray_length" value="$(arg ray_length)" />
+      <param name="esdf_max_distance" value="3.0" />
+      <param name="allow_clear" value="true" />
+      <param name="verbose" value="$(arg verbose_voxblox)" />
+      <param name="clear_sphere_for_planning" value="true" />
+      <param name="clear_sphere_radius" value="$(arg clear_radius)" />
+      <param name="occupied_sphere_radius" value="$(arg clear_radius)" />
+      <param name="color_mode" value="color" />
+      <param name="use_tf_transforms" value="true" />
+      <param name="world_frame" value="world" />
+    </node>
   </group>
 </launch>

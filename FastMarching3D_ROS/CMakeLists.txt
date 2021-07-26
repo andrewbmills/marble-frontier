@@ -122,3 +122,31 @@ add_executable(frontier_test test/src/frontier_test.cpp)
 target_link_libraries(frontier_test
   ${catkin_LIBRARIES}
 )
+
+add_executable(frontier_display_test test/src/frontier_display_test.cpp)
+target_link_libraries(frontier_display_test
+  ${catkin_LIBRARIES}
+)
+
+add_executable(frontier_filters_test test/src/frontier_filters_test.cpp)
+target_link_libraries(frontier_filters_test
+  ${catkin_LIBRARIES}
+)
+
+add_executable(frontier_benchmark test/src/frontier_benchmark.cpp)
+target_link_libraries(frontier_benchmark
+  ${catkin_LIBRARIES}
+)
+
+add_executable(parallel_test test/src/parallel_test.cpp)
+target_link_libraries(parallel_test
+  ${catkin_LIBRARIES}
+)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(parallel_test PUBLIC OpenMP::OpenMP_CXX)
+endif()
+
+add_executable(goal_pose_sampling_test test/src/goal_pose_sampling_test.cpp)
+target_link_libraries(goal_pose_sampling_test
+  ${catkin_LIBRARIES}
+)

@@ -198,6 +198,8 @@ int main(int argc, char **argv)
   n.param<std::string>("goal_pose_sampler/sample_mode", sampleMode, "gaussian");
   n.param<std::string>("goal_pose_sampler/gain_type", gainType, "frontier");
   n.param<std::string>("goal_pose_sampler/gain_debug_mode", gainDebugMode, "normal");
+  float radiusRatio = 0.0;
+  n.param("goal_pose_sampler/sampling_radius_ratio", radiusRatio, (float)0.5);
   bool checkLoS;
   n.param("goal_pose_sampler/check_LoS", checkLoS, true);
 
@@ -230,12 +232,12 @@ int main(int argc, char **argv)
       ROS_INFO("Success! EDT map created with bounds (%0.1f, %0.1f, %0.1f) to (%0.1f, %0.1f, %0.1f) ...", edtGrid.minBounds.x, 
         edtGrid.minBounds.y, edtGrid.minBounds.z, edtGrid.maxBounds.x, edtGrid.maxBounds.y, edtGrid.maxBounds.z);
       // Get new frontier pointcloud
-      pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierDiff (new pcl::PointCloud<pcl::PointXYZLNormal>); // current frontiers that weren't previously
-      std::vector<pcl::PointIndices> clusterIndicesDiff;
-      goals = FilterGoalsNewFrontier(goals, voxelSize, frontierCloud);
-      GetFrontierDiff(frontierOld, frontierCloud, voxelSize, frontierDiff, clusterIndicesDiff);
+      pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierAdded (new pcl::PointCloud<pcl::PointXYZLNormal>); // current frontiers that weren't previously
+      pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierRemoved (new pcl::PointCloud<pcl::PointXYZLNormal>); // voxels that were frontiers last step but aren't now
+      if (frontierOld->points.size() > 0) goals = FilterGoalsNewFrontier(goals, voxelSize, frontierCloud); // Don't run on first iteration
+      GetFrontierDiff(frontierOld, frontierCloud, voxelSize, frontierAdded, frontierRemoved);
       ROS_INFO("%d goals remaining after frontier difference checking.", (int)goals.size());
-      if (frontierDiff->points.size() < 100) {
+      if (frontierAdded->points.size() < 100) {
         ROS_INFO("Frontier cloud is unchanged.");
         goalsMsg = ConvertGoalsToPointCloud2(goals);
         goalsMsg.header = goalsMsgHeader;
@@ -252,17 +254,14 @@ int main(int argc, char **argv)
       // Resample goal poses on these clusters.
       // ROS_INFO("Grouping frontiers based on proximity...");
       std::vector<Group> groups;
-      greedyGrouping(groupRadius, frontierDiff, clusterIndicesDiff, groups);
+      greedyGrouping(groupRadius, frontierAdded, groups);
       // ROS_INFO("Success!");
       // // Sample goal poses
       // ROS_INFO("Converting edt pointcloud to gridmap...");
-      std::vector<View> goalsNew = SampleGoals(groups, robotSensor, edtGrid, map, sampleLimit, minObstacleProximity, sampleMode);
+      std::vector<View> goalsNew = SampleGoals(groups, robotSensor, edtGrid, map, sampleLimit, minObstacleProximity, sampleMode, radiusRatio);
 
       // Find the goals whose gains need to be updated and add them to the goalsNew vector
-      pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontierDiffOld (new pcl::PointCloud<pcl::PointXYZLNormal>); // voxels that used to be frontiers
-      std::vector<pcl::PointIndices> clusterIndicesDiffOld;
-      GetFrontierDiff(frontierCloud, frontierOld, voxelSize, frontierDiffOld, clusterIndicesDiffOld);
-      std::vector<View> goalsUpdateGain = FindGoalsCloseToCloud(goals, frontierDiffOld, robotSensor.rMax);
+      std::vector<View> goalsUpdateGain = FindGoalsCloseToCloud(goals, frontierRemoved, robotSensor.rMax);
       goalsNew.insert(goalsNew.end(), goalsUpdateGain.begin(), goalsUpdateGain.end());
 
       ROS_INFO("Frontier diff created, groups made, and goal poses sampled in: %.5fs", (double)(clock() - tStart)/CLOCKS_PER_SEC);
@@ -300,10 +299,10 @@ int main(int argc, char **argv)
       goalsPoseArrayMsg.header = goalsMsgHeader;
       pubGoalPoseArray.publish(goalsPoseArrayMsg);
 
-      sensor_msgs::PointCloud2 frontierDiffMsg;
-      pcl::toROSMsg(*frontierDiff, frontierDiffMsg);
-      frontierDiffMsg.header = goalsMsgHeader;
-      pubFrontierDiff.publish(frontierDiffMsg);
+      sensor_msgs::PointCloud2 frontierAddedMsg;
+      pcl::toROSMsg(*frontierAdded, frontierAddedMsg);
+      frontierAddedMsg.header = goalsMsgHeader;
+      pubFrontierDiff.publish(frontierAddedMsg);
 
       // // Copy frontierCloud to frontierCloudOld
       frontierOld->points.clear();

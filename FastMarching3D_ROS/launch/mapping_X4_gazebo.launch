@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+    <arg name="voxel_size" default="0.20"/>
+    <arg name="frame_id" default="world"/>
+    <arg name="robot_radius" default="0.1"/>
+    <arg name="clear_radius" default="1.1"/>
+    <node pkg="msfm3d" type="subt_true_odom_X4.py" name="subt_true_odom_X4"/>
+    <group ns="X4">
+        <node pkg="msfm3d" type="depthImageToPointCloud2" name="project_truncated_depths">
+            <remap from="depth_cam_fixed" to="points"/>
+            <param name="rMax" value="11.0"/>
+        </node>
+
+        <node pkg="nodelet" type="nodelet" name="pcl_manager_voxelgrid" args="manager"/>
+        <node pkg="nodelet" type="nodelet" name="voxel_grid" args="load pcl/VoxelGrid pcl_manager_voxelgrid">
+            <remap from="~input" to="points"/>
+            <remap from="~output" to="points_filtered"/>
+            <rosparam>
+            filter_field_name: z
+            filter_limit_min: -100.0
+            filter_limit_max: 100.0
+            filter_limit_negative: False
+            leaf_size: 0.07
+            </rosparam>
+        </node>
+
+        <node pkg="octomap_server" type="octomap_server_node" name="octomap_server" output="screen">
+            <param name="resolution" value="$(arg voxel_size)" />
+            <!-- fixed map frame (set to 'map' if SLAM or localization running!) -->
+            <param name="frame_id" type="string" value="world" />
+            <!-- maximum range to integrate (speedup!) -->
+            <param name="sensor_model/max_range" value="5.0" />
+            <!-- data source to integrate (PointCloud2) -->
+            <remap from="cloud_in" to="points_filtered" />
+        </node>
+
+        <node pkg="topic_tools" type="throttle" name="map_throttle" args="messages octomap_binary 0.25"/>
+
+        <node name="voxblox_node" pkg="voxblox_ros" type="esdf_server" output="screen" args="--alsologtostderr" clear_params="true">
+            <remap from="pointcloud" to="points_filtered"/>
+            <remap from="voxblox_node/esdf_pointcloud" to="edt"/>
+
+            <param name="publish_tsdf_map" value="false" />
+            <param name="publish_esdf_map" value="false" />
+            <param name="publish_pointclouds" value="true" />
+            <param name="publish_slices" value="false" />
+
+
+            <param name="tsdf_voxel_size" value="$(arg voxel_size)" />
+            <param name="tsdf_voxels_per_side" value="4" />
+            <param name="method" value="fast" />
+            <param name="voxel_carving_enabled" value="true" />
+            <param name="color_mode" value="color" />
+            <param name="use_tf_transforms" value="true" />
+            <param name="world_frame" value="$(arg frame_id)" />
+            <param name="clear_sphere_for_planning" value="true" />
+            <param name="clear_sphere_radius" value="$(arg clear_radius)" />
+
+            <param name="update_mesh_every_n_sec" value="0.2" />
+            <param name="verbose" value="false" />
+            <param name="min_time_between_msgs_sec" value="0.2" />
+            <param name="max_ray_length_m" value="5.0" />
+            <param name="esdf_max_distance" value="5.0" />
+        </node>
+            
+        <node pkg="topic_tools" type="throttle" name="esdf_throttle" args="messages edt 0.25"/>
+    </group>
+</launch>
