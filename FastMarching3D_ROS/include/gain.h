@@ -25,7 +25,7 @@ struct Quaternion {
   float w, x, y, z;
 };
 
-struct Quaternion HamiltonProduct(Quaternion q1, Quaternion q2)
+Quaternion HamiltonProduct(Quaternion q1, Quaternion q2)
 {
   Quaternion q3;
   q3.w = q1.w*q2.w - q1.x*q2.x - q1.y*q2.y - q1.z*q2.z;
@@ -35,7 +35,7 @@ struct Quaternion HamiltonProduct(Quaternion q1, Quaternion q2)
   return q3;
 }
 
-struct Quaternion Conjugate(Quaternion q)
+Quaternion Conjugate(Quaternion q)
 {
   q.x = -q.x; q.y = -q.y; q.z = -q.z;
   return q;
@@ -265,8 +265,11 @@ void CopyMapGrid3DToPointCloud(MapGrid3D<float> map, pcl::PointCloud<pcl::PointX
   return;
 }
 
-void CheckLineOfSight(Pose pose, octomap::OcTree* map, pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_in, pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_out, bool unseen = false)
+void CheckLineOfSight(Pose pose, octomap::OcTree* map, pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_in, pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_out,
+                      bool unseen = false, float pose_edt_value = 0.0)
 {
+  float pose_obstacle_distance_squared = pose_edt_value*pose_edt_value;
+  cloud_out->points.reserve(cloud_in->points.size());
   octomap::point3d origin(pose.position.x, pose.position.y, pose.position.z);
   for (int i=0; i<cloud_in->points.size(); i++) {
     float dx = cloud_in->points[i].x - origin.x();
@@ -274,6 +277,13 @@ void CheckLineOfSight(Pose pose, octomap::OcTree* map, pcl::PointCloud<pcl::Poin
     float dz = cloud_in->points[i].z - origin.z();
     // ROS_INFO("Checking if (%0.1f, %0.1f, %0.1f) is occluded", cloud_in->points[i].x, cloud_in->points[i].y, cloud_in->points[i].z);
     double radius_squared = dx*dx + dy*dy + dz*dz;
+
+    if (pose_obstacle_distance_squared >= radius_squared || 
+       (pose_edt_value + cloud_in->points[i].intensity)*(pose_edt_value + cloud_in->points[i].intensity) >= radius_squared) {
+      cloud_out->points.push_back(cloud_in->points[i]);
+      continue;
+    }
+
     // ROS_INFO("Casting ray from (%0.1f, %0.1f, %0.1f) in direction (%0.1f, %0.1f, %0.1f)", origin.x(), origin.y(), origin.z(), dx, dy, dz);
     octomap::point3d direction(dx, dy, dz);
     octomap::point3d stop;
@@ -286,6 +296,40 @@ void CheckLineOfSight(Pose pose, octomap::OcTree* map, pcl::PointCloud<pcl::Poin
       // ROS_INFO("Point (%0.1f, %0.1f, %0.1f) is visible!", cloud_in->points[i].x, cloud_in->points[i].y, cloud_in->points[i].z);
       cloud_out->points.push_back(cloud_in->points[i]);
     }
+  }
+  return;
+}
+
+void CheckLineOfSight_OMP(Pose pose, octomap::OcTree* map, pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_in, pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_out, bool unseen = false)
+{
+  octomap::point3d origin(pose.position.x, pose.position.y, pose.position.z);
+  std::vector<bool> seen(false, cloud_in->points.size());
+  #pragma omp parallel num_threads(11)
+  {
+    #pragma omp for
+    for (int i=0; i<cloud_in->points.size(); i++) {
+      float dx = cloud_in->points[i].x - origin.x();
+      float dy = cloud_in->points[i].y - origin.y();
+      float dz = cloud_in->points[i].z - origin.z();
+      // ROS_INFO("Checking if (%0.1f, %0.1f, %0.1f) is occluded", cloud_in->points[i].x, cloud_in->points[i].y, cloud_in->points[i].z);
+      double radius_squared = dx*dx + dy*dy + dz*dz;
+      // ROS_INFO("Casting ray from (%0.1f, %0.1f, %0.1f) in direction (%0.1f, %0.1f, %0.1f)", origin.x(), origin.y(), origin.z(), dx, dy, dz);
+      octomap::point3d direction(dx, dy, dz);
+      octomap::point3d stop;
+      bool hit = map->castRay(origin, direction, stop, unseen, (double)std::sqrt(radius_squared));
+      double radius_stop_squared = (stop.x() - origin.x())*(stop.x() - origin.x()) + 
+                                  (stop.y() - origin.y())*(stop.y() - origin.y()) +
+                                  (stop.z() - origin.z())*(stop.z() - origin.z());
+      if ((radius_squared - radius_stop_squared) <= 1.5*map->getResolution()) {
+        // query point is the one that stops the raycast
+        // ROS_INFO("Point (%0.1f, %0.1f, %0.1f) is visible!", cloud_in->points[i].x, cloud_in->points[i].y, cloud_in->points[i].z);
+        seen[i] = true;
+      }
+    }
+  }
+
+  for (int i=0; i<cloud_in->points.size(); i++) {
+    if (seen[i]) cloud_out->points.push_back(cloud_in->points[i]);
   }
   return;
 }
@@ -489,7 +533,7 @@ ros::Publisher pub_current_cloud, std_msgs::Header cloud_header, octomap::OcTree
 
 float GainDebug(geometry_msgs::Pose p, SensorFoV sensor, pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_map, pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_seen,
 ros::Publisher pub_current_cloud, std_msgs::Header cloud_header, octomap::OcTree* map, float voxel_size=0.2, std::string type = "frontier", std::string mode = "normal",
-bool checkLoS = true)
+bool checkLoS = true, float pose_edt_value = 0.0)
 {
   Pose pose;
   pose.position.x = p.position.x; pose.position.y = p.position.y; pose.position.z = p.position.z;
@@ -545,7 +589,7 @@ bool checkLoS = true)
   pass.setFilterLimits (-1.5, -0.5);
   pass.filter(*cloud_fov_unseen);
   if (checkLoS) {
-    CheckLineOfSight(pose, map, cloud_fov_unseen, cloud_seen_local, (type == "unseen"));
+    CheckLineOfSight(pose, map, cloud_fov_unseen, cloud_seen_local, (type == "unseen"), pose_edt_value);
   } else {
     pcl::copyPointCloud(*cloud_fov_unseen, *cloud_seen_local);
   }

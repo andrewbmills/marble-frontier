@@ -179,7 +179,24 @@ void greedyGrouping(const float radius, const pcl::PointCloud<pcl::PointXYZLNorm
   return;
 }
 
-bool CheckView(View v, pcl::PointXYZLNormal p, MapGrid3D<float> map, octomap::OcTree* octomap, float d, int sample_number) 
+bool CheckViewSimple(View v, pcl::PointXYZLNormal p, MapGrid3D<float> &map, octomap::OcTree* octomap, float d, int sample_number) 
+{
+  // Check if the view is in the map
+  Point v_position = {v.pose.position.x, v.pose.position.y, v.pose.position.z};
+  if (!(map._CheckVoxelPositionInBounds(v_position))) {
+    // if (sample_number < 3) ROS_INFO("Goal rejected for being outside of the map.");
+    return false;
+  }
+
+  // Check if the point is within d of obstacle
+  if (map.Query(v.pose.position.x, v.pose.position.y, v.pose.position.z) < d) {
+    // if (sample_number < 3) ROS_INFO("Goal rejected for being too close to an obstacle.");
+    return false;
+  }
+  return true;
+}
+
+bool CheckView(View v, pcl::PointXYZLNormal p, MapGrid3D<float> &map, octomap::OcTree* octomap, float d, int sample_number) 
 {
   // Check if the view is in the map
   Point v_position = {v.pose.position.x, v.pose.position.y, v.pose.position.z};
@@ -208,29 +225,8 @@ bool CheckView(View v, pcl::PointXYZLNormal p, MapGrid3D<float> map, octomap::Oc
                                 (stop.y() - origin.y())*(stop.y() - origin.y()) +
                                 (stop.z() - origin.z())*(stop.z() - origin.z()));
   if (hit || ((radius - radius_stop) > 1.5*(octomap->getResolution())) ) {
-    // query point is the one that stops the raycast
-    // ROS_INFO("Point (%0.1f, %0.1f, %0.1f) is visible!", cloud_in->points[i].x, cloud_in->points[i].y, cloud_in->points[i].z);
     return false;
   }
-
-
-  // Check that line-of-sight from v to p is unoccluded
-  // int v_ids[3];
-  // v_ids[0] = roundf((v.pose.position.x - map.minBounds.x)/map.voxelSize);
-  // v_ids[1] = roundf((v.pose.position.y - map.minBounds.y)/map.voxelSize);
-  // v_ids[2] = roundf((v.pose.position.z - map.minBounds.z)/map.voxelSize);
-  // int p_ids[3];
-  // p_ids[0] = roundf((p.x - map.minBounds.x)/map.voxelSize);
-  // p_ids[1] = roundf((p.y - map.minBounds.y)/map.voxelSize);
-  // p_ids[2] = roundf((p.z - map.minBounds.z)/map.voxelSize);
-  // std::vector<int> lineOfSightIds = Bresenham3D(v_ids[0], v_ids[1], v_ids[2], p_ids[0], p_ids[1], p_ids[2]);
-  // for (int i=0; i<lineOfSightIds.size(); i=i+3) {
-  //   int id = lineOfSightIds[i] + lineOfSightIds[i+1]*map.size.x + lineOfSightIds[i+2]*map.size.x*map.size.y;
-  //   if (map.Query(id) < map.voxelSize*0.8) {
-  //     ROS_INFO("Goal rejected because LoS to its source voxel is occluded.");
-  //     return false;
-  //   }
-  // }
   return true;
 }
 
@@ -353,47 +349,43 @@ View SampleGoalFibonacciList(pcl::PointXYZLNormal source, int sample, float radi
   return v;
 }
 
-std::vector<View> SampleGoals(std::vector<Group> groups, SensorFoV sensor, MapGrid3D<float> map, octomap::OcTree* octomap, int sampleLimit,
+void SampleGoals(std::vector<View> &goals, std::vector<Group> &groups, SensorFoV sensor, MapGrid3D<float> &map, octomap::OcTree* octomap, int sampleLimit,
 float minObstacleProximity, std::string mode="uniform", float radiusRatio=0.5)
 {
-  std::vector<View> goals;
   float radius = (sensor.rMax - sensor.rMin)*radiusRatio + sensor.rMin;
   sensor.rMax = radius;
   ROS_INFO("Sampling goal views for %d groups.", (int)groups.size());
   for (int i=0; i<groups.size(); i++) {
     View v;
     bool goalFound = false;
-    // ROS_INFO("Group %d:", i);
     for (int j=0; j<sampleLimit; j++) {
-      if (mode == "uniform") v = SampleGoalRandomUniform(groups[i].centroid, sensor);
-      if (mode == "gaussian") v = SampleGoalRandomGaussian(groups[i].centroid, radius);
-      if (mode == "fibonacci") v = SampleGoalFibonacciList(groups[i].centroid, j, radius);
-      if (CheckView(v, groups[i].centroid, map, octomap, minObstacleProximity, j)) {
+      pcl::PointXYZLNormal p = groups[i].centroid;
+      if (mode == "uniform") v = SampleGoalRandomUniform(p, sensor);
+      if (mode == "gaussian") v = SampleGoalRandomGaussian(p, radius);
+      if (mode == "fibonacci") v = SampleGoalFibonacciList(p, j, radius);
+      // if (CheckView(v, p, map, octomap, minObstacleProximity, j)) {
+      if (CheckViewSimple(v, p, map, octomap, minObstacleProximity, j)) {
         goals.push_back(v);
         goalFound = true;
-        // ROS_INFO("Goal found for group %d after %d iterations", i, j);
+        ROS_INFO("Goal found for group %d after %d iterations", i, j);
         break;
       }
-    }
-    // Try reversing the normal if no goals have been found yet
-    if (!goalFound) {
-      pcl::PointXYZLNormal p = groups[i].centroid;
+      // Try reversing the normal
       p.normal_x = -p.normal_x; p.normal_y = -p.normal_y; p.normal_z = -p.normal_z;
-      for (int j=0; j<sampleLimit; j++) {
-        if (mode == "uniform") v = SampleGoalRandomUniform(p, sensor);
-        if (mode == "gaussian") v = SampleGoalRandomGaussian(p, radius);
-        if (mode == "fibonacci") v = SampleGoalFibonacciList(p, j, radius);
-        if (CheckView(v, p, map, octomap, minObstacleProximity, j)) {
-          goals.push_back(v);
-          goalFound = true;
-          // ROS_INFO("Goal found for group %d after %d iterations", i, sampleLimit + j);
-          break;
-        }
+      if (mode == "uniform") v = SampleGoalRandomUniform(p, sensor);
+      if (mode == "gaussian") v = SampleGoalRandomGaussian(p, radius);
+      if (mode == "fibonacci") v = SampleGoalFibonacciList(p, j, radius);
+      // if (CheckView(v, p, map, octomap, minObstacleProximity, j)) {
+      if (CheckViewSimple(v, p, map, octomap, minObstacleProximity, j)) {
+        goals.push_back(v);
+        goalFound = true;
+        ROS_INFO("Goal found for group %d after %d iterations", i, j);
+        break;
       }
     }
   }
   ROS_INFO("%d goals sampled.", (int)goals.size());
-  return goals;
+  return;
 }
 
 sensor_msgs::PointCloud2 ConvertGoalsToPointCloud2(std::vector<View> goals)
@@ -464,8 +456,9 @@ MapGrid3D<int> ConvertFrontierPairToMapGrid3D(pcl::PointCloud<pcl::PointXYZLNorm
 float voxelSize)
 {
   double minA[3], maxA[3], minB[3], maxB[3], minBounds[3], maxBounds[3];
-  for (int i=0; i<2; i++) {
-    minA[i] = 0.0; maxA[i] = 0.0; minB[i] = 0.0; maxB[i] = 0.0;
+  for (int i=0; i<3; ++i) {
+    minA[i] = 0.0; minB[i] = 0.0;
+    maxA[i] = 0.0; maxB[i] = 0.0;
   }
   GetPointCloudBounds(frontierA, minA, maxA);
   GetPointCloudBounds(frontierB, minB, maxB);
@@ -531,7 +524,8 @@ MapGrid3D<int> ConvertFrontierPointCloudToMapGrid3D(pcl::PointCloud<pcl::PointXY
 {
   double minBounds[3], maxBounds[3];
   for (int i=0; i<3; i++) {
-    minBounds[i] = 0.0; maxBounds[i] = 0.0;
+    minBounds[i] = 0.0;
+    maxBounds[i] = 0.0;
   }
   GetPointCloudBounds(frontier, minBounds, maxBounds);
   for (int i=0; i<3; i++) {
