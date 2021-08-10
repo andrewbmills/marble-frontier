@@ -258,7 +258,8 @@ int main(int argc, char **argv)
       // ROS_INFO("Success!");
       // // Sample goal poses
       // ROS_INFO("Converting edt pointcloud to gridmap...");
-      std::vector<View> goalsNew = SampleGoals(groups, robotSensor, edtGrid, map, sampleLimit, minObstacleProximity, sampleMode, radiusRatio);
+      std::vector<View> goalsNew;
+      SampleGoals(goalsNew, groups, robotSensor, edtGrid, map, sampleLimit, minObstacleProximity, sampleMode, radiusRatio);
 
       // Find the goals whose gains need to be updated and add them to the goalsNew vector
       std::vector<View> goalsUpdateGain = FindGoalsCloseToCloud(goals, frontierRemoved, robotSensor.rMax);
@@ -280,7 +281,9 @@ int main(int argc, char **argv)
       for (int i=0; i<goalsNew.size(); i++) {
         pcl::PointCloud<pcl::PointXYZI>::Ptr seenCloud (new pcl::PointCloud<pcl::PointXYZI>);
         geometry_msgs::Pose goalPose = ConvertPoseToGeometryMsgPose(goalsNew[i].pose);
-        goalsNew[i].gain = GainDebug(goalPose, robotSensor, mapCloud, seenCloud, pubGoalCloudCurrentDebug, goalsMsgHeader, map, voxelSize, gainType, gainDebugMode, checkLoS);
+        float pose_edt_value = edtGrid.Query((double)goalPose.position.x, (double)goalPose.position.y, (double)goalPose.position.z);
+        goalsNew[i].gain = GainDebug(goalPose, robotSensor, mapCloud, seenCloud, pubGoalCloudCurrentDebug, goalsMsgHeader, map,
+                                     voxelSize, gainType, gainDebugMode, checkLoS, pose_edt_value);
         for (int j=0; j<seenCloud->points.size(); j++) {
           goalsNew[i].cloud.points.push_back(seenCloud->points[j]);
           pcl::toROSMsg(*seenCloud, goalsNew[i].cloud_msg);

@@ -143,15 +143,22 @@ TEST_CASE("Group frontiers into greedily based on proximity", "goals")
     // Get frontier pointcloud
     pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontier (new pcl::PointCloud<pcl::PointXYZLNormal>);
     std::vector<pcl::PointIndices> clusters;
+    auto start = std::chrono::high_resolution_clock::now();
     GetFrontier(tree, frontier, clusters);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    INFO(frontier->points.size() << " frontiers labeled from map of size " << tree->size() << " in " << duration.count() << " ms.");
 
     // Test greedy grouping
+    start = std::chrono::high_resolution_clock::now();
     std::vector<Group> groups;
     greedyGrouping(4.1*tree->getResolution(), frontier, groups);
-    INFO("Grouped frontiers into " << groups.size() << " greedy groups.");
-    for (int i=0; i<groups.size(); i++) {
-        INFO("Group " << i << " contains " << groups[i].indices.indices.size() << " frontiers.");
-    }
+    end = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    INFO(groups.size() << " greedy groups created in " << duration.count() << " ms from " << frontier->points.size() << " frontier voxels");
+    // for (int i=0; i<groups.size(); i++) {
+    //     INFO("Group " << i << " contains " << groups[i].indices.indices.size() << " frontiers.");
+    // }
     REQUIRE(groups.size() > 0);
 
     SensorFoV robotSensor;
@@ -162,96 +169,116 @@ TEST_CASE("Group frontiers into greedily based on proximity", "goals")
     robotSensor.type = "camera";
     MapGrid3D<float> edt;
     ConvertOctomapToEDT(tree, &edt);
-    std::vector<View> goals = SampleGoals(groups, robotSensor, edt, tree, 50, 0.6, "uniform");
-    REQUIRE(goals.size() > 0);
     LoadFibonacci50();
+    start = std::chrono::high_resolution_clock::now();
+    std::vector<View> goals;
+    int sample_limit = 5;
+    float min_distance_from_obstacle = 0.6; // meters
+    // SampleGoals(goals, groups, robotSensor, edt, tree, sample_limit, min_distance_from_obstacle, "uniform");
+    SampleGoals(goals, groups, robotSensor, edt, tree, sample_limit, min_distance_from_obstacle, "fibonacci");
+    end = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    INFO(goals.size() << " goals sampled uniformly in " << duration.count() << " ms for octomap of size " << tree->size());
+    REQUIRE(goals.size() > 0);
+
+    // Publish to ROS to visualize in rviz
+
+
+
+
+
+
+    // start = std::chrono::high_resolution_clock::now();
     // goals = SampleGoals(groups, robotSensor, edt, tree, 50, 0.6, "fibonacci");
+    // end = std::chrono::high_resolution_clock::now();
+    // duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    // INFO(goals.size() << " goals sampled using fibonacci spacing in " << duration.count() << " ms for octomap of size " << tree->size());
     // goals = SampleGoals(groups, robotSensor, edt, tree, 50, 0.6, "gaussian");
 
-    pcl::PointCloud<pcl::PointXYZI>::Ptr edtCloud (new pcl::PointCloud<pcl::PointXYZI>);
-    ConvertOctomapToCloud(tree, edtCloud);
-    pcl::PointCloud<pcl::PointXYZI>::Ptr mapCloud (new pcl::PointCloud<pcl::PointXYZI>);
-    FilterCloudNearGoals(edtCloud, mapCloud, goals, robotSensor, tree->getResolution(), frontier, "unseen");
-    ros::Publisher pubPlaceholder;
-    std_msgs::Header cloudHeader;
+    // pcl::PointCloud<pcl::PointXYZI>::Ptr edtCloud (new pcl::PointCloud<pcl::PointXYZI>);
+    // ConvertOctomapToCloud(tree, edtCloud);
+    // pcl::PointCloud<pcl::PointXYZI>::Ptr mapCloud (new pcl::PointCloud<pcl::PointXYZI>);
+    // FilterCloudNearGoals(edtCloud, mapCloud, goals, robotSensor, tree->getResolution(), frontier, "unseen");
+    // ros::Publisher pubPlaceholder;
+    // std_msgs::Header cloudHeader;
 
-    for (int i=0; i<goals.size(); i++) {
-        pcl::PointCloud<pcl::PointXYZI>::Ptr seenCloud (new pcl::PointCloud<pcl::PointXYZI>);
-        geometry_msgs::Pose goalPose = ConvertPoseToGeometryMsgPose(goals[i].pose);
-        goals[i].gain = GainDebug(goalPose, robotSensor, mapCloud, seenCloud, pubPlaceholder, cloudHeader, tree, tree->getResolution(), "unseen", "normal", true);
-    }
-    REQUIRE(goals[0].gain > 0.0);
+    // for (int i=0; i<goals.size(); i++) {
+    //     pcl::PointCloud<pcl::PointXYZI>::Ptr seenCloud (new pcl::PointCloud<pcl::PointXYZI>);
+    //     geometry_msgs::Pose goalPose = ConvertPoseToGeometryMsgPose(goals[i].pose);
+    //     goals[i].gain = GainDebug(goalPose, robotSensor, mapCloud, seenCloud, pubPlaceholder, cloudHeader, tree, tree->getResolution(), "unseen", "normal", true);
+    // }
+    // REQUIRE(goals[0].gain > 0.0);
 }
 
-TEST_CASE("Benchmark grouping, sampling, and gain calculation pieces", "goals")
-{
-    SensorFoV robotSensor;
-    robotSensor.horizontalFoV = 80.0;
-    robotSensor.verticalFoV = 40.0;
-    robotSensor.rMin = 1.0;
-    robotSensor.rMax = 5.0;
-    robotSensor.type = "camera";
+// TEST_CASE("Benchmark grouping, sampling, and gain calculation pieces", "goals")
+// {
+//     SensorFoV robotSensor;
+//     robotSensor.horizontalFoV = 80.0;
+//     robotSensor.verticalFoV = 40.0;
+//     robotSensor.rMin = 1.0;
+//     robotSensor.rMax = 5.0;
+//     robotSensor.type = "camera";
 
-    ros::Publisher pubPlaceholder;
-    std_msgs::Header cloudHeader;
+//     ros::Publisher pubPlaceholder;
+//     std_msgs::Header cloudHeader;
 
-    int map_start = 1;
-    int map_end = 15;
-    std::ofstream file;
-    file.open("/home/andrew/Desktop/octomaps/goal_pose_sampling_benchmarks.csv");
-    std::string filename_prefix = "/home/andrew/Desktop/octomaps/octomap_";
-    // std::string filename_prefix = "/home/andrew/Desktop/octomaps/octomap_urban_practice_";
+//     int map_start = 1;
+//     int map_end = 15;
+//     std::ofstream file;
+//     file.open("/home/andrew/Desktop/octomaps/goal_pose_sampling_benchmarks.csv");
+//     std::string filename_prefix = "/home/andrew/Desktop/octomaps/octomap_";
+//     // std::string filename_prefix = "/home/andrew/Desktop/octomaps/octomap_urban_practice_";
 
-    for (int i=map_start; i<(map_end+1); i++) {
-        std::string filename = filename_prefix + std::to_string(i) + ".ot";
-        octomap::AbstractOcTree* readTreeAbstract = octomap::AbstractOcTree::read(filename);
-        octomap::OcTree* tree = dynamic_cast<octomap::OcTree*>(readTreeAbstract);
-        tree->expand();
+//     for (int i=map_start; i<(map_end+1); i++) {
+//         std::string filename = filename_prefix + std::to_string(i) + ".ot";
+//         octomap::AbstractOcTree* readTreeAbstract = octomap::AbstractOcTree::read(filename);
+//         octomap::OcTree* tree = dynamic_cast<octomap::OcTree*>(readTreeAbstract);
+//         tree->expand();
 
-        pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontier (new pcl::PointCloud<pcl::PointXYZLNormal>);
-        std::vector<pcl::PointIndices> clusters;
-        GetFrontier(tree, frontier, clusters);
+//         pcl::PointCloud<pcl::PointXYZLNormal>::Ptr frontier (new pcl::PointCloud<pcl::PointXYZLNormal>);
+//         std::vector<pcl::PointIndices> clusters;
+//         GetFrontier(tree, frontier, clusters);
 
-        auto start = std::chrono::high_resolution_clock::now();
-        std::vector<Group> groups;
-        greedyGrouping(4.1*tree->getResolution(), frontier, groups);
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        INFO(groups.size() << " greedy groups found in " << duration.count() << " ms for octomap of size " << tree->size());
-        file << i << frontier->points.size() << "," << tree->size() << "," << duration.count() << "," << groups.size();
-        REQUIRE(groups.size() > 0);
+//         auto start = std::chrono::high_resolution_clock::now();
+//         std::vector<Group> groups;
+//         greedyGrouping(4.1*tree->getResolution(), frontier, groups);
+//         auto end = std::chrono::high_resolution_clock::now();
+//         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+//         INFO(groups.size() << " greedy groups found in " << duration.count() << " ms for octomap of size " << tree->size());
+//         file << i << frontier->points.size() << "," << tree->size() << "," << duration.count() << "," << groups.size();
+//         REQUIRE(groups.size() > 0);
 
-        MapGrid3D<float> edt;
-        ConvertOctomapToEDT(tree, &edt);
-        start = std::chrono::high_resolution_clock::now();
-        std::vector<View> goals = SampleGoals(groups, robotSensor, edt, tree, 50, 0.6, "uniform");
-        end = std::chrono::high_resolution_clock::now();
-        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        INFO(goals.size() << " goal sampled in " << duration.count() << " ms");
-        REQUIRE(goals.size() > 0);
-        file << "," << duration.count() << "," << goals.size();
+//         MapGrid3D<float> edt;
+//         ConvertOctomapToEDT(tree, &edt);
+//         start = std::chrono::high_resolution_clock::now();
+//         std::vector<View> goals = SampleGoals(groups, robotSensor, edt, tree, 50, 0.6, "uniform");
+//         end = std::chrono::high_resolution_clock::now();
+//         duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+//         INFO(goals.size() << " goal sampled in " << duration.count() << " ms");
+//         REQUIRE(goals.size() > 0);
+//         file << "," << duration.count() << "," << goals.size();
 
-        // pcl::PointCloud<pcl::PointXYZI>::Ptr edtCloud (new pcl::PointCloud<pcl::PointXYZI>);
-        // ConvertOctomapToCloud(tree, edtCloud);
+//         // pcl::PointCloud<pcl::PointXYZI>::Ptr edtCloud (new pcl::PointCloud<pcl::PointXYZI>);
+//         // ConvertOctomapToCloud(tree, edtCloud);
 
-        // start = std::chrono::high_resolution_clock::now();
-        // pcl::PointCloud<pcl::PointXYZI>::Ptr mapCloud (new pcl::PointCloud<pcl::PointXYZI>);
-        // FilterCloudNearGoals(edtCloud, mapCloud, goals, robotSensor, tree->getResolution(), frontier, "unseen");
-        // for (int i=0; i<goals.size(); i++) {
-        //     pcl::PointCloud<pcl::PointXYZI>::Ptr seenCloud (new pcl::PointCloud<pcl::PointXYZI>);
-        //     geometry_msgs::Pose goalPose = ConvertPoseToGeometryMsgPose(goals[i].pose);
-        //     goals[i].gain = GainDebug(goalPose, robotSensor, mapCloud, seenCloud, pubPlaceholder, cloudHeader, tree, tree->getResolution(), "unseen", "normal", true);
-        // }
-        // end = std::chrono::high_resolution_clock::now();
-        // duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        // INFO(goals.size() << " gains computed in " << duration.count() << " ms");
-        // float gain_average = 0.0;
-        // for (int i=0; i<goals.size(); i++) gain_average += (goals[i].gain)/goals.size();
-        // REQUIRE(gain_average > 0.0);
-        // file << "," << duration.count() << "," << gain_average;
-        file << std::endl;
-    }
+//         // start = std::chrono::high_resolution_clock::now();
+//         // pcl::PointCloud<pcl::PointXYZI>::Ptr mapCloud (new pcl::PointCloud<pcl::PointXYZI>);
+//         // FilterCloudNearGoals(edtCloud, mapCloud, goals, robotSensor, tree->getResolution(), frontier, "unseen");
+//         // for (int i=0; i<goals.size(); i++) {
+//         //     pcl::PointCloud<pcl::PointXYZI>::Ptr seenCloud (new pcl::PointCloud<pcl::PointXYZI>);
+//         //     geometry_msgs::Pose goalPose = ConvertPoseToGeometryMsgPose(goals[i].pose);
+//         //     goals[i].gain = GainDebug(goalPose, robotSensor, mapCloud, seenCloud, pubPlaceholder, cloudHeader, tree, tree->getResolution(), "unseen", "normal", true);
+//         // }
+//         // end = std::chrono::high_resolution_clock::now();
+//         // duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+//         // INFO(goals.size() << " gains computed in " << duration.count() << " ms");
+//         // float gain_average = 0.0;
+//         // for (int i=0; i<goals.size(); i++) gain_average += (goals[i].gain)/goals.size();
+//         // REQUIRE(gain_average > 0.0);
+//         // file << "," << duration.count() << "," << gain_average;
+//         file << std::endl;
+//     }
 
 
-    file.close();
-}
+//     file.close();
+// }

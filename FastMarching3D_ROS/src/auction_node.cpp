@@ -10,7 +10,10 @@ int main(int argc, char **argv)
 
   Auctioneer auctioneer(num_robots);
 
+  ros::Subscriber subOctomapBinary = n.subscribe("goals_0", 1, &Auctioneer::callback_goal_array_robot0, &auctioneer);
   ros::Subscriber subOctomapBinary = n.subscribe("goals_1", 1, &Auctioneer::callback_goal_array_robot1, &auctioneer);
+  ros::Subscriber subOctomapBinary = n.subscribe("goals_2", 1, &Auctioneer::callback_goal_array_robot2, &auctioneer);
+  ros::Subscriber subOctomapBinary = n.subscribe("goals_3", 1, &Auctioneer::callback_goal_array_robot3, &auctioneer);
   std::vector<ros::Publisher> publishers;
   for (int i=0; i<num_robots; ++i) {
       ros::Publisher pub_goal_robot = n.advertise<geometry_msgs::PoseStamped>("goal_pose" + std::to_string(i), 5);
