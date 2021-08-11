@@ -28,6 +28,7 @@ class MapGrid3D {
     bool _CheckVoxelPositionInBounds(Point position);
     int _ConvertPositionToIndex(Point position);
     Point _ConvertIndexToPosition(int idx);
+    Dimensions _ConvertToVoxelCoordinates(Point position);
     void _SetMaxBounds();
     void Reset(double resolution, double minBoundList[3], double maxBoundList[3], T defaultValue);
     void SetVoxel(double x, double y, double z, T data);
@@ -107,6 +108,16 @@ int MapGrid3D<T>::_ConvertPositionToIndex(Point position)
   id += std::round((position.y - minBounds.y)/voxelSize)*size.x;
   id += std::round((position.x - minBounds.x)/voxelSize);
   return id;
+}
+
+template <typename T>
+Dimensions MapGrid3D<T>::_ConvertToVoxelCoordinates(Point position)
+{
+  Dimensions voxel;
+  voxel.x = std::round((position.x - minBounds.x)/voxelSize);
+  voxel.y = std::round((position.y - minBounds.y)/voxelSize);
+  voxel.z = std::round((position.z - minBounds.z)/voxelSize);
+  return voxel;
 }
 
 template <typename T>

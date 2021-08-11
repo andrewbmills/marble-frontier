@@ -31,6 +31,7 @@
 // local packages
 #include <frontier.h>
 #include <gain.h>
+#include "raycast.hpp"
 
 // Fibonacci sphere global lookup tables
 extern Eigen::MatrixXf fibonacciSphere50(50,3);
@@ -179,6 +180,8 @@ void greedyGrouping(const float radius, const pcl::PointCloud<pcl::PointXYZLNorm
   return;
 }
 
+
+
 bool CheckViewSimple(View v, pcl::PointXYZLNormal p, MapGrid3D<float> &map, octomap::OcTree* octomap, float d, int sample_number) 
 {
   // Check if the view is in the map
@@ -196,6 +199,8 @@ bool CheckViewSimple(View v, pcl::PointXYZLNormal p, MapGrid3D<float> &map, octo
   return true;
 }
 
+
+
 bool CheckView(View v, pcl::PointXYZLNormal p, MapGrid3D<float> &map, octomap::OcTree* octomap, float d, int sample_number) 
 {
   // Check if the view is in the map
@@ -211,23 +216,37 @@ bool CheckView(View v, pcl::PointXYZLNormal p, MapGrid3D<float> &map, octomap::O
     return false;
   }
 
-  octomap::point3d origin(v.pose.position.x, v.pose.position.y, v.pose.position.z);
   float dx = v.source.x - v.pose.position.x;
   float dy = v.source.y - v.pose.position.y;
   float dz = v.source.z - v.pose.position.z;
-  // ROS_INFO("Checking if (%0.1f, %0.1f, %0.1f) is occluded", cloud_in->points[i].x, cloud_in->points[i].y, cloud_in->points[i].z);
   double radius = std::sqrt(dx*dx + dy*dy + dz*dz);
-  // ROS_INFO("Casting ray from (%0.1f, %0.1f, %0.1f) in direction (%0.1f, %0.1f, %0.1f)", origin.x(), origin.y(), origin.z(), dx, dy, dz);
-  octomap::point3d direction(dx, dy, dz);
-  octomap::point3d stop;
-  bool hit = octomap->castRay(origin, direction, stop, false, radius);
-  double radius_stop = std::sqrt((stop.x() - origin.x())*(stop.x() - origin.x()) + 
-                                (stop.y() - origin.y())*(stop.y() - origin.y()) +
-                                (stop.z() - origin.z())*(stop.z() - origin.z()));
-  if (hit || ((radius - radius_stop) > 1.5*(octomap->getResolution())) ) {
-    return false;
-  }
+  dx = dx/radius; dy = dy/radius; dz = dz/radius;
+  Raycaster raycaster(map, -1.0);
+  Eigen::Vector3d origin;
+  origin << v.pose.position.x, v.pose.position.y, v.pose.position.z;
+  Eigen::Vector3d direction;
+  direction << dx, dy, dz;
+  float cast_range = raycaster.cast(origin, direction, radius + map.voxelSize);
+  if (cast_range < radius) return false;
   return true;
+  
+  // octomap::point3d origin(v.pose.position.x, v.pose.position.y, v.pose.position.z);
+  // float dx = v.source.x - v.pose.position.x;
+  // float dy = v.source.y - v.pose.position.y;
+  // float dz = v.source.z - v.pose.position.z;
+  // // ROS_INFO("Checking if (%0.1f, %0.1f, %0.1f) is occluded", cloud_in->points[i].x, cloud_in->points[i].y, cloud_in->points[i].z);
+  // double radius = std::sqrt(dx*dx + dy*dy + dz*dz);
+  // // ROS_INFO("Casting ray from (%0.1f, %0.1f, %0.1f) in direction (%0.1f, %0.1f, %0.1f)", origin.x(), origin.y(), origin.z(), dx, dy, dz);
+  // octomap::point3d direction(dx, dy, dz);
+  // octomap::point3d stop;
+  // bool hit = octomap->castRay(origin, direction, stop, false, radius);
+  // double radius_stop = std::sqrt((stop.x() - origin.x())*(stop.x() - origin.x()) + 
+  //                               (stop.y() - origin.y())*(stop.y() - origin.y()) +
+  //                               (stop.z() - origin.z())*(stop.z() - origin.z()));
+  // if (hit || ((radius - radius_stop) > 1.5*(octomap->getResolution())) ) {
+  //   return false;
+  // }
+  // return true;
 }
 
 Eigen::Matrix3f RotationMatrixBetweenVectors(Eigen::Vector3f a, Eigen::Vector3f b)
@@ -363,11 +382,11 @@ float minObstacleProximity, std::string mode="uniform", float radiusRatio=0.5)
       if (mode == "uniform") v = SampleGoalRandomUniform(p, sensor);
       if (mode == "gaussian") v = SampleGoalRandomGaussian(p, radius);
       if (mode == "fibonacci") v = SampleGoalFibonacciList(p, j, radius);
-      // if (CheckView(v, p, map, octomap, minObstacleProximity, j)) {
-      if (CheckViewSimple(v, p, map, octomap, minObstacleProximity, j)) {
+      if (CheckView(v, p, map, octomap, minObstacleProximity, j)) {
+      // if (CheckViewSimple(v, p, map, octomap, minObstacleProximity, j)) {
         goals.push_back(v);
         goalFound = true;
-        ROS_INFO("Goal found for group %d after %d iterations", i, j);
+        // ROS_INFO("Goal found for group %d after %d iterations", i, 2*j);
         break;
       }
       // Try reversing the normal
@@ -375,16 +394,16 @@ float minObstacleProximity, std::string mode="uniform", float radiusRatio=0.5)
       if (mode == "uniform") v = SampleGoalRandomUniform(p, sensor);
       if (mode == "gaussian") v = SampleGoalRandomGaussian(p, radius);
       if (mode == "fibonacci") v = SampleGoalFibonacciList(p, j, radius);
-      // if (CheckView(v, p, map, octomap, minObstacleProximity, j)) {
-      if (CheckViewSimple(v, p, map, octomap, minObstacleProximity, j)) {
+      if (CheckView(v, p, map, octomap, minObstacleProximity, j)) {
+      // if (CheckViewSimple(v, p, map, octomap, minObstacleProximity, j)) {
         goals.push_back(v);
         goalFound = true;
-        ROS_INFO("Goal found for group %d after %d iterations", i, j);
+        // ROS_INFO("Goal found for group %d after %d iterations", i, 2*j+1);
         break;
       }
     }
   }
-  ROS_INFO("%d goals sampled.", (int)goals.size());
+  // ROS_INFO("%d goals sampled.", (int)goals.size());
   return;
 }
 

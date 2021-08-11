@@ -2,9 +2,10 @@
 #include "catch.hpp"
 #include <chrono>
 #include <cmath>
-#include <frontier_octomap.h>
-#include <poseSampling.h>
-#include <gain.h>
+#include "frontier_octomap.h"
+#include "poseSampling.h"
+#include "gain.h"
+#include "fast_gain.hpp"
 
 void LoadFibonacci50()
 {
@@ -64,7 +65,7 @@ void LoadFibonacci50()
 void ConvertPointVectorToPointCloud(std::vector<Point> v, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
 {
     for (int i=0; i<v.size(); i++) {
-        pcl::PointXYZ p = {v[i].x, v[i].y, v[i].z};
+        pcl::PointXYZ p = {(float)v[i].x, (float)v[i].y, (float)v[i].z};
         cloud->points.push_back(p);
     }
 }
@@ -115,7 +116,7 @@ void ConvertOctomapToEDT(octomap::OcTree* map, MapGrid3D<float>* edt)
   AlignMaxesToOctomap(map, maxBounds);
   edt->Reset(edt->voxelSize, minBounds, maxBounds, -1.0);
   for(octomap::OcTree::leaf_iterator it=map->begin_leafs(), end=map->end_leafs(); it!=end; ++it) {
-    edt->SetVoxel(it.getX(), it.getY(), it.getZ(), 1.0*(it->getOccupancy()<=0.5));
+    edt->SetVoxel(it.getX(), it.getY(), it.getZ(), map->getResolution()*(it->getOccupancy()<=0.5));
   }
   return;
 }
@@ -132,7 +133,18 @@ void ConvertOctomapToCloud(octomap::OcTree* map, pcl::PointCloud<pcl::PointXYZI>
     return;
 }
 
-TEST_CASE("Group frontiers into greedily based on proximity", "goals")
+void ConvertOctomapToOccupiedCloud(octomap::OcTree* map, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+{
+    cloud->points.clear();
+    for(octomap::OcTree::leaf_iterator it=map->begin_leafs(), end=map->end_leafs(); it!=end; ++it) {
+        pcl::PointXYZ point;
+        point.x = (float)it.getX(); point.y = (float)it.getY(); point.z = (float)it.getZ();
+        if (it->getOccupancy() >= 0.5) cloud->points.push_back(point);
+    }
+    return;
+}
+
+TEST_CASE("Sample goal poses in test octomap environments", "goals")
 {
     int map_number = 1;
     std::string filename_prefix = "/home/andrew/Desktop/octomaps/octomap_urban_practice_";
@@ -173,41 +185,66 @@ TEST_CASE("Group frontiers into greedily based on proximity", "goals")
     start = std::chrono::high_resolution_clock::now();
     std::vector<View> goals;
     int sample_limit = 5;
-    float min_distance_from_obstacle = 0.6; // meters
+    float min_distance_from_obstacle = tree->getResolution()/2.0; // meters
     // SampleGoals(goals, groups, robotSensor, edt, tree, sample_limit, min_distance_from_obstacle, "uniform");
+    // std::vector<Group> groups_abridged;
+    // groups_abridged.resize(50);
+    // std::copy(groups.begin(), groups.begin()+50, groups_abridged.begin());
     SampleGoals(goals, groups, robotSensor, edt, tree, sample_limit, min_distance_from_obstacle, "fibonacci");
     end = std::chrono::high_resolution_clock::now();
     duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    INFO(goals.size() << " goals sampled uniformly in " << duration.count() << " ms for octomap of size " << tree->size());
+    // INFO(goals.size() << " goals sampled uniformly in " << duration.count() << " ms for octomap of size " << tree->size());
+    INFO(goals.size() << " goals sampled using priority queue in " << duration.count() << " ms for octomap of size " << tree->size());
     REQUIRE(goals.size() > 0);
 
+    SensorParams sensor_params;
+    sensor_params.hfov = robotSensor.horizontalFoV*M_PI/180.0;
+    sensor_params.vfov = robotSensor.verticalFoV*M_PI/180.0;
+    sensor_params.range = robotSensor.rMax;
+    sensor_params.beam_angle = 2.5*M_PI/180.0;
+    start = std::chrono::high_resolution_clock::now();
+    FastGainUpdater gain_updater(edt, sensor_params);
+    std::vector<View> goals_abridged;
+    goals_abridged.resize(5);
+    std::copy(goals.begin(), goals.begin()+5, goals_abridged.begin());
+    std::vector<float> gains = gain_updater.get_gains(goals);
+    end = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    INFO("Approximate gains calculated in " << duration.count() << " ms.");
+    REQUIRE(gains[5] > 0.0);
+
     // Publish to ROS to visualize in rviz
+    // int argc = 0;
+    // char* arg = "";
+    // char** argv = &arg;
+    // std::string node_name = "goal_pose_sampling_test_node";
+    // ros::init(argc, argv, node_name);
+    // ros::NodeHandle n;
+    // ros::Publisher pub_goal_pose_array = n.advertise<geometry_msgs::PoseArray>("goal_poses", 1);
+    // geometry_msgs::PoseArray goal_pose_array_msg = ConvertGoalsToPoseArray(goals);
+    // goal_pose_array_msg.header.frame_id = "world";
+    // goal_pose_array_msg.header.stamp = ros::Time::now();
+    
+    // sensor_msgs::PointCloud2 frontier_msg;
+    // ros::Publisher pub_frontier = n.advertise<sensor_msgs::PointCloud2>("frontier", 1);
+    // pcl::toROSMsg(*frontier, frontier_msg);
+    // frontier_msg.header.frame_id = "world";
 
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr occ_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    // ConvertOctomapToOccupiedCloud(tree, occ_cloud);
+    // sensor_msgs::PointCloud2 occ_cloud_msg;
+    // ros::Publisher pub_octomap = n.advertise<sensor_msgs::PointCloud2>("occupied", 1);
+    // pcl::toROSMsg(*occ_cloud, occ_cloud_msg);
+    // occ_cloud_msg.header.frame_id = "world";
 
-
-
-
-
-    // start = std::chrono::high_resolution_clock::now();
-    // goals = SampleGoals(groups, robotSensor, edt, tree, 50, 0.6, "fibonacci");
-    // end = std::chrono::high_resolution_clock::now();
-    // duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    // INFO(goals.size() << " goals sampled using fibonacci spacing in " << duration.count() << " ms for octomap of size " << tree->size());
-    // goals = SampleGoals(groups, robotSensor, edt, tree, 50, 0.6, "gaussian");
-
-    // pcl::PointCloud<pcl::PointXYZI>::Ptr edtCloud (new pcl::PointCloud<pcl::PointXYZI>);
-    // ConvertOctomapToCloud(tree, edtCloud);
-    // pcl::PointCloud<pcl::PointXYZI>::Ptr mapCloud (new pcl::PointCloud<pcl::PointXYZI>);
-    // FilterCloudNearGoals(edtCloud, mapCloud, goals, robotSensor, tree->getResolution(), frontier, "unseen");
-    // ros::Publisher pubPlaceholder;
-    // std_msgs::Header cloudHeader;
-
-    // for (int i=0; i<goals.size(); i++) {
-    //     pcl::PointCloud<pcl::PointXYZI>::Ptr seenCloud (new pcl::PointCloud<pcl::PointXYZI>);
-    //     geometry_msgs::Pose goalPose = ConvertPoseToGeometryMsgPose(goals[i].pose);
-    //     goals[i].gain = GainDebug(goalPose, robotSensor, mapCloud, seenCloud, pubPlaceholder, cloudHeader, tree, tree->getResolution(), "unseen", "normal", true);
+    // ros::Rate r(1.0);
+    // while (ros::ok()) {
+    //     r.sleep();
+    //     ros::spinOnce();
+    //     pub_goal_pose_array.publish(goal_pose_array_msg);
+    //     pub_frontier.publish(frontier_msg);
+    //     pub_octomap.publish(occ_cloud_msg);
     // }
-    // REQUIRE(goals[0].gain > 0.0);
 }
 
 // TEST_CASE("Benchmark grouping, sampling, and gain calculation pieces", "goals")

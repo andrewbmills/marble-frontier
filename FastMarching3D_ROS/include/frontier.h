@@ -299,7 +299,7 @@ void ConvertPointCloudToEDTGrid(pcl::PointCloud<pcl::PointXYZI>::Ptr edt, MapGri
   double minBounds[3];
   double maxBounds[3];
   GetPointCloudBounds(edt, minBounds, maxBounds);
-  edtGrid->Reset(edtGrid->voxelSize, minBounds, maxBounds, 0.0);
+  edtGrid->Reset(edtGrid->voxelSize, minBounds, maxBounds, -1.0);
 
   for (int i=0; i<edt->points.size(); i++) {
     pcl::PointXYZI query = edt->points[i];
